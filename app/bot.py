@@ -76,7 +76,7 @@ async def render_team(session,uid):
     lines=['🏒 МОЯ КОМАНДА']
     for pos in POSITIONS:
         item=mapping.get(pos)
-        lines.append(f"{pos}: {item[1].player_name} · {item[1].ovr} OVR (карта #{item[0].id})" if item else f'{pos}: —')
+        lines.append(f"{pos}: {item[1].player_name} · {item[1].ovr} OVR" if item else f'{pos}: —')
     cards=[c for _,c in rows]
     lines.append(f'\n💪 Сила состава: {team_power(cards)} OVR')
     from .game import chemistry
@@ -826,13 +826,31 @@ async def main():
                     await c.message.answer(f'Предложение #{offer.id} отправлено. Обе карточки заблокированы до ответа.')
                 except Exception as e:
                     await c.answer(str(e),show_alert=True); return
+            elif action=='cancel':
+                oid=int(parts[2])
+                offer=await s.scalar(select(TradeOffer).where(TradeOffer.id==oid).with_for_update())
+                if not offer or offer.sender_id!=c.from_user.id or offer.status!='pending':
+                    await c.answer('Исходящее предложение уже недоступно.',show_alert=True); return
+                for owned_id in offer.give_card_ids+offer.receive_card_ids:
+                    oc=await s.get(OwnedCard,owned_id)
+                    if oc: oc.locked=False
+                offer.status='cancelled'; await s.commit()
+                try: await c.bot.send_message(offer.receiver_id,f'Предложение обмена #{offer.id} отменено отправителем.')
+                except Exception: pass
+                await c.message.answer(f'Предложение #{offer.id} отменено, карточки разблокированы.')
             elif action in ('incoming','outgoing'):
                 field=TradeOffer.receiver_id if action=='incoming' else TradeOffer.sender_id
                 rows=(await s.scalars(select(TradeOffer).where(field==c.from_user.id).order_by(TradeOffer.id.desc()).limit(15))).all()
                 lines=['📨 ОБМЕНЫ' if action=='incoming' else '📤 ИСХОДЯЩИЕ ОБМЕНЫ']
+                kb=InlineKeyboardBuilder()
                 for offer in rows:
                     lines.append(f'#{offer.id} · игрок {offer.sender_id} → {offer.receiver_id} · {offer.status}')
-                kb=InlineKeyboardBuilder(); kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
+                    if offer.status=='pending' and action=='incoming':
+                        kb.button(text=f'✅ Принять #{offer.id}',callback_data=f'tradeyes:{offer.id}')
+                        kb.button(text=f'❌ Отклонить #{offer.id}',callback_data=f'tradeno:{offer.id}')
+                    if offer.status=='pending' and action=='outgoing':
+                        kb.button(text=f'Отменить #{offer.id}',callback_data=f'trade:cancel:{offer.id}')
+                kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
                 await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
         await c.answer()
 
