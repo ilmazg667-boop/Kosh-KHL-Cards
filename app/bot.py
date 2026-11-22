@@ -579,21 +579,112 @@ async def main():
                 if oc: oc.locked=False
             offer.status='cancelled'; await s.commit(); await m.answer('Предложение отменено.')
 
+    market_steps={}
+    def market_keyboard():
+        kb=InlineKeyboardBuilder()
+        kb.button(text='🛍 Смотреть лоты',callback_data='market:current')
+        kb.button(text='➕ Выставить карточку',callback_data='market:sell')
+        kb.button(text='📦 Мои лоты',callback_data='market:mine')
+        kb.button(text='⬅️ Главное меню',callback_data='player:home')
+        kb.adjust(1); return kb.as_markup()
+
     @dp.message(F.text=='🏪 Рынок')
     @dp.message(Command('market'))
     async def market(m):
+        await m.answer('🏪 РЫНОК КАРТОЧЕК\nВыберите действие:',reply_markup=market_keyboard())
+
+    @dp.callback_query(F.data.startswith('market:'))
+    async def market_menu_action(c:CallbackQuery):
+        action=c.data.split(':',1)[1]
         async with Session() as s:
-            listings=(await s.scalars(select(MarketListing).where(MarketListing.status=='active').order_by(desc(MarketListing.created_at)).limit(15))).all()
-            if not listings: await m.answer('Рынок пока пуст. Выставить карточку: /sell ID PRICE'); return
-            lines=['🏪 РЫНОК · последние 15 лотов']
-            for l in listings:
-                oc=await s.get(OwnedCard,l.owned_card_id); c=await s.get(Card,oc.card_id) if oc else None
-                if c:
-                    avg=await s.scalar(select(func.avg(MarketListing.price)).where(MarketListing.status=='active',MarketListing.owned_card_id.in_(select(OwnedCard.id).where(OwnedCard.card_id==c.id))))
-                    seller=await s.get(User,l.seller_id)
-                    lines.append(f'\nЛот #{l.id} · {c.player_name} · {c.ovr} OVR · {c.rarity}\nПродавец: {seller.first_name or seller.id if seller else l.seller_id}\nЦена: {l.price} 🪙 · средняя по этому игроку: {int(avg or 0)} 🪙\nРазмещён UTC: {l.created_at:%Y-%m-%d %H:%M}\nКупить: /buy {l.id}')
-            await send_section_photo(m,PHOTO_ARENA,'🏪 Рынок карточек — выбирайте игроков для покупки.')
-            await m.answer('\n'.join(lines))
+            try: await active_user(s,c.from_user)
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+            if action=='sell':
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
+                kb=InlineKeyboardBuilder(); count=0
+                for oc in cards:
+                    card=await s.get(Card,oc.card_id)
+                    if card:
+                        kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}',callback_data=f'marketcard:{oc.id}'); count+=1
+                kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
+                await c.message.answer('Выберите свободную карточку для продажи:' if count else 'Нет свободных карточек. Сначала снимите карточку с позиции в меню «Моя команда».',reply_markup=kb.as_markup())
+            elif action=='current':
+                listings=(await s.scalars(select(MarketListing).where(MarketListing.status=='active').order_by(desc(MarketListing.created_at)).limit(25))).all()
+                lines=['🏪 АКТИВНЫЕ ЛОТЫ']; kb=InlineKeyboardBuilder(); count=0
+                for listing in listings:
+                    oc=await s.get(OwnedCard,listing.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    seller=await s.get(User,listing.seller_id)
+                    if card:
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR · {card.rarity}\nПродавец: {seller.first_name or seller.id if seller else "игрок"}\nЦена: {listing.price} 🪙')
+                        kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
+                if not count: lines.append('\nПока нет активных лотов.')
+                kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            elif action=='mine':
+                listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at))).all()
+                kb=InlineKeyboardBuilder(); lines=['📦 МОИ ЛОТЫ']
+                for listing in listings:
+                    oc=await s.get(OwnedCard,listing.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    if card:
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR · {listing.price} 🪙')
+                        kb.button(text=f'❌ Снять · {card.player_name}',callback_data=f'marketdelist:{listing.id}')
+                if not listings: lines.append('\nУ вас нет активных лотов.')
+                kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            elif action=='home':
+                await c.message.answer('🏪 РЫНОК КАРТОЧЕК\nВыберите действие:',reply_markup=market_keyboard())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('marketcard:'))
+    async def market_card_selected(c:CallbackQuery):
+        try: oid=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Карточка не найдена.',show_alert=True); return
+        async with Session() as s:
+            oc=await s.get(OwnedCard,oid); card=await s.get(Card,oc.card_id) if oc else None
+            if not oc or oc.user_id!=c.from_user.id or oc.slot or oc.locked or not card:
+                await c.answer('Эта карточка больше недоступна.',show_alert=True); return
+            market_steps[c.from_user.id]={'owned_id':oid}
+        await c.message.answer(f'Вы выбрали {card.player_name} · {card.ovr} OVR.\nВведите цену в монетах одним числом. Для отмены /cancelmarket.')
+        await c.answer()
+
+    @dp.message(lambda m: m.from_user.id in market_steps)
+    async def market_price_input(m:Message):
+        try: price=int((m.text or '').strip())
+        except ValueError: await m.answer('Введите цену целым числом или /cancelmarket для отмены.'); return
+        state=market_steps.get(m.from_user.id,{})
+        async with Session() as s:
+            try:
+                await active_user(s,m.from_user)
+                listing=await create_market_listing(s,m.from_user.id,state['owned_id'],price)
+                market_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Карточка выставлена на рынок за {price} 🪙.')
+            except (ValueError,KeyError) as e: await m.answer(str(e))
+
+    @dp.callback_query(F.data.startswith('marketbuy:'))
+    async def market_buy_button(c:CallbackQuery):
+        try: lid=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Лот не найден.',show_alert=True); return
+        async with Session() as s:
+            try:
+                user=await active_user(s,c.from_user); oc=await buy_market_listing(s,user,lid); card=await s.get(Card,oc.card_id)
+                await c.message.answer(f'✅ Куплено: {card.player_name} · {card.ovr} OVR. Карточка добавлена в коллекцию.')
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer('Покупка успешна.')
+
+    @dp.callback_query(F.data.startswith('marketdelist:'))
+    async def market_delist_button(c:CallbackQuery):
+        lid=int(c.data.split(':',1)[1])
+        async with Session() as s:
+            listing=await s.scalar(select(MarketListing).where(MarketListing.id==lid,MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').with_for_update())
+            if not listing: await c.answer('Лот уже недоступен.',show_alert=True); return
+            oc=await s.get(OwnedCard,listing.owned_card_id)
+            if oc: oc.locked=False
+            listing.status='cancelled'; await s.commit()
+        await c.message.answer('Лот снят с рынка.'); await c.answer()
+
+    @dp.message(Command('cancelmarket'))
+    async def market_cancel(m:Message):
+        market_steps.pop(m.from_user.id,None); await m.answer('Выставление карточки отменено.')
 
     @dp.message(Command('buy'))
     async def buy(m):
