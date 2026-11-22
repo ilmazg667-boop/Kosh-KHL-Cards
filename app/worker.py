@@ -1,6 +1,6 @@
 """Persistent match/auction worker. Run separately: python -m app.worker"""
 import asyncio, os, random, logging
-from datetime import timedelta
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, func
 from aiogram import Bot
@@ -161,7 +161,7 @@ async def finish_match(match_id,bot):
                         clan=await s.get(Clan,member.clan_id); clan.points+=pts; clan.rating=max(0,clan.rating+(10 if pts else -2))
             if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
             if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
-            tournament_day=(m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo else (m.created_at.date().isoformat() if m.created_at else now().date().isoformat()))
+            tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
             t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
             if t:
                 for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
@@ -270,7 +270,7 @@ async def close_old_tournaments(session,bot):
     for old in olds:
         # Finish games/searches/challenges created on that date before locking the leaderboard.
         from datetime import datetime, timezone
-        day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW)
+        day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW).astimezone(timezone.utc)
         day_end=day_start+timedelta(days=1)
         unfinished=await session.scalar(select(Match.id).where(Match.created_at>=day_start,Match.created_at<day_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
         if unfinished:
@@ -297,7 +297,7 @@ async def close_old_tournaments(session,bot):
 
 async def expire_challenges(session,bot):
     from .models import Match, User
-    cutoff=now()-timedelta(minutes=30)
+    cutoff=now().astimezone(timezone.utc)-timedelta(minutes=30)
     rows=(await session.scalars(select(Match).where(Match.status=='challenge',Match.created_at<cutoff))).all()
     for m in rows:
         u=await session.get(User,m.home_user_id)
@@ -307,7 +307,7 @@ async def expire_challenges(session,bot):
     if rows: await session.commit()
 
 async def expire_match_searches(session,bot):
-    cutoff=now()-timedelta(minutes=10)
+    cutoff=now().astimezone(timezone.utc)-timedelta(minutes=10)
     rows=(await session.scalars(select(Match).where(Match.status=='searching',Match.created_at<cutoff))).all()
     for match in rows:
         match.status='cancelled'
