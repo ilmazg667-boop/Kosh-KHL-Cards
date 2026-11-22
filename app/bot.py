@@ -141,6 +141,7 @@ async def main():
             lines=['🃏 КОЛЛЕКЦИЯ (последние 60)']
             for oc in cards: lines.append(await owned_card_text(s,oc)+(f' · Слот {oc.slot}' if oc.slot else '')+(' · 🔒' if oc.locked else ''))
             lines.append('\nКарточки #ID можно выставить, обменять или поставить в состав.')
+            await send_section_photo(m,PHOTO_GAME,'🃏 Ваша коллекция карточек.')
             await m.answer('\n'.join(lines))
 
     @dp.message(Command('card'))
@@ -169,6 +170,7 @@ async def main():
                 lines.append(f'\n{name} — {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}\n' + ' · '.join(f'{r}: {p}%' for r,p in d['odds']))
                 kb.button(text=f'{name} · {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}',callback_data=f'pack:{name}')
         kb.adjust(2)
+        await send_section_photo(m,PHOTO_TRAINING,'📦 Выберите пак и посмотрите шансы выпадения.')
         await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('pack:'))
@@ -381,6 +383,7 @@ async def main():
                     avg=await s.scalar(select(func.avg(MarketListing.price)).where(MarketListing.status=='active',MarketListing.owned_card_id.in_(select(OwnedCard.id).where(OwnedCard.card_id==c.id))))
                     seller=await s.get(User,l.seller_id)
                     lines.append(f'\nЛот #{l.id} · {c.player_name} · {c.ovr} OVR · {c.rarity}\nПродавец: {seller.first_name or seller.id if seller else l.seller_id}\nЦена: {l.price} 🪙 · средняя по этому игроку: {int(avg or 0)} 🪙\nРазмещён UTC: {l.created_at:%Y-%m-%d %H:%M}\nКупить: /buy {l.id}')
+            await send_section_photo(m,PHOTO_ARENA,'🏪 Рынок карточек — выбирайте игроков для покупки.')
             await m.answer('\n'.join(lines))
 
     @dp.message(Command('buy'))
@@ -450,6 +453,7 @@ async def main():
             for a in rows:
                 oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                 if card: lines.append(f'\n#{a.id} · {card.player_name} · {card.ovr} OVR\nТекущая ставка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nЗавершение UTC: {a.ends_at:%Y-%m-%d %H:%M}\n/bid {a.id} СУММА')
+            await send_section_photo(m,PHOTO_GOALIE,'🔨 Аукционы карточек — следите за ставками.')
             await m.answer('\n'.join(lines))
 
     @dp.message(Command('bid'))
@@ -479,6 +483,7 @@ async def main():
             lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}', 'Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\nТОП-10:']
             for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
             lines.append('\nНаграда топ-1: карточка 80–90 OVR; чем выше OVR, тем ниже шанс. Сыграйте PvP-матч после регистрации.')
+            await send_section_photo(m,PHOTO_GAME,'⚔️ Ежедневный турнир — набирайте очки и забирайте награду.')
             await m.answer('\n'.join(lines))
 
     @dp.message(Command('clan'))
@@ -615,6 +620,7 @@ async def main():
     async def leaderboard(m):
         async with Session() as s:
             rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.wins)).limit(15))).all()
+            await send_section_photo(m,PHOTO_ARENA,'🏆 Рейтинг сезона — лучшие игроки лиги.')
             await m.answer('🏆 РЕЙТИНГ СЕЗОНА\n'+'\n'.join(f'{i}. {u.first_name or u.id} — {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1)))
 
     @dp.message(Command('season'))
