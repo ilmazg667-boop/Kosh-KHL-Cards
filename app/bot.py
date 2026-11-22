@@ -39,9 +39,10 @@ def keyboard():
     kb.adjust(2)
     return kb.as_markup()
 MOSCOW=ZoneInfo('Europe/Moscow')
-def format_msk(value):
+def format_msk(value, naive_is_utc=True):
     if not value: return '—'
-    if value.tzinfo is None: value=value.replace(tzinfo=timezone.utc)
+    if value.tzinfo is None:
+        value=value.replace(tzinfo=timezone.utc if naive_is_utc else MOSCOW)
     return value.astimezone(MOSCOW).strftime('%d.%m.%Y %H:%M:%S')
 
 def admin(uid): return uid in ADMIN_IDS
@@ -370,7 +371,7 @@ async def main():
             league=league_for_rating(u.rating)
             next_league=next(((name,low) for name,low,high in LEAGUES if low>u.rating),None)
             progress=f'До лиги {next_league[0]}: {next_league[1]-u.rating} рейтинга.' if next_league else 'Вы в высшей лиге.'
-            caption=f'🎮 РЕЖИМЫ МАТЧЕЙ\\nВаша лига: {league}\\nРейтинг: {u.rating}\\n{progress}\\n\\nВыберите режим:'
+            caption='🎮 РЕЖИМЫ МАТЧЕЙ\n'+f'Ваша лига: {league}\nРейтинг: {u.rating}\n{progress}\n\nВыберите режим:'
         await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
 
     @dp.callback_query(F.data=='pvp_start')
@@ -1838,7 +1839,7 @@ async def main():
                   f'{match.home_name} (ID {match.home_user_id}) — {match.away_name} (ID {match.away_user_id})\n'
                   f'Счёт: {match.home_score}:{match.away_score} · голы: {hg}:{ag}\n'
                   f'Броски с учётом голов: {shots("home")+hg}:{shots("away")+ag}\n'
-                  f'Рейтинг: {match.rating_change} · создан: {format_msk(match.created_at)} МСК · завершён: {format_msk(match.finished_at)} МСК')
+                  f'Рейтинг: {match.rating_change} · создан: {format_msk(match.created_at)} МСК · завершён: {format_msk(match.finished_at,naive_is_utc=False)} МСК')
             await m.answer(text)
 
     @dp.message(Command('tradeinfo'))
