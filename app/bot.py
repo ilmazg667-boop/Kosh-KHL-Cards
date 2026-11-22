@@ -110,7 +110,7 @@ async def main():
     async with Session() as s:
         await seed_cards(s); await ensure_season(s); await ensure_daily_tournament(s)
     bot=Bot(BOT_TOKEN); dp=Dispatcher()
-    await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='tournament',description='Ежедневный турнир'),BotCommand(command='clan',description='Кланы'),BotCommand(command='help',description='Помощь')])
+    await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='tournament',description='Ежедневный турнир'),BotCommand(command='clan',description='Кланы'),BotCommand(command='ranked',description='Рейтинговая лига'),BotCommand(command='trades',description='Обмены карточками'),BotCommand(command='promo',description='Активировать промокод'),BotCommand(command='help',description='Помощь')])
 
     @dp.message(Command('start'))
     async def start(m:Message):
