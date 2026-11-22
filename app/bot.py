@@ -1423,7 +1423,7 @@ async def main():
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
             if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
             kb.button(text='⬅️ В админ-меню',callback_data='adm:home'); kb.adjust(2)
-            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
         elif action[1]=='match_history':
             await c.message.answer('🏒 История матчей администратора\nВведите /matchinfo НОМЕР_МАТЧА, например /matchinfo 3.',reply_markup=admin_back_keyboard())
         elif action[1]=='trade_history':
