@@ -1046,6 +1046,7 @@ async def main():
     async def cancel_admin_wizard(m):
         if not admin(m.from_user.id): return
         admin_steps.pop(m.from_user.id,None)
+        admin_auction_steps.pop(m.from_user.id,None)
         await m.answer('❎ Пошаговый ввод отменён.',reply_markup=admin_keyboard())
 
     @dp.message(lambda m: m.from_user.id in admin_steps)
