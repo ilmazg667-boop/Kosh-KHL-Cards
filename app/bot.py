@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -598,7 +598,7 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             t,e,new=await make_tournament_entry(s,m.from_user.id)
             rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
-            lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}', 'Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\nТОП-10:']
+            lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}', 'Очки: любая победа — 2 · поражение в OT/буллитах — 1.','\nТОП-10:']
             for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
             lines.append('\nНаграда топ-1: карточка 80–90 OVR; чем выше OVR, тем ниже шанс. Сыграйте PvP-матч после регистрации.')
             await send_section_photo(m,PHOTO_GAME,'⚔️ Ежедневный турнир — набирайте очки и забирайте награду.')
@@ -1254,15 +1254,24 @@ async def main():
         if not handler:
             await c.answer('Раздел не найден.',show_alert=True); return
         try:
+            def add_player_back(kwargs):
+                markup=kwargs.get('reply_markup')
+                rows=list(markup.inline_keyboard) if isinstance(markup,InlineKeyboardMarkup) else []
+                rows.append([InlineKeyboardButton(text='⬅️ Назад в главное меню',callback_data='player:home')])
+                kwargs['reply_markup']=InlineKeyboardMarkup(inline_keyboard=rows)
+                return kwargs
             async def proxy_answer(*args,**kwargs):
-                return await c.message.answer(*args,**kwargs)
+                return await c.message.answer(*args,**add_player_back(kwargs))
             async def proxy_answer_photo(*args,**kwargs):
-                return await c.message.answer_photo(*args,**kwargs)
+                return await c.message.answer_photo(*args,**add_player_back(kwargs))
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
-            await handler(player_message)
+            if action=='home':
+                await c.message.answer('🏒 ГЛАВНОЕ МЕНЮ\nВыберите раздел:',reply_markup=keyboard())
+            else:
+                await handler(player_message)
             # Do not append the main menu automatically: each section should
             # remain visible until the player explicitly returns.
             await c.answer()
