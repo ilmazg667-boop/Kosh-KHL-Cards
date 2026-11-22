@@ -79,8 +79,14 @@ async def prepare_match(match_id,bot=None):
             else:
                 m.away_name='KHL Bot' if m.mode=='bot' else f'AI · {m.league}'; m.away_power=random.randint(max(65,m.home_power-10),min(100,m.home_power+10))
                 m.away_goalie=random.randint(max(65,m.away_power-4),min(100,m.away_power+4)); m.away_card_ids=[]
-        home_names=[f'{c.player_name} · {c.ovr} OVR' for c in home]; away_names=[f'{c.player_name} · {c.ovr} OVR' for c in away]
-        hs,as_,ot,so,events,hg,ag=simulate(m.home_power,m.away_power,m.home_goalie,m.away_goalie,home_chem,away_chem,home_names,away_names)
+        home_names=[f'{c.player_name} · {c.ovr} OVR' for c in home if c.position!='G']; away_names=[f'{c.player_name} · {c.ovr} OVR' for c in away if c.position!='G']
+        home_goalie_name=next((f'{c.player_name} · {c.ovr} OVR' for c in home if c.position=='G'),'Вратарь команды')
+        away_goalie_name=next((f'{c.player_name} · {c.ovr} OVR' for c in away if c.position=='G'),f'Вратарь {m.away_name or "соперника"}')
+        home_team_name=m.home_name or 'Команда 1'; away_team_name=m.away_name or 'Команда 2'
+        hs,as_,ot,so,events,hg,ag=simulate(
+            m.home_power,m.away_power,m.home_goalie,m.away_goalie,home_chem,away_chem,
+            home_names,away_names,home_goalie_name,away_goalie_name,home_team_name,away_team_name
+        )
         if m.mode=='pve' and hs==as_:
             # Every PvE match has a winner; OT/skill is represented by tie-break goal.
             if random.random()<.5: hs+=1
@@ -173,7 +179,7 @@ def format_result(m,home_user,away_user,for_home=True):
     def goal_lines(goals):
         if not goals: return '—'
         return '\\n'.join(
-            f"• {g.get('minute','?')}' — {g.get('scorer','Неизвестный')} (ассисты: {g.get('assist') or '—'} и {g.get('assist2') or '—'})"
+            f"• {g.get('minute','?')}' — {g.get('scorer','Неизвестный')} ({g.get('team') or 'команда'}) (ассисты: {g.get('assist') or '—'} и {g.get('assist2') or '—'})"
             for g in sorted(goals,key=lambda x:x.get('minute',0))
         )
     title+=f"\\n\\n🥅 Голы вашей команды ({len(own_goals or [])}):\\n{goal_lines(own_goals)}"
@@ -221,15 +227,12 @@ async def process_match(match_id,bot):
                 minute=event.get('minute',next_min)
                 if event.get('type')=='goal':
                     if event.get('side')=='home':
-                        live_home+=1; scoring_team=home_name
+                        live_home+=1
                     else:
-                        live_away+=1; scoring_team=away_name
-                    detail=f" ({scoring_team} забила)"
-                else:
-                    detail=''
+                        live_away+=1
                 messages.append(
-                    f"⏱ {minute}' | 🏒 {home_name} {live_home}:{live_away} {away_name}"
-                    f"{detail}\n{event.get('text','')}"
+                    f"⏱ {minute}'\\n{event.get('text','')}\\n\\n"
+                    f"🏒 {home_name} {live_home}:{live_away} {away_name}"
                 )
         for message in messages:
             for chat_id in chat_ids:
