@@ -1473,10 +1473,9 @@ async def main():
         except ValueError:
             await m.answer('Введите целое число (без букв) или отправьте /canceladmin для отмены.')
 
-    @dp.callback_query(F.data=='promo:enter')
-    async def promo_button(c:CallbackQuery):
-        await c.message.answer('🎟 Для активации промокода отправьте команду:\n/promo ВАШ_КОД')
-        await c.answer()
+    @dp.message(F.text=='🎟 Промокоды')
+    async def promo_section(m:Message):
+        await m.answer('🎟 ПРОМОКОДЫ\nЧтобы активировать код, отправьте команду:\n/promo ВАШ_КОД')
 
     @dp.message(Command('promo'))
     async def redeem_promo(m:Message):
@@ -1775,7 +1774,7 @@ async def main():
             'team':team,'play':play,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
             'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
-            'profile':profile,'balance':balance,'promo':promo_button,'quests':quest,'help':help_cmd
+            'profile':profile,'balance':balance,'promo':promo_section,'quests':quest,'help':help_cmd
         }
         handler=handlers.get(action)
         if not handler and action!='home':
