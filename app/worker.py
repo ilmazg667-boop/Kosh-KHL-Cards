@@ -205,8 +205,8 @@ def format_result(m,home_user,away_user,for_home=True):
     own_shots=stat('shot',side)+own_goals_count
     opp_shots=stat('shot',other)+opp_goals_count
     # Saves are derived from shots faced minus goals conceded, never from random event labels.
-    own_saves=max(0,opp_shots-own_goals_count)
-    opp_saves=max(0,own_shots-opp_goals_count)
+    own_saves=max(0,opp_shots-opp_goals_count)
+    opp_saves=max(0,own_shots-own_goals_count)
     own_pct=(own_saves/opp_shots*100) if opp_shots else 0
     opp_pct=(opp_saves/own_shots*100) if own_shots else 0
     title+=f"\\n\\n🎯 Броски: {own_shots}:{opp_shots} · 🧤 Сейвы вратарей: {own_saves} ({own_pct:.1f}%):{opp_saves} ({opp_pct:.1f}%)"
