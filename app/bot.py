@@ -1,5 +1,6 @@
 import asyncio, csv, os, random, shlex
-from datetime import date
+from datetime import date, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -37,6 +38,12 @@ def keyboard():
     for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
     kb.adjust(2)
     return kb.as_markup()
+MOSCOW=ZoneInfo('Europe/Moscow')
+def format_msk(value):
+    if not value: return '—'
+    if value.tzinfo is None: value=value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MOSCOW).strftime('%d.%m.%Y %H:%M:%S')
+
 def admin(uid): return uid in ADMIN_IDS
 
 async def send_section_photo(m, url, caption, reply_markup=None):
@@ -901,7 +908,7 @@ async def main():
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {a.ends_at:%d.%m %H:%M} UTC')
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {a.ends_at:%d.%m %H:%M} МСК')
                         kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
                 if not rows: lines.append('\nПока нет активных аукционов.')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
@@ -1831,7 +1838,7 @@ async def main():
                   f'{match.home_name} (ID {match.home_user_id}) — {match.away_name} (ID {match.away_user_id})\n'
                   f'Счёт: {match.home_score}:{match.away_score} · голы: {hg}:{ag}\n'
                   f'Броски с учётом голов: {shots("home")+hg}:{shots("away")+ag}\n'
-                  f'Рейтинг: {match.rating_change} · создан: {match.created_at} · завершён: {match.finished_at}')
+                  f'Рейтинг: {match.rating_change} · создан: {format_msk(match.created_at)} МСК · завершён: {format_msk(match.finished_at)} МСК')
             await m.answer(text)
 
     @dp.message(Command('tradeinfo'))
@@ -1852,7 +1859,7 @@ async def main():
             text=(f'🔁 ОБМЕН #{offer.id}\nСтатус: {offer.status}\n'
                   f'Отправитель: {offer.sender_id}\nПолучатель: {offer.receiver_id}\n'
                   f'Отдаёт: {await describe(offer.give_card_ids)}\nПолучает: {await describe(offer.receive_card_ids)}\n'
-                  f'Создан: {offer.created_at}')
+                  f'Создан: {format_msk(offer.created_at)} МСК')
             await m.answer(text)
 
     @dp.message(Command('stats'))
