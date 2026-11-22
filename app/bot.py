@@ -196,7 +196,7 @@ async def main():
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
     async def help_cmd(m):
-        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trade USER_ID MY_CARD_ID THEIR_CARD_ID — предложить обмен\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan leave | /clanbattle\n/bp [premium|claim LEVEL] — Battle Pass\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
+        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan leave | /clanbattle\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
 
     @dp.message(F.text=='🪙 Баланс')
     async def balance(m):
