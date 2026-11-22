@@ -194,9 +194,24 @@ async def process_match(match_id,bot):
             done=m.minute>= (65 if any(e.get('minute')==65 for e in m.events) else 60)
             await s.commit()
             chat_ids=[m.home_user_id]+([m.away_user_id] if m.away_user_id else [])
-            messages=[e['text'] for e in to_send]
-        for msg in messages:
-            for uid in chat_ids: await send(bot,uid,msg)
+            home_name=m.home_name or 'Команда 1'
+            away_name=m.away_name or 'Команда 2'
+            # Calculate the live scoreboard from all events already reached.
+            live_events=available
+            live_home=sum(1 for e in live_events if e.get('type')=='goal' and e.get('side')=='home')
+            live_away=sum(1 for e in live_events if e.get('type')=='goal' and e.get('side')=='away')
+            messages=[]
+            for event in to_send:
+                minute=event.get('minute',next_min)
+                if event.get('type')=='goal':
+                    scoring_team=home_name if event.get('side')=='home' else away_name
+                    detail=f" ({scoring_team} забила)"
+                else:
+                    detail=''
+                messages.append(
+                    f"⏱ {minute}-я минута | 🏒 {home_name} {live_home}:{live_away} {away_name}"
+                    f"{detail}\n{event.get('text','')}"
+                )
         if done: break
         await asyncio.sleep(TICK)
     await finish_match(match_id,bot)
