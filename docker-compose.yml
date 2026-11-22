@@ -1,0 +1,62 @@
+services:
+  db-init:
+    build: .
+    command: ["python", "-m", "app.init_db"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kosh:${POSTGRES_PASSWORD:-change_this_password}@postgres:5432/kosh
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kosh:${POSTGRES_PASSWORD:-change_this_password}@postgres:5432/kosh
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kosh:${POSTGRES_PASSWORD:-change_this_password}@postgres:5432/kosh
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kosh
+      POSTGRES_USER: kosh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kosh -d kosh"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+volumes:
+  pgdata:
+  redisdata:
