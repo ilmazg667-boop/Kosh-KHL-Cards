@@ -883,24 +883,57 @@ async def main():
                 await m.answer(f'✅ Ставка {amount} 🪙 принята. Деньги зарезервированы до завершения аукциона.')
             except ValueError as e: await m.answer(str(e))
 
+    def tournament_keyboard():
+        kb=InlineKeyboardBuilder()
+        kb.button(text='📝 Зарегистрироваться',callback_data='tournament:join')
+        kb.button(text='🏆 Таблица турнира',callback_data='tournament:table')
+        kb.button(text='🎮 Найти PvP-соперника',callback_data='pvp_start')
+        kb.button(text='⬅️ Главное меню',callback_data='player:home')
+        kb.adjust(1); return kb.as_markup()
+
     @dp.message(Command('tournament'))
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
+        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nРегистрируйтесь, играйте PvP и набирайте очки. Победа — 2 очка, поражение в OT/буллитах — 1.',reply_markup=tournament_keyboard())
+
+    @dp.callback_query(F.data.startswith('tournament:'))
+    async def tournament_action(c:CallbackQuery):
+        action=c.data.split(':',1)[1]
         async with Session() as s:
-            try: await active_user(s,m.from_user)
-            except ValueError as e: await m.answer(str(e)); return
-            t,e,new=await make_tournament_entry(s,m.from_user.id)
-            rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
-            lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}', 'Очки: любая победа — 2 · поражение в OT/буллитах — 1.','\nТОП-10:']
-            for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
-            lines.append('\nНаграда топ-1: карточка 80–90 OVR; чем выше OVR, тем ниже шанс. Сыграйте PvP-матч после регистрации.')
-            await send_section_photo(m,PHOTO_GAME,'⚔️ Ежедневный турнир — набирайте очки и забирайте награду.')
-            await m.answer('\n'.join(lines))
+            try: await active_user(s,c.from_user)
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+            if action=='join':
+                t,e,new=await make_tournament_entry(s,c.from_user.id)
+                await c.message.answer(f'✅ Вы зарегистрированы в турнире на {t.tournament_date}. Ваши очки: {e.points}.',reply_markup=tournament_keyboard())
+            elif action=='table':
+                t=await ensure_daily_tournament(s)
+                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
+                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}']
+                for i,row in enumerate(rows,1):
+                    user=await s.get(User,row.user_id)
+                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед')
+                if len(lines)==1: lines.append('Пока нет участников.')
+                lines.append('\nНаграда топ-1: карточка 80–90 OVR.')
+                await c.message.answer('\n'.join(lines),reply_markup=tournament_keyboard())
+        await c.answer()
+
+    clan_steps={}
+    def clan_keyboard(is_member=False):
+        kb=InlineKeyboardBuilder()
+        if is_member:
+            kb.button(text='⚔️ Клановая битва',callback_data='clanmenu:battle')
+            kb.button(text='👥 Пригласить игрока',callback_data='clanmenu:invite')
+            kb.button(text='🚪 Покинуть клан',callback_data='clanmenu:leave')
+        else:
+            kb.button(text='➕ Создать клан',callback_data='clanmenu:create')
+            kb.button(text='🔎 Найти клан и вступить',callback_data='clanmenu:join')
+        kb.button(text='⬅️ Главное меню',callback_data='player:home')
+        kb.adjust(1); return kb.as_markup()
 
     @dp.message(Command('clan'))
     @dp.message(F.text=='🛡 Кланы')
     async def clan(m):
-        parts=m.text.split(maxsplit=2)
+        parts=(m.text or '').split(maxsplit=2)
         async with Session() as s:
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
@@ -942,10 +975,84 @@ async def main():
             mem=await s.scalar(select(ClanMember).where(ClanMember.user_id==m.from_user.id))
             if mem:
                 cl=await s.get(Clan,mem.clan_id); count=await s.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==cl.id))
-                await m.answer(f'🛡 {cl.name}\nРоль: {mem.role}\nУчастников: {count}\nОчки битв: {cl.points}\nРейтинг: {cl.rating}\n/clanbattle — клановая битва')
+                await m.answer(f'🛡 {cl.name}\nРоль: {mem.role}\nУчастников: {count}\nОчки битв: {cl.points}\nРейтинг: {cl.rating}',reply_markup=clan_keyboard(True))
             else:
                 top=(await s.scalars(select(Clan).order_by(desc(Clan.points)).limit(10))).all()
-                await m.answer('Вы не состоите в клане.\nСоздать: /clan create НАЗВАНИЕ\nВступить: /clan join ID\n\nКланы:\n'+'\n'.join(f'#{x.id} {x.name} · {x.points} очк.' for x in top))
+                await m.answer('🛡 КЛАНЫ\nСоздайте свой клан или выберите существующий в списке.',reply_markup=clan_keyboard(False))
+
+    @dp.callback_query(F.data.startswith('clanmenu:'))
+    async def clan_menu_action(c:CallbackQuery):
+        action=c.data.split(':',1)[1]
+        async with Session() as s:
+            try: await active_user(s,c.from_user)
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+            member=await s.scalar(select(ClanMember).where(ClanMember.user_id==c.from_user.id))
+            if action=='create':
+                if member: await c.answer('Вы уже состоите в клане.',show_alert=True); return
+                clan_steps[c.from_user.id]='create'
+                await c.message.answer('Введите название нового клана одним сообщением. Для отмены /cancelclan.')
+            elif action=='join':
+                if member: await c.answer('Вы уже состоите в клане.',show_alert=True); return
+                clans=(await s.scalars(select(Clan).order_by(desc(Clan.points)).limit(20))).all()
+                kb=InlineKeyboardBuilder()
+                for cl in clans: kb.button(text=f'🛡 {cl.name} · {cl.points} очк.',callback_data=f'clanjoin:{cl.id}')
+                kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
+                await c.message.answer('Выберите клан для вступления:',reply_markup=kb.as_markup())
+            elif action=='leave':
+                try: await leave_clan(s,c.from_user.id); await c.message.answer('Вы покинули клан.',reply_markup=clan_keyboard(False))
+                except ValueError as e: await c.answer(str(e),show_alert=True); return
+            elif action=='battle':
+                if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
+                await c.message.answer('⚔️ Запускаем поиск соперника из другого клана.')
+                await c.bot.send_message(c.from_user.id,'Используйте кнопку ниже для поиска кланового матча.',reply_markup=None)
+                await c.message.answer('Клановая битва:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='⚔️ Найти соперника',callback_data='clan_start')],[InlineKeyboardButton(text='⬅️ Назад',callback_data='player:clans')]]))
+            elif action=='invite':
+                if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
+                candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
+                kb=InlineKeyboardBuilder()
+                for user in candidates:
+                    existing=await s.scalar(select(ClanMember.id).where(ClanMember.user_id==user.id))
+                    if not existing: kb.button(text=f'Пригласить · {user.first_name or user.id}',callback_data=f'claninvite:{user.id}')
+                kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
+                await c.message.answer('Выберите игрока для приглашения:',reply_markup=kb.as_markup())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('clanjoin:'))
+    async def clan_join_button(c:CallbackQuery):
+        cid=int(c.data.split(':',1)[1])
+        async with Session() as s:
+            try:
+                await active_user(s,c.from_user); cl=await join_clan(s,c.from_user.id,cid)
+                await c.message.answer(f'✅ Вы вступили в клан «{cl.name}».',reply_markup=clan_keyboard(True))
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('claninvite:'))
+    async def clan_invite_button(c:CallbackQuery):
+        target=int(c.data.split(':',1)[1])
+        async with Session() as s:
+            try:
+                await active_user(s,c.from_user); inv=await create_clan_invite(s,c.from_user.id,target)
+                kb=InlineKeyboardBuilder(); kb.button(text='✅ Принять',callback_data=f'clanyes:{inv.id}'); kb.button(text='❌ Отклонить',callback_data=f'clanno:{inv.id}'); kb.adjust(2)
+                await c.bot.send_message(target,'🛡 Вас приглашают в клан.',reply_markup=kb.as_markup())
+                await c.message.answer('Приглашение отправлено.')
+            except Exception as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
+
+    @dp.message(Command('cancelclan'))
+    async def clan_cancel(m:Message):
+        clan_steps.pop(m.from_user.id,None); await m.answer('Создание клана отменено.')
+
+    @dp.message(lambda m: m.from_user.id in clan_steps)
+    async def clan_create_input(m:Message):
+        name=(m.text or '').strip()
+        if not name or len(name)>32: await m.answer('Название должно содержать от 1 до 32 символов.'); return
+        async with Session() as s:
+            try:
+                cl=await create_clan(s,m.from_user.id,name)
+                clan_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Клан «{cl.name}» создан.',reply_markup=clan_keyboard(True))
+            except ValueError as e: await m.answer(str(e))
 
     @dp.callback_query(F.data.startswith(('clanyes:','clanno:')))
     async def clan_invite_response(c:CallbackQuery):
@@ -1619,7 +1726,7 @@ async def main():
             async def proxy_answer_photo(*args,**kwargs):
                 return await c.message.answer_photo(*args,**add_player_back(kwargs))
             from types import SimpleNamespace
-            menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass'}.get(action,'')
+            menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
