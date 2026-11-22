@@ -646,7 +646,7 @@ async def main():
         if not admin(m.from_user.id):
             await m.answer(f'⛔ Нет доступа. Ваш Telegram ID: {m.from_user.id}. Добавьте его в ADMIN_IDS в Railway Variables.')
             return
-        await m.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\\nВыберите действие. Кнопки запускают пошаговый ввод.',reply_markup=admin_keyboard())
+        await m.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\nВыберите действие. Кнопки запускают пошаговый ввод.',reply_markup=admin_keyboard())
 
     @dp.callback_query(F.data.startswith('adm:'))
     async def admin_menu_callback(c:CallbackQuery):
@@ -663,7 +663,7 @@ async def main():
                 listings=await s.scalar(select(func.count(MarketListing.id)).where(MarketListing.status=='active')) or 0
                 coins=await s.scalar(select(func.coalesce(func.sum(User.coins),0))) or 0
                 gems=await s.scalar(select(func.coalesce(func.sum(User.gems),0))) or 0
-            await c.message.answer(f'📊 СТАТИСТИКА БОТА\\n👥 Игроков: {total}\\n🚫 Заблокировано: {banned}\\n🃏 Шаблонов карточек: {cards}\\n🏒 Всего матчей: {matches}\\n🔥 Активных матчей: {active}\\n🏪 Активных лотов: {listings}\\n🪙 Монет в экономике: {coins}\\n💎 Алмазов в экономике: {gems}',reply_markup=admin_keyboard())
+            await c.message.answer(f'📊 СТАТИСТИКА БОТА\n👥 Игроков: {total}\n🚫 Заблокировано: {banned}\n🃏 Шаблонов карточек: {cards}\n🏒 Всего матчей: {matches}\n🔥 Активных матчей: {active}\n🏪 Активных лотов: {listings}\n🪙 Монет в экономике: {coins}\n💎 Алмазов в экономике: {gems}',reply_markup=admin_keyboard())
         elif action[1]=='players':
             page=int(action[2]) if len(action)>2 else 0
             async with Session() as s:
@@ -671,23 +671,23 @@ async def main():
                 total=await s.scalar(select(func.count(User.id))) or 0
             lines=[f'👥 ИГРОКИ · страница {page+1} · всего {total}']
             for u in rows:
-                lines.append(f'\\n{u.first_name or u.username or "Без имени"} · ID {u.id}\\n🪙 {u.coins} · 💎 {u.gems} · ⭐ {league_for_rating(u.rating)} ({u.rating}) · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
+                lines.append(f'\n{u.first_name or u.username or "Без имени"} · ID {u.id}\n🪙 {u.coins} · 💎 {u.gems} · ⭐ {league_for_rating(u.rating)} ({u.rating}) · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
             kb=InlineKeyboardBuilder()
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
             if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
             kb.button(text='🛡 В меню',callback_data='adm:home'); kb.adjust(2)
-            await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
             prompt={'givecoins':'💰 Введите Telegram ID игрока для изменения баланса монет.','givegems':'💎 Введите Telegram ID игрока для изменения баланса алмазов.','givecard':'🃏 Введите Telegram ID получателя карточки.','ban':'🚫 Введите Telegram ID игрока для блокировки.'}.get(kind,'Неизвестное действие.')
-            await c.message.answer(prompt+'\\nШаг 1 из 2. Отмена: /canceladmin')
+            await c.message.answer(prompt+'\nШаг 1 из 2. Отмена: /canceladmin')
         elif action[1]=='auctions':
-            await c.message.answer('🔨 АУКЦИОНЫ\\n/auction_queue — заявки на выставление.\\n/auction_create ID START STEP HOURS MIN MAX — запустить аукцион.\\n/auction_cancel ID — отменить и вернуть резерв ставок.',reply_markup=admin_keyboard())
+            await c.message.answer('🔨 АУКЦИОНЫ\n/auction_queue — заявки на выставление.\n/auction_create ID START STEP HOURS MIN MAX — запустить аукцион.\n/auction_cancel ID — отменить и вернуть резерв ставок.',reply_markup=admin_keyboard())
         elif action[1]=='cards':
-            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\\n/createcard — создать карточку: name|position|ovr|rarity|country|club|league|image_url|player_key.\\n/editcard ID FIELD VALUE — изменить OVR, редкость, страну или фото.\\n/transfercard ID CLUB LEAGUE SEASON — новая версия при трансфере.\\n/cardactive ID on|off — управление выпадением.\\n/setpack — цена и шансы паков.\\n/importcards и /importchem — CSV.',reply_markup=admin_keyboard())
+            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать карточку: name|position|ovr|rarity|country|club|league|image_url|player_key.\n/editcard ID FIELD VALUE — изменить OVR, редкость, страну или фото.\n/transfercard ID CLUB LEAGUE SEASON — новая версия при трансфере.\n/cardactive ID on|off — управление выпадением.\n/setpack — цена и шансы паков.\n/importcards и /importchem — CSV.',reply_markup=admin_keyboard())
         elif action[1]=='help':
-            await c.message.answer('📖 СПРАВОЧНИК АДМИНА\\n/givecoins USER AMOUNT — начислить/списать монеты.\\n/givegems USER AMOUNT — начислить/списать алмазы.\\n/givecard USER CARD_ID — выдать карточку по ID шаблона.\\n/ban USER_ID и /unban USER_ID — блокировка.\\n/createcard — создать шаблон карточки.\\n/editcard — изменить карточку.\\n/transfercard — создать версию после трансфера.\\n/cardactive — включить/выключить выпадение.\\n/auction_queue, /auction_create, /auction_cancel — аукционы.\\n/setpack — цена и шансы паков.\\n/importcards /importchem — импорт CSV.\\n/bpgrant USER XP — начислить XP Battle Pass.\\n/season_reset — сброс сезонного рейтинга.\\n/stats — статистика бота.',reply_markup=admin_keyboard())
+            await c.message.answer('📖 СПРАВОЧНИК АДМИНА\n/givecoins USER AMOUNT — начислить/списать монеты.\n/givegems USER AMOUNT — начислить/списать алмазы.\n/givecard USER CARD_ID — выдать карточку по ID шаблона.\n/ban USER_ID и /unban USER_ID — блокировка.\n/createcard — создать шаблон карточки.\n/editcard — изменить карточку.\n/transfercard — создать версию после трансфера.\n/cardactive — включить/выключить выпадение.\n/auction_queue, /auction_create, /auction_cancel — аукционы.\n/setpack — цена и шансы паков.\n/importcards /importchem — импорт CSV.\n/bpgrant USER XP — начислить XP Battle Pass.\n/season_reset — сброс сезонного рейтинга.\n/stats — статистика бота.',reply_markup=admin_keyboard())
         elif action[1]=='home':
             await c.message.answer('🛡 Панель администратора',reply_markup=admin_keyboard())
         await c.answer()
