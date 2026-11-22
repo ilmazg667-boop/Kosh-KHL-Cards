@@ -189,8 +189,10 @@ async def create_trade(session,sender_id,receiver_id,give_id,receive_id):
     if sender_id==receiver_id: raise ValueError('Нельзя обмениваться с самим собой.')
     receiver=await session.get(User,receiver_id)
     if not receiver or receiver.is_banned: raise ValueError('Игрок не найден или заблокирован. Он должен хотя бы раз запустить бота.')
-    a=await session.scalar(select(OwnedCard).where(OwnedCard.id==give_id).with_for_update())
-    b=await session.scalar(select(OwnedCard).where(OwnedCard.id==receive_id).with_for_update())
+    # Lock both cards in stable ID order to avoid reciprocal-trade deadlocks.
+    rows=(await session.scalars(select(OwnedCard).where(OwnedCard.id.in_([give_id,receive_id])).order_by(OwnedCard.id).with_for_update())).all()
+    cards={oc.id:oc for oc in rows}
+    a=cards.get(give_id); b=cards.get(receive_id)
     if not a or a.user_id!=sender_id or a.slot or a.locked: raise ValueError('Ваша карточка недоступна для обмена.')
     if not b or b.user_id!=receiver_id or b.slot or b.locked: raise ValueError('Карточка второго игрока недоступна для обмена.')
     a.locked=True; b.locked=True
@@ -200,10 +202,16 @@ async def create_trade(session,sender_id,receiver_id,give_id,receive_id):
 async def resolve_trade(session,offer_id,receiver_id,accept):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='pending' or offer.receiver_id!=receiver_id: raise ValueError('Предложение недоступно.')
-    a=await session.scalar(select(OwnedCard).where(OwnedCard.id==offer.give_card_ids[0]).with_for_update())
-    b=await session.scalar(select(OwnedCard).where(OwnedCard.id==offer.receive_card_ids[0]).with_for_update())
+    ids=sorted(set((offer.give_card_ids or [])+(offer.receive_card_ids or [])))
+    rows=(await session.scalars(select(OwnedCard).where(OwnedCard.id.in_(ids)).order_by(OwnedCard.id).with_for_update())).all()
+    cards={oc.id:oc for oc in rows}
+    a=cards.get(offer.give_card_ids[0]) if offer.give_card_ids else None
+    b=cards.get(offer.receive_card_ids[0]) if offer.receive_card_ids else None
     if not a or not b or a.user_id!=offer.sender_id or b.user_id!=offer.receiver_id or not a.locked or not b.locked or a.slot or b.slot:
-        raise ValueError('Карточки уже недоступны или изменили состояние. Обмен отменён.')
+        for oc in cards.values(): oc.locked=False
+        offer.status='cancelled'
+        await session.commit()
+        raise ValueError('Карточки изменили состояние. Обмен отменён, доступные карточки разблокированы.')
     if accept:
         a.user_id=receiver_id; b.user_id=offer.sender_id
         offer.status='accepted'
