@@ -31,7 +31,7 @@ def keyboard():
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
         ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
         ('🛡 Кланы','clans'),('🎟 Battle Pass','battlepass'),
-        ('👤 Профиль','profile'),('🪙 Баланс','balance'),
+        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('📋 Задания','quests'),
         ('❔ Помощь','help')
     ]
     for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
@@ -1104,11 +1104,47 @@ async def main():
                 except ValueError as e: await m.answer(str(e))
                 return
             level=min(100,bp.xp//100)
-            await m.answer(f'🎟 BATTLE PASS · сезон {bp.season}\nУровень: {level}/100 · XP: {bp.xp}\nFree-награды: /bp claim LEVEL\nPremium-линия: /bp premium ({BATTLEPASS_PREMIUM_PRICE} 💎), награды /bp premium_claim LEVEL\nНа 100 уровне: Семён Кошелев · 99 OVR (карточка должна быть предварительно импортирована администратором).')
+            kb=InlineKeyboardBuilder()
+            if not bp.premium: kb.button(text=f'💎 Активировать Premium · {BATTLEPASS_PREMIUM_PRICE}',callback_data='bp:premium')
+            if level>0: kb.button(text='🎁 Забрать доступные Free-награды',callback_data='bp:claim:free')
+            if level>0 and bp.premium: kb.button(text='💎 Забрать доступные Premium-награды',callback_data='bp:claim:premium')
+            kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
+            await m.answer(f'🎟 BATTLE PASS · сезон {bp.season}\nУровень: {level}/100 · XP: {bp.xp}\nНаграды можно забирать кнопками ниже. На 100 уровне: Семён Кошелев · 99 OVR.',reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('bp:'))
+    async def battlepass_button(c:CallbackQuery):
+        _,action,*rest=c.data.split(':')
+        async with Session() as s:
+            try:
+                u=await active_user(s,c.from_user)
+                if action=='premium':
+                    u=await s.scalar(select(User).where(User.id==u.id).with_for_update())
+                    bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
+                    if not bp: bp=BattlePassProgress(user_id=u.id,season=season_key()); s.add(bp)
+                    if bp.premium: await c.answer('Premium уже активирован.',show_alert=True); return
+                    if u.gems<BATTLEPASS_PREMIUM_PRICE: await c.answer(f'Нужно {BATTLEPASS_PREMIUM_PRICE} 💎.',show_alert=True); return
+                    u.gems-=BATTLEPASS_PREMIUM_PRICE; bp.premium=True; await s.commit()
+                    await c.message.answer('✅ Premium-линия активирована.')
+                elif action=='claim':
+                    premium=rest[0]=='premium'
+                    bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()))
+                    current=min(100,bp.xp//100) if bp else 0
+                    claimed=set(bp.claimed_premium if premium and bp else (bp.claimed_free if bp else []))
+                    count=0; rewards=[]
+                    for level in range(1,current+1):
+                        if level in claimed: continue
+                        try:
+                            reward=await claim_bp_reward(s,u.id,level,premium)
+                            rewards.append(f'{level}: {reward}'); count+=1
+                        except ValueError: continue
+                    await c.message.answer('🎁 Получено наград: '+str(count)+('.\n'+'\n'.join(rewards[:10]) if rewards else '. Новых наград нет.'))
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
 
     @dp.message(Command('quest'))
+    @dp.message(F.text=='📋 Задания')
     async def quest(m):
-        parts=m.text.split()
+        parts=(m.text or '').split()
         async with Session() as s:
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
@@ -1121,12 +1157,24 @@ async def main():
                 ('play3',today,3,'Ежедневное: сыграть 3 матча'),('win1',today,1,'Ежедневное: выиграть 1 матч'),('score5goals',today,5,'Ежедневное: забить 5 голов'),
                 ('play20',week,20,'Еженедельное: сыграть 20 матчей'),('win10',week,10,'Еженедельное: выиграть 10 матчей'),
                 ('play100',season,100,'Сезонное: сыграть 100 матчей'),('win50',season,50,'Сезонное: одержать 50 побед'),('reach_khl',season,1,'Сезонное: достичь КХЛ'),('open50packs',season,50,'Сезонное: открыть 50 паков')]
-            lines=['📋 ЗАДАНИЯ']
+            lines=['📋 ЗАДАНИЯ']; kb=InlineKeyboardBuilder()
             for key,period,need,title in definitions:
                 q=await s.scalar(select(QuestProgress).where(QuestProgress.user_id==m.from_user.id,QuestProgress.quest_key==key,QuestProgress.period_key==period))
-                value=q.progress if q else 0; status='получено' if q and q.claimed else (f'/quest claim {key}' if value>=need else '')
+                value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
                 lines.append(f'{title}: {value}/{need} {status}')
-            await m.answer('\n'.join(lines))
+                if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
+            kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
+            await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('questclaim:'))
+    async def quest_claim_button(c:CallbackQuery):
+        key=c.data.split(':',1)[1]
+        async with Session() as s:
+            try:
+                await active_user(s,c.from_user); reward=await claim_quest(s,c.from_user.id,key)
+                await c.message.answer(f'✅ Получено {reward} 🪙.')
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
 
     @dp.message(Command('daily'))
     @dp.message(F.text=='🎁 Ежедневная награда')
@@ -1709,7 +1757,7 @@ async def main():
             'team':team,'play':play,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
             'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
-            'profile':profile,'balance':balance,'help':help_cmd
+            'profile':profile,'balance':balance,'quests':quest,'help':help_cmd
         }
         handler=handlers.get(action)
         if not handler and action!='home':
@@ -1728,7 +1776,7 @@ async def main():
             async def proxy_answer_photo(*args,**kwargs):
                 return await c.message.answer_photo(*args,**add_player_back(kwargs))
             from types import SimpleNamespace
-            menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир'}.get(action,'')
+            menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
