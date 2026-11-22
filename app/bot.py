@@ -110,7 +110,7 @@ async def main():
     async def menu_navigation(c:CallbackQuery):
         key=c.data.split(':',1)[1]
         if key=='home':
-            await c.message.edit_text('🏒 KOSH KHL CARDS\\n\\nВыберите раздел:',reply_markup=menu_keyboard())
+            await c.message.edit_text('🏒 KOSH KHL CARDS\n\nВыберите раздел:',reply_markup=menu_keyboard())
             await c.answer()
             return
         if key=='play':
@@ -123,10 +123,10 @@ async def main():
                 for name,base in PACKS.items():
                     cfg=await s.get(PackConfig,name)
                     d={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else base
-                    lines.append(f'\\n{name} — {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}\\n'+' · '.join(f'{r}: {p}%' for r,p in d['odds']))
+                    lines.append(f'\n{name} — {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}\n'+' · '.join(f'{r}: {p}%' for r,p in d['odds']))
                     kb.button(text=f'{name} · {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}',callback_data=f'pack:{name}')
             kb.button(text='⬅️ Главное меню',callback_data='menu:home'); kb.adjust(2)
-            await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         elif key=='team':
             async with Session() as s:
                 try: await active_user(s,c.from_user)
@@ -139,8 +139,8 @@ async def main():
                 cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id).order_by(OwnedCard.id.desc()).limit(60))).all()
                 lines=['🃏 КОЛЛЕКЦИЯ (последние 60)']
                 for oc in cards: lines.append(await owned_card_text(s,oc)+(f' · Слот {oc.slot}' if oc.slot else '')+(' · 🔒' if oc.locked else ''))
-                lines.append('\\nКарточки #ID можно выставить, обменять или поставить в состав.')
-                await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())
+                lines.append('\nКарточки #ID можно выставить, обменять или поставить в состав.')
+                await c.message.answer('\n'.join(lines),reply_markup=back_keyboard())
         elif key=='market':
             async with Session() as s:
                 listings=(await s.scalars(select(MarketListing).where(MarketListing.status=='active').order_by(desc(MarketListing.created_at)).limit(15))).all()
@@ -151,21 +151,21 @@ async def main():
                         oc=await s.get(OwnedCard,l.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                         if card:
                             seller=await s.get(User,l.seller_id)
-                            lines.append(f'\\nЛот #{l.id} · {card.player_name} · {card.ovr} OVR · {card.rarity}\\nПродавец: {seller.first_name or seller.id if seller else l.seller_id}\\nЦена: {l.price} 🪙\\nКупить: /buy {l.id}')
-                    await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())
+                            lines.append(f'\nЛот #{l.id} · {card.player_name} · {card.ovr} OVR · {card.rarity}\nПродавец: {seller.first_name or seller.id if seller else l.seller_id}\nЦена: {l.price} 🪙\nКупить: /buy {l.id}')
+                    await c.message.answer('\n'.join(lines),reply_markup=back_keyboard())
         elif key=='auctions':
             async with Session() as s:
                 rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(15))).all()
                 lines=['🔨 АКТИВНЫЕ АУКЦИОНЫ']
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
-                    if card: lines.append(f'\\n#{a.id} · {card.player_name} · {card.ovr} OVR\\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\\n/bid {a.id} СУММА')
+                    if card: lines.append(f'\n#{a.id} · {card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\n/bid {a.id} СУММА')
                 if not rows: lines.append('Активных аукционов нет. Передать карточку: /auction_submit ID')
-                await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())
+                await c.message.answer('\n'.join(lines),reply_markup=back_keyboard())
         elif key=='rating':
             async with Session() as s:
                 rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.wins)).limit(15))).all()
-                await c.message.answer('🏆 РЕЙТИНГ СЕЗОНА\\n'+'\\n'.join(f'{i}. {u.first_name or u.id} — {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1)),reply_markup=back_keyboard())
+                await c.message.answer('🏆 РЕЙТИНГ СЕЗОНА\n'+'\n'.join(f'{i}. {u.first_name or u.id} — {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1)),reply_markup=back_keyboard())
         elif key=='daily':
             async with Session() as s:
                 try: u=await active_user(s,c.from_user)
@@ -177,20 +177,19 @@ async def main():
                 try: await active_user(s,c.from_user)
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
                 t,e,new=await make_tournament_entry(s,c.from_user.id)
-                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
-                lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}','Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\\nТОП-10:']
+                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()                lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}','Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\nТОП-10:']
                 for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
-                await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())        elif key=='clans':
+                await c.message.answer('\n'.join(lines),reply_markup=back_keyboard())        elif key=='clans':
             async with Session() as s:
                 try: await active_user(s,c.from_user)
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
                 mem=await s.scalar(select(ClanMember).where(ClanMember.user_id==c.from_user.id))
                 if mem:
                     cl=await s.get(Clan,mem.clan_id); count=await s.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==cl.id))
-                    msg=f'🛡 {cl.name}\\nРоль: {mem.role}\\nУчастников: {count}\\nОчки битв: {cl.points}\\nРейтинг: {cl.rating}\\n/clanbattle'
+                    msg=f'🛡 {cl.name}\nРоль: {mem.role}\nУчастников: {count}\nОчки битв: {cl.points}\nРейтинг: {cl.rating}\n/clanbattle'
                 else:
                     top=(await s.scalars(select(Clan).order_by(desc(Clan.points)).limit(10))).all()
-                    msg='Вы не состоите в клане.\\nСоздать: /clan create НАЗВАНИЕ\\nВступить: /clan join ID\\n\\nКланы:\\n'+'\\n'.join(f'#{x.id} {x.name} · {x.points} очк.' for x in top)
+                    msg='Вы не состоите в клане.\nСоздать: /clan create НАЗВАНИЕ\nВступить: /clan join ID\n\nКланы:\n'+'\n'.join(f'#{x.id} {x.name} · {x.points} очк.' for x in top)
                 await c.message.answer(msg,reply_markup=back_keyboard())
         elif key=='bp':
             async with Session() as s:
@@ -200,7 +199,7 @@ async def main():
                 if not bp:
                     bp=BattlePassProgress(user_id=u.id,season=season_key()); s.add(bp); await s.commit()
                 level=min(100,bp.xp//100)
-                await c.message.answer(f'🎟 BATTLE PASS · сезон {bp.season}\\nУровень: {level}/100 · XP: {bp.xp}\\nFree-награды: /bp claim LEVEL\\nPremium-линия: /bp premium ({BATTLEPASS_PREMIUM_PRICE} 💎), награды /bp premium_claim LEVEL',reply_markup=back_keyboard())
+                await c.message.answer(f'🎟 BATTLE PASS · сезон {bp.season}\nУровень: {level}/100 · XP: {bp.xp}\nFree-награды: /bp claim LEVEL\nPremium-линия: /bp premium ({BATTLEPASS_PREMIUM_PRICE} 💎), награды /bp premium_claim LEVEL',reply_markup=back_keyboard())
         elif key=='profile':
             async with Session() as s:
                 try: u=await active_user(s,c.from_user)
@@ -210,7 +209,7 @@ async def main():
             async with Session() as s:
                 try: u=await active_user(s,c.from_user)
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
-                await c.message.answer(f'🪙 Монеты: {u.coins}\\n💎 Алмазы: {u.gems}',reply_markup=back_keyboard())
+                await c.message.answer(f'🪙 Монеты: {u.coins}\n💎 Алмазы: {u.gems}',reply_markup=back_keyboard())
         elif key=='help':
             await c.message.answer('Команды: /equip, /pve, /pvp, /ranked, /market, /buy, /sell, /trade, /auctions, /tournament, /clan, /bp, /quest, /match.',reply_markup=back_keyboard())
         await c.answer()
@@ -357,8 +356,7 @@ async def main():
     async def challenge(m):
         try:
             parts=m.text.split(); target=int(parts[1]); bet=int(parts[2]) if len(parts)>2 else 0
-            if bet<0 or bet>1_000_000: raise ValueError()
-        except: await m.answer('Формат: /challenge USER_ID [ставка_в_монетах]'); return
+            if bet<0 or bet>1_000_000: raise ValueError()        except: await m.answer('Формат: /challenge USER_ID [ставка_в_монетах]'); return
         async with Session() as s:            try:
                 u=await active_user(s,m.from_user); target_user=await s.get(User,target)
                 if not target_user or target_user.is_banned: raise ValueError('Игрок не найден или заблокирован.')
@@ -537,8 +535,7 @@ async def main():
             try:
                 await active_user(s,c.from_user)
                 offer=await resolve_trade(s,oid,c.from_user.id,accept)
-                await c.message.answer('✅ Обмен проведён.' if accept else 'Обмен отклонён.')
-                try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')                except Exception: pass
+                await c.message.answer('✅ Обмен проведён.' if accept else 'Обмен отклонён.')                try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')                except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -757,8 +754,7 @@ async def main():
     async def givegems(m):
         if not admin(m.from_user.id): return
         try: _,uid,amount=m.text.split(); uid=int(uid); amount=int(amount)
-        except: await m.answer('Использование: /givegems USER_ID AMOUNT'); return        async with Session() as s:
-            u=await s.get(User,uid)
+        except: await m.answer('Использование: /givegems USER_ID AMOUNT'); return        async with Session() as s:            u=await s.get(User,uid)
             if not u or amount==0: await m.answer('Игрок не найден или сумма равна нулю.'); return
             if u.gems+amount<0: await m.answer('Операция приведёт к отрицательному балансу.'); return
             u.gems+=amount; await audit(s,m.from_user.id,'givegems',uid,str(amount)); await s.commit()
