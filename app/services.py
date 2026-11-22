@@ -375,10 +375,11 @@ async def _increment_quest(session,user_id,key,period,amount=1,cap=None):
     return q
 
 async def progress_after_match(session,user_id,won,goals=0,rating=0):
-    today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; season=season_key()
+    today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
     for key,period,amount,cap in [
         ('play3',today,1,3),('win1',today,1 if won else 0,1),('score5goals',today,goals,5),
         ('play20',week,1,20),('win10',week,1 if won else 0,10),
+        ('play60month',month,1,60),('win20month',month,1 if won else 0,20),
         ('play100',season,1,100),('win50',season,1 if won else 0,50),
         ('reach_khl',season,1 if rating>=3001 else 0,1)]:
         if amount: await _increment_quest(session,user_id,key,period,amount,cap)
@@ -390,9 +391,10 @@ async def progress_pack_quest(session,user_id):
     await _increment_quest(session,user_id,'open50packs',season_key(),1,50)
 
 async def claim_quest(session,user_id,key):
-    today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; season=season_key()
+    today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
     target={'play3':(today,3,300,0),'win1':(today,1,500,0),'score5goals':(today,5,500,1),
         'play20':(week,20,1500,2),'win10':(week,10,2000,3),
+        'play60month':(month,60,3500,4),'win20month':(month,20,4500,5),
         'play100':(season,100,5000,5),'win50':(season,50,7000,8),'reach_khl':(season,1,2500,3),'open50packs':(season,50,5000,5)}
     if key not in target: raise ValueError('Задание не найдено.')
     period,need,reward_coins,reward_gems=target[key]
@@ -415,20 +417,31 @@ async def claim_bp_reward(session,user_id,level,premium=False):
     claimed=list(bp.claimed_premium if premium else bp.claimed_free)
     if level in claimed: raise ValueError('Награда уже получена.')
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
+    reward_text=''
     if level==100 and not premium:
         card=await session.scalar(select(Card).where(Card.player_name=='Семён Кошелев',Card.ovr==99,Card.source!='demo'))
         if not card:
             raise ValueError('Карточка Семёна Кошелева 99 OVR ещё не загружена. Администратору нужно импортировать проверенную карточку до выдачи награды.')
         session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
+        reward_text='Карточка Семён Кошелев · 99 OVR'
+    elif (premium and level%5==0) or (not premium and level%10==0):
+        pack_name='Премиум' if premium else 'Обычный'
+        odds=PACKS[pack_name]['odds']; rarity=rarity_pick(odds)
+        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
+        if not cards:
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
+        if not cards: raise ValueError(f'Награда-пак «{pack_name}» пока недоступна: нет карточек редкости {rarity}.')
+        card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
+        reward_text=f'🎴 Пак «{pack_name}»: {card.player_name} · {card.ovr} OVR · {card.rarity}'
     elif premium:
-        u.gems+=1+level//10
+        gems=2+level//10; u.gems+=gems; reward_text=f'{gems} 💎'
     else:
-        u.coins+=250+level*25
+        coins=250+level*25; u.coins+=coins; reward_text=f'{coins} 🪙'
     claimed.append(level)
     if premium: bp.claimed_premium=claimed
     else: bp.claimed_free=claimed
     await session.commit()
-    return 'Карточка Семён Кошелев · 99 OVR' if level==100 else ('Алмазы' if premium else 'Монеты')
+    return reward_text
 
 async def import_cards(session,path):
     cards=read_csv_cards(path)
