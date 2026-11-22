@@ -13,11 +13,25 @@ from .services import now, ensure_season, ensure_daily_tournament, progress_afte
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
 logger=logging.getLogger('kosh.match_worker')
 MOSCOW=ZoneInfo('Europe/Moscow')
-MATCH_START_PHOTOS=['https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg','https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg','https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg']
-MATCH_END_PHOTOS=['https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg','https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg','https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg']
+MATCH_START_PHOTOS=[
+    'https://images.pexels.com/photos/19330475/pexels-photo-19330475.jpeg',
+    'https://images.pexels.com/photos/35643108/pexels-photo-35643108.jpeg',
+    'https://images.pexels.com/photos/14923986/pexels-photo-14923986.jpeg',
+    'https://images.pexels.com/photos/6468739/pexels-photo-6468739.jpeg',
+    'https://images.pexels.com/photos/20584516/pexels-photo-20584516.jpeg',
+    'https://images.pexels.com/photos/40553766/pexels-photo-40553766.jpeg',
+]
+MATCH_END_PHOTOS=[
+    'https://images.pexels.com/photos/40553767/pexels-photo-40553767.jpeg',
+    'https://images.pexels.com/photos/34383782/pexels-photo-34383782.jpeg',
+    'https://images.pexels.com/photos/40553770/pexels-photo-40553770.jpeg',
+    'https://images.pexels.com/photos/6469030/pexels-photo-6469030.jpeg',
+    'https://images.pexels.com/photos/6469031/pexels-photo-6469031.jpeg',
+    'https://images.pexels.com/photos/40553765/pexels-photo-40553765.jpeg',
+]
 
-TICK=float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))
-if TICK<=0: TICK=1.5
+# A regulation match lasts 60 simulation minutes; cap misconfigured Railway values.
+TICK=min(5.0,max(0.2,float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))))
 
 def goalie(cards): return next((c.ovr for c in cards if c.position=='G'),70)
 
