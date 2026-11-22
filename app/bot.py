@@ -14,6 +14,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, team_power, league_for_rating
+from .worker import run_worker
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, submit_auction_card, place_bid, make_tournament_entry,
@@ -1278,4 +1279,23 @@ async def main():
         except Exception:
             await c.answer('Не удалось открыть раздел. Попробуйте ещё раз.',show_alert=True)
 
-    await dp.start_polling(bot)
+    worker_task=None
+    if os.getenv('RUN_MATCH_WORKER','1').strip().lower() not in ('0','false','no','off'):
+        async def embedded_match_worker():
+            while True:
+                try:
+                    await run_worker()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    import logging
+                    logging.exception('Embedded match worker stopped; restarting in 5 seconds')
+                    await asyncio.sleep(5)
+        worker_task=asyncio.create_task(embedded_match_worker(),name='embedded-match-worker')
+    try:
+        await dp.start_polling(bot)
+    finally:
+        if worker_task:
+            worker_task.cancel()
+            await asyncio.gather(worker_task,return_exceptions=True)
+        await bot.session.close()
