@@ -1263,10 +1263,8 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             await handler(player_message)
-            # The play screen already has its own PvP/clan buttons; don't
-            # immediately append a second main-menu message over that flow.
-            if action != 'play':
-                await c.message.answer('🏠 Главное меню',reply_markup=keyboard())
+            # Do not append the main menu automatically: each section should
+            # remain visible until the player explicitly returns.
             await c.answer()
         except Exception:
             await c.answer('Не удалось открыть раздел. Попробуйте ещё раз.',show_alert=True)
