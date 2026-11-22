@@ -236,3 +236,24 @@ class EconomyLedger(Base):
     reason: Mapped[str] = mapped_column(String(100))
     reference_id: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PromoCode(Base):
+    __tablename__ = 'promo_codes'
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    reward_coins: Mapped[int] = mapped_column(Integer, default=0)
+    reward_gems: Mapped[int] = mapped_column(Integer, default=0)
+    max_uses: Mapped[int] = mapped_column(Integer, default=0)  # 0 = unlimited
+    uses_count: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class PromoRedemption(Base):
+    __tablename__ = 'promo_redemptions'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    promo_code: Mapped[str] = mapped_column(ForeignKey('promo_codes.code'), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    coins_awarded: Mapped[int] = mapped_column(Integer, default=0)
+    gems_awarded: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint('promo_code', 'user_id'),)
