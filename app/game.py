@@ -71,34 +71,29 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             (home_goals if side=='home' else away_goals).append(goal)
             assist_text=f"; ассисты: {assist} и {assist2}" if assist2 else f"; ассист: {assist}"
             events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! {scorer} ({team_name}){assist_text}"})
-    action_templates=[
-        ('attack','🏒 Команда выходит из зоны и начинает атаку.'),
-        ('danger','🔥 Опасный момент у ворот!'),
-        ('shot','🎯 Бросок по воротам!'),
-    ]
+    # Hockey teams typically produce dozens of shots, not just a handful.
+    # Every non-goal shot is counted as a goalie save in the final box score.
+    for side in ('home','away'):
+        team_name=home_team_name if side=='home' else away_team_name
+        goalie_name=away_goalie_name if side=='home' else home_goalie_name
+        for _ in range(random.randint(27,36)):
+            minute=random.randint(1,60)
+            events.append({'minute':minute,'type':'shot','side':side,
+                'text':f"🎯 Бросок команды {team_name}! 🧤 {goalie_name} отражает шайбу."})
     for _ in range(random.randint(8,14)):
         minute=random.randint(1,60)
         side=random.choice(['home','away'])
         team_name=home_team_name if side=='home' else away_team_name
-        kind,text=random.choice(action_templates)
+        kind=random.choice(['attack','danger','penalty','powerplay'])
         if kind=='attack':
             text=f"🏒 {team_name} выходит из зоны и начинает атаку."
         elif kind=='danger':
             text=f"🔥 Опасный момент у ворот команды {team_name}!"
-        elif kind=='shot':
-            text=f"🎯 Бросок команды {team_name} по воротам!"
-        roll=random.random()
-        if roll<0.22:
-            goalie_name=home_goalie_name if side=='home' else away_goalie_name
-            kind='save'
-            text=f"🧤 {goalie_name} ({team_name}) спасает после броска!"
-        elif roll<0.40:
+        elif kind=='penalty':
             names=home_names if side=='home' else away_names
             penalized=random.choice(names) if names else 'Игрок команды'
-            kind='penalty'
             text=f"⚠️ {penalized} ({team_name}) удалён на 2 минуты."
-        elif roll<0.52:
-            kind='powerplay'
+        else:
             text=f"🔵 Большинство у команды {team_name}."
         events.append({'minute':minute,'type':kind,'side':side,'text':text})
     events.sort(key=lambda e:e['minute'])
