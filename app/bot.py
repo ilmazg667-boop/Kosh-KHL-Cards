@@ -891,6 +891,7 @@ async def main():
         await m.answer(f'Ваш Telegram ID: {m.from_user.id}')
 
     admin_steps={}
+    admin_auction_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
         for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
@@ -957,11 +958,26 @@ async def main():
         elif action[1]=='auction_queue':
             async with Session() as s:
                 rows=(await s.scalars(select(Auction).where(Auction.status=='submitted').order_by(Auction.created_at))).all()
-                lines=['📋 ЗАЯВКИ НА АУКЦИОН']
+                lines=['📋 ЗАЯВКИ НА АУКЦИОН']; kb=InlineKeyboardBuilder()
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
-                    if card: lines.append(f'\nЗаявка #{a.id} · игрок {a.owner_id} · {card.player_name} · рейтинг {card.ovr}\nДля запуска: /auction_create {a.id} НАЧАЛЬНАЯ_ЦЕНА ШАГ СРОК_ЧАСЫ МИН_ЦЕНА МАКС_СТАВКА')
-            await c.message.answer('\n'.join(lines) if len(lines)>1 else 'Заявок пока нет.',reply_markup=admin_back_keyboard())
+                    if card:
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR · заявка от игрока')
+                        kb.button(text=f'▶️ Запустить · {card.player_name}',callback_data=f'adm:auction_start:{a.id}')
+                if len(lines)==1: lines.append('\nНовых заявок нет.')
+                kb.button(text='⬅️ В админ-меню',callback_data='adm:home'); kb.adjust(1)
+            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+        elif action[1]=='auction_start':
+            if len(action)<3:
+                await c.answer('Заявка не выбрана.',show_alert=True); return
+            aid=int(action[2])
+            async with Session() as s:
+                a=await s.get(Auction,aid); oc=await s.get(OwnedCard,a.owned_card_id) if a else None
+                card=await s.get(Card,oc.card_id) if oc else None
+                if not a or a.status!='submitted' or not card:
+                    await c.answer('Заявка уже недоступна.',show_alert=True); return
+            admin_auction_steps[c.from_user.id]={'auction_id':aid,'step':'start'}
+            await c.message.answer(f'Запускаем аукцион: {card.player_name} · {card.ovr} OVR.\nШаг 1 из 5. Введите начальную цену в монетах.')
         elif action[1]=='auction_cancel':
             await c.message.answer('Чтобы отменить аукцион, укажите его номер командой /auction_cancel НОМЕР. Кнопочное управление добавим следующим этапом.',reply_markup=admin_back_keyboard())
         elif action[1]=='cards':
@@ -1299,6 +1315,39 @@ async def main():
             users=await s.scalar(select(func.count(User.id))); cards=await s.scalar(select(func.count(Card.id)))
             matches=await s.scalar(select(func.count(Match.id))); listings=await s.scalar(select(func.count(MarketListing.id)).where(MarketListing.status=='active'))
             await m.answer(f'📊 Статистика\nИгроки: {users}\nШаблоны карточек: {cards}\nМатчи: {matches}\nАктивные лоты: {listings}')
+
+    @dp.message(lambda m: m.from_user.id in admin_auction_steps)
+    async def admin_auction_wizard(m:Message):
+        if not admin(m.from_user.id): admin_auction_steps.pop(m.from_user.id,None); return
+        state=admin_auction_steps.get(m.from_user.id)
+        prompts={'step':'Шаг 2 из 5. Введите шаг повышения ставки.','hours':'Шаг 3 из 5. На сколько часов открыть аукцион?','minprice':'Шаг 4 из 5. Введите минимальную цену продажи.','maxbid':'Шаг 5 из 5. Введите максимальную ставку (лимит).'}
+        try: value=int((m.text or '').strip())
+        except ValueError: await m.answer('Введите целое число. Для отмены нажмите /canceladmin.'); return
+        if value<=0: await m.answer('Значение должно быть больше нуля. Повторите ввод.'); return
+        if state['step']=='start':
+            state['start']=value; state['step']='step'; await m.answer(prompts['step'])
+        elif state['step']=='step':
+            state['bid_step']=value; state['step']='hours'; await m.answer(prompts['hours'])
+        elif state['step']=='hours':
+            if value>720: await m.answer('Срок не может превышать 720 часов.'); return
+            state['hours']=value; state['step']='minprice'; await m.answer(prompts['minprice'])
+        elif state['step']=='minprice':
+            state['min_price']=value; state['step']='maxbid'; await m.answer(prompts['maxbid'])
+        elif state['step']=='maxbid':
+            if value<state['start'] or value<state['min_price']:
+                await m.answer('Максимальная ставка не может быть ниже начальной или минимальной цены. Введите ещё раз.'); return
+            from datetime import timedelta
+            async with Session() as s:
+                a=await s.scalar(select(Auction).where(Auction.id==state['auction_id'],Auction.status=='submitted').with_for_update())
+                if not a: admin_auction_steps.pop(m.from_user.id,None); await m.answer('Заявка уже обработана.'); return
+                a.start_price=state['start']; a.highest_bid=0; a.bid_step=state['bid_step']
+                a.min_price=state['min_price']; a.max_bid=value
+                a.ends_at=now()+timedelta(hours=state['hours']); a.status='active'
+                await audit(s,m.from_user.id,'auction_create',a.id); owner_id=a.owner_id; await s.commit()
+            admin_auction_steps.pop(m.from_user.id,None)
+            try: await m.bot.send_message(owner_id,'🔨 Ваша карточка одобрена и выставлена на аукцион!')
+            except Exception: pass
+            await m.answer('✅ Аукцион запущен. Все параметры сохранены.',reply_markup=admin_back_keyboard())
 
     @dp.message(Command('auction_queue'))
     async def auction_queue(m):
