@@ -647,7 +647,7 @@ async def main():
         await c.message.answer(f'Вы выбрали {card.player_name} · {card.ovr} OVR.\nВведите цену в монетах одним числом. Для отмены /cancelmarket.')
         await c.answer()
 
-    @dp.message(lambda m: m.from_user.id in market_steps)
+    @dp.message(lambda m: m.from_user.id in market_steps and not (m.text or '').startswith('/'))
     async def market_price_input(m:Message):
         try: price=int((m.text or '').strip())
         except ValueError: await m.answer('Введите цену целым числом или /cancelmarket для отмены.'); return
@@ -833,7 +833,7 @@ async def main():
         await c.message.answer(f'Шаг 1 из 1. Введите ставку для {card.player_name if card else "карточки"} (минимум {minimum} 🪙).')
         await c.answer()
 
-    @dp.message(lambda m: m.from_user.id in auction_steps and auction_steps[m.from_user.id].get('step')=='bid')
+    @dp.message(lambda m: m.from_user.id in auction_steps and auction_steps[m.from_user.id].get('step')=='bid' and not (m.text or '').startswith('/'))
     async def auction_bid_amount(m:Message):
         state=auction_steps.get(m.from_user.id,{})
         try: amount=int((m.text or '').strip())
@@ -1043,7 +1043,7 @@ async def main():
     async def clan_cancel(m:Message):
         clan_steps.pop(m.from_user.id,None); await m.answer('Создание клана отменено.')
 
-    @dp.message(lambda m: m.from_user.id in clan_steps)
+    @dp.message(lambda m: m.from_user.id in clan_steps and not (m.text or '').startswith('/'))
     async def clan_create_input(m:Message):
         name=(m.text or '').strip()
         if not name or len(name)>32: await m.answer('Название должно содержать от 1 до 32 символов.'); return
