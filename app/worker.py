@@ -231,7 +231,7 @@ async def process_match(match_id,bot):
                     else:
                         live_away+=1
                 messages.append(
-                    f"⏱ {minute}'\\n{event.get('text','')}\\n\\n"
+                    f"⏱ {minute}'\n{event.get('text','')}\n\n"
                     f"🏒 {home_name} {live_home}:{live_away} {away_name}"
                 )
         for message in messages:
