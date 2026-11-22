@@ -645,7 +645,7 @@ async def main():
                         kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
                 if not count: lines.append('\nПока нет активных лотов.')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
-                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
             elif action=='mine':
                 listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at)))).all()
                 kb=InlineKeyboardBuilder(); lines=['📦 МОИ ЛОТЫ']
@@ -1328,7 +1328,7 @@ async def main():
     admin_auction_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
-        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('🏒 История матчей','adm:match_history'),('🔁 История обменов','adm:trade_history'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
         return kb.as_markup()
@@ -1370,14 +1370,24 @@ async def main():
             for u in rows:
                 async with Session() as team_session:
                     avg_team=await team_session.scalar(select(func.avg(Card.ovr)).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==u.id,OwnedCard.slot!=''))
+                    last=await team_session.scalar(select(Match).where(or_(Match.home_user_id==u.id,Match.away_user_id==u.id),Match.status=='completed').order_by(Match.id.desc()).limit(1))
                 avg_text=f'{float(avg_team):.1f} OVR' if avg_team is not None else 'состав не собран'
                 display_name=u.first_name or (f'@{u.username}' if u.username else 'Без имени')
-                lines.append(f'\n👤 {display_name}\n🆔 ID: {u.id}\n⭐ Рейтинг: {u.rating} · {league_for_rating(u.rating)}\n🏒 Средний уровень команды: {avg_text}'+(' · 🚫 Заблокирован' if u.is_banned else ''))
+                if last:
+                    own=last.home_score if last.home_user_id==u.id else last.away_score
+                    opp=last.away_score if last.home_user_id==u.id else last.home_score
+                    last_text=f'#{last.id} · {own}:{opp}'
+                else: last_text='ещё не играл'
+                lines.append(f'\n👤 {display_name}\n🆔 ID: <code>{u.id}</code>\n⭐ {u.rating} · {league_for_rating(u.rating)}\n🏒 Состав: {avg_text}\nПоследний матч: {last_text}'+(' · 🚫 Бан' if u.is_banned else ''))
             kb=InlineKeyboardBuilder()
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
             if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
             kb.button(text='⬅️ В админ-меню',callback_data='adm:home'); kb.adjust(2)
             await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+        elif action[1]=='match_history':
+            await c.message.answer('🏒 История матчей администратора\nВведите /matchinfo НОМЕР_МАТЧА, например /matchinfo 3.',reply_markup=admin_back_keyboard())
+        elif action[1]=='trade_history':
+            await c.message.answer('🔁 История обменов администратора\nВведите /tradeinfo НОМЕР_ОБМЕНА, например /tradeinfo 3.',reply_markup=admin_back_keyboard())
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
@@ -1746,6 +1756,44 @@ async def main():
             if not u: await m.answer('Игрок не найден.'); return
             u.is_banned=False; await audit(s,m.from_user.id,'unban',uid); await s.commit()
         await m.answer('Игрок разблокирован.')
+
+    @dp.message(Command('matchinfo'))
+    async def admin_match_info(m:Message):
+        if not admin(m.from_user.id): return
+        try: mid=int(m.text.split()[1])
+        except: await m.answer('Формат: /matchinfo НОМЕР_МАТЧА'); return
+        async with Session() as s:
+            match=await s.get(Match,mid)
+            if not match: await m.answer('Матч с таким номером не найден.'); return
+            def shots(side): return sum(1 for e in (match.events or []) if e.get('type')=='shot' and e.get('side')==side)
+            hg=len(match.home_goals or []); ag=len(match.away_goals or [])
+            text=(f'🏒 МАТЧ #{match.id}\nРежим: {match.mode} · статус: {match.status}\n'
+                  f'{match.home_name} (ID {match.home_user_id}) — {match.away_name} (ID {match.away_user_id})\n'
+                  f'Счёт: {match.home_score}:{match.away_score} · голы: {hg}:{ag}\n'
+                  f'Броски с учётом голов: {shots("home")+hg}:{shots("away")+ag}\n'
+                  f'Рейтинг: {match.rating_change} · создан: {match.created_at} · завершён: {match.finished_at}')
+            await m.answer(text)
+
+    @dp.message(Command('tradeinfo'))
+    async def admin_trade_info(m:Message):
+        if not admin(m.from_user.id): return
+        try: oid=int(m.text.split()[1])
+        except: await m.answer('Формат: /tradeinfo НОМЕР_ОБМЕНА'); return
+        async with Session() as s:
+            offer=await s.get(TradeOffer,oid)
+            if not offer: await m.answer('Обмен с таким номером не найден.'); return
+            async def describe(ids):
+                result=[]
+                for owned_id in ids:
+                    oc=await s.get(OwnedCard,owned_id)
+                    card=await s.get(Card,oc.card_id) if oc else None
+                    result.append(f'{card.player_name} · {card.ovr} OVR · владелец {oc.user_id}' if card and oc else f'Карточка #{owned_id}: отсутствует')
+                return '; '.join(result) or '—'
+            text=(f'🔁 ОБМЕН #{offer.id}\nСтатус: {offer.status}\n'
+                  f'Отправитель: {offer.sender_id}\nПолучатель: {offer.receiver_id}\n'
+                  f'Отдаёт: {await describe(offer.give_card_ids)}\nПолучает: {await describe(offer.receive_card_ids)}\n'
+                  f'Создан: {offer.created_at}')
+            await m.answer(text)
 
     @dp.message(Command('stats'))
     async def stats(m):
