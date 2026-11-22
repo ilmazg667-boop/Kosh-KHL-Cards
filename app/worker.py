@@ -233,6 +233,17 @@ async def expire_match_searches(session,bot):
 
 async def matchmaking():
     async with Session() as s:
+        # After 30 seconds without a human opponent, turn the queue entry into a bot match.
+        cutoff=now()-timedelta(seconds=30)
+        expired=(await s.scalars(select(Match).where(Match.status=='searching',Match.created_at<=cutoff))).all()
+        for match in expired:
+            match.mode='bot'
+            match.away_user_id=0
+            match.away_name='KHL Bot'
+            match.away_power=max(60,min(100,match.home_power+random.randint(-5,5)))
+            match.away_goalie=max(60,min(100,match.away_power+random.randint(-3,3)))
+            match.status='queued'
+            await send(None,match.home_user_id,f'🤖 Соперник не найден за 30 секунд. Матч #{match.id} начинается против бота!')
         waiting=(await s.scalars(select(Match).where(Match.status=='searching').order_by(Match.created_at))).all()
         paired=set()
         for first in waiting:
