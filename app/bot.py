@@ -1259,7 +1259,8 @@ async def main():
             async def proxy_answer_photo(*args,**kwargs):
                 return await c.message.answer_photo(*args,**kwargs)
             from types import SimpleNamespace
-            player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,
+            menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass'}.get(action,'')
+            player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             await handler(player_message)
             await c.message.answer('🏠 Главное меню',reply_markup=keyboard())
