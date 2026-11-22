@@ -53,6 +53,7 @@ def pve_keyboard():
     kb.button(text='⚔️ Обычный PvP',callback_data='pvp_start')
     kb.button(text='🏆 Рейтинговый PvP',callback_data='ranked_start')
     kb.button(text='🛡 Клановая битва',callback_data='clan_start')
+    kb.button(text='⬅️ Главное меню',callback_data='menu:home')
     kb.adjust(1); return kb.as_markup()
 
 async def active_user(session,tg):
@@ -94,13 +95,15 @@ async def main():
     bot=Bot(BOT_TOKEN); dp=Dispatcher()
 
     @dp.message(Command('start'))
+    @dp.message(Command('menu'))
     async def start(m:Message):
         async with Session() as s:
             u,new=await get_or_create_user(s,m.from_user)
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await m.answer(f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=menu_keyboard())
+            await m.answer('Нижняя клавиатура отключена.',reply_markup=ReplyKeyboardRemove())
+            await m.answer(f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел:',reply_markup=menu_keyboard())
 
 
     @dp.callback_query(F.data.startswith('menu:'))
@@ -177,8 +180,7 @@ async def main():
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
                 lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}','Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\\nТОП-10:']
                 for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
-                await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())
-        elif key=='clans':
+                await c.message.answer('\\n'.join(lines),reply_markup=back_keyboard())        elif key=='clans':
             async with Session() as s:
                 try: await active_user(s,c.from_user)
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
@@ -357,8 +359,7 @@ async def main():
             parts=m.text.split(); target=int(parts[1]); bet=int(parts[2]) if len(parts)>2 else 0
             if bet<0 or bet>1_000_000: raise ValueError()
         except: await m.answer('Формат: /challenge USER_ID [ставка_в_монетах]'); return
-        async with Session() as s:
-            try:
+        async with Session() as s:            try:
                 u=await active_user(s,m.from_user); target_user=await s.get(User,target)
                 if not target_user or target_user.is_banned: raise ValueError('Игрок не найден или заблокирован.')
                 if target==u.id: raise ValueError('Нельзя вызвать самого себя.')
@@ -537,8 +538,7 @@ async def main():
                 await active_user(s,c.from_user)
                 offer=await resolve_trade(s,oid,c.from_user.id,accept)
                 await c.message.answer('✅ Обмен проведён.' if accept else 'Обмен отклонён.')
-                try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')
-                except Exception: pass
+                try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')                except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -757,8 +757,7 @@ async def main():
     async def givegems(m):
         if not admin(m.from_user.id): return
         try: _,uid,amount=m.text.split(); uid=int(uid); amount=int(amount)
-        except: await m.answer('Использование: /givegems USER_ID AMOUNT'); return
-        async with Session() as s:
+        except: await m.answer('Использование: /givegems USER_ID AMOUNT'); return        async with Session() as s:
             u=await s.get(User,uid)
             if not u or amount==0: await m.answer('Игрок не найден или сумма равна нулю.'); return
             if u.gems+amount<0: await m.answer('Операция приведёт к отрицательному балансу.'); return
