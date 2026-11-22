@@ -349,7 +349,7 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user); oc,card=await open_pack(s,u,name)
-                await c.message.answer(f'🎉 ПАК ОТКРЫТ!\n{card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}\nID карточки: #{oc.id}')
+                await c.message.answer(f'🎉 ПАК ОТКРЫТ!\n{card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}')
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Готово!')
 
@@ -1481,7 +1481,7 @@ async def main():
                 total=await s.scalar(select(func.count(PromoRedemption.id))) or 0
             lines=[f'📈 СТАТИСТИКА ПРОМОКОДОВ\nВсего активаций: {total}']
             for p in codes:
-                lines.append(f'\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎')
+                lines.append(f'\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎 · {p.reward_xp} XP · Premium: {"да" if p.reward_premium else "нет"}')
             if not codes: lines.append('Промокодов пока нет.')
             await c.message.answer(''.join(lines),reply_markup=admin_back_keyboard())
 
