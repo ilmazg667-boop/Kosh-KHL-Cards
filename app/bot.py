@@ -285,7 +285,7 @@ async def main():
             card=await s.get(Card,oc.card_id)
             kb=InlineKeyboardBuilder()
             if not oc.locked:
-                kb.button(text='🏒 Поставить в состав',callback_data=f'team:choose:{card.position}')
+                kb.button(text=f'🏒 Поставить на {card.position}',callback_data=f'teamequip:{oc.id}:{card.position}')
                 if oc.slot: kb.button(text='➖ Снять из состава',callback_data=f'team:remove:{oc.slot}')
                 kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
