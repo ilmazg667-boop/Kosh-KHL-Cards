@@ -245,40 +245,70 @@ async def expire_match_searches(session,bot):
     if rows: await session.commit()
 
 async def matchmaking(bot=None):
+    notifications=[]
     async with Session() as s:
-        # After 30 seconds without a human opponent, turn the queue entry into a bot match.
+        waiting=(await s.scalars(
+            select(Match).where(Match.status=='searching').order_by(Match.created_at,Match.id)
+        )).all()
+        paired=set()
+
+        # First pair waiting players. Do this BEFORE the 30-second bot fallback.
+        for first in waiting:
+            if first.id in paired:
+                continue
+            for second in waiting:
+                if second.id==first.id or second.id in paired:
+                    continue
+                if second.home_user_id==first.home_user_id:
+                    continue
+                first_group='clan' if first.mode=='clan' else 'pvp'
+                second_group='clan' if second.mode=='clan' else 'pvp'
+                if first_group!=second_group:
+                    continue
+                if first_group=='clan':
+                    c1=await s.scalar(select(ClanMember).where(ClanMember.user_id==first.home_user_id))
+                    c2=await s.scalar(select(ClanMember).where(ClanMember.user_id==second.home_user_id))
+                    if not c1 or not c2 or c1.clan_id==c2.clan_id:
+                        continue
+
+                # One row is the real match; remove the other player's queue placeholder.
+                first.mode='clan' if first_group=='clan' else 'pvp'
+                first.away_user_id=second.home_user_id
+                first.away_name=second.home_name
+                first.away_power=second.home_power
+                first.away_goalie=second.home_goalie
+                first.status='queued'
+                notifications.append((first.home_user_id,
+                    f'✅ Соперник найден! Матч #{first.id}: {first.home_name} — {second.home_name}. Сейчас отправим составы.'))
+                notifications.append((second.home_user_id,
+                    f'✅ Соперник найден! Ваш матч #{first.id}: {first.home_name} — {second.home_name}. Сейчас отправим составы.'))
+                await s.delete(second)
+                paired.update({first.id,second.id})
+                break
+
+        # Only searches still unmatched after pairing become bot matches at 30 seconds.
         cutoff=now()-timedelta(seconds=30)
-        expired=(await s.scalars(select(Match).where(Match.status=='searching',Match.created_at<=cutoff))).all()
-        for match in expired:
+        for match in waiting:
+            if match.id in paired or match.status!='searching':
+                continue
+            created=match.created_at
+            if created and created.tzinfo is None:
+                created=created.replace(tzinfo=now().tzinfo)
+            if not created or created>cutoff:
+                continue
             match.mode='bot'
             match.away_user_id=0
             match.away_name='KHL Bot'
             match.away_power=max(60,min(100,match.home_power+random.randint(-5,5)))
             match.away_goalie=max(60,min(100,match.away_power+random.randint(-3,3)))
             match.status='queued'
-            await send(bot,match.home_user_id,f'🤖 Соперник не найден за 30 секунд. Матч #{match.id} начинается против бота!')
-        waiting=(await s.scalars(select(Match).where(Match.status=='searching').order_by(Match.created_at))).all()
-        paired=set()
-        for first in waiting:
-            if first.id in paired: continue
-            for second in waiting:
-                if second.id==first.id or second.id in paired or second.home_user_id==first.home_user_id: continue
-                if first.mode != second.mode: continue
-                if abs(first.home_power-second.home_power)>25: continue
-                if first.mode=='ranked':
-                    from .game import league_for_rating
-                    u1=await s.get(User,first.home_user_id); u2=await s.get(User,second.home_user_id)
-                    if not u1 or not u2 or league_for_rating(u1.rating)!=league_for_rating(u2.rating): continue
-                if first.mode=='clan':
-                    c1=await s.scalar(select(ClanMember).where(ClanMember.user_id==first.home_user_id))
-                    c2=await s.scalar(select(ClanMember).where(ClanMember.user_id==second.home_user_id))
-                    if not c1 or not c2 or c1.clan_id==c2.clan_id: continue
-                first.away_user_id=second.home_user_id; first.away_name=second.home_name
-                first.away_power=second.home_power; first.away_goalie=second.home_goalie; first.status='queued'
-                # The first queue record becomes the actual match; discard the second placeholder.
-                await s.delete(second); paired.update({first.id,second.id})
-                break
+            notifications.append((match.home_user_id,
+                f'🤖 За 30 секунд соперник не найден. Матч #{match.id} начинается против бота!'))
+
         await s.commit()
+
+    for user_id,message in notifications:
+        await send(bot,user_id,message)
 
 async def guarded_process_match(match_id,bot,redis_client=None):
     lock=None
