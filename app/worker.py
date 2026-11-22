@@ -111,7 +111,7 @@ async def finish_match(match_id,bot):
                 m.rating_change=delta if winner==home.id else -delta
             if winner==home.id and not is_ot: home.gems+=3
             if winner==away.id and not is_ot: away.gems+=3
-            if m.mode=='pvp':
+            if m.mode in ('pvp','bot'):
                 if winner==home.id: home.coins+=1000; away.coins+=500
                 else: away.coins+=1000; home.coins+=500
             if m.bet and home and away:
@@ -231,7 +231,7 @@ async def expire_match_searches(session,bot):
         await send(bot,match.home_user_id,f'⌛ Поиск соперника #{match.id} завершён без подбора за 10 минут. Попробуйте запустить поиск ещё раз.')
     if rows: await session.commit()
 
-async def matchmaking():
+async def matchmaking(bot=None):
     async with Session() as s:
         # After 30 seconds without a human opponent, turn the queue entry into a bot match.
         cutoff=now()-timedelta(seconds=30)
@@ -243,7 +243,7 @@ async def matchmaking():
             match.away_power=max(60,min(100,match.home_power+random.randint(-5,5)))
             match.away_goalie=max(60,min(100,match.away_power+random.randint(-3,3)))
             match.status='queued'
-            await send(None,match.home_user_id,f'🤖 Соперник не найден за 30 секунд. Матч #{match.id} начинается против бота!')
+            await send(bot,match.home_user_id,f'🤖 Соперник не найден за 30 секунд. Матч #{match.id} начинается против бота!')
         waiting=(await s.scalars(select(Match).where(Match.status=='searching').order_by(Match.created_at))).all()
         paired=set()
         for first in waiting:
@@ -316,7 +316,7 @@ async def run_worker():
                     if winner_id: await send(bot,winner_id,f'Аукцион #{a.id}: минимальная цена не достигнута или лот недоступен. Ставка {bid} 🪙 возвращена.')
             queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(5))).all()
             running=(await s.scalars(select(Match.id).where(Match.status=='running').limit(5))).all()
-        await matchmaking()
+        await matchmaking(bot)
         ids=list(dict.fromkeys(queued+running))
         if ids:
             await asyncio.gather(*(guarded_process_match(mid,bot,redis_client) for mid in ids))
