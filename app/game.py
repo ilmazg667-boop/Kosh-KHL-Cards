@@ -138,6 +138,6 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! {scorer} ({ot_team_name}){assist_text}'})
             events.append({'minute':65,'type':'overtime','text':'🏒 Овертайм завершён. Победитель определён.'})
     events.sort(key=lambda e:e['minute'])
-    events.insert(0,{'minute':0,'type':'start','text':'🏒 Матч начался! 60 минут игрового времени.'})
+    events.insert(0,{'minute':0,'type':'start','text':'🏒 Команды на точке вбрасывания. Судья готов — первое вбрасывание! Матч начался, 60 минут игрового времени.'})
     events.append({'minute':65 if ot else 60,'type':'final','text':f'🏁 Финальная сирена! Итоговый счёт: {home}:{away}.'})
     return home, away, ot, shootout, events, home_goals, away_goals
