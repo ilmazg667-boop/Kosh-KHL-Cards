@@ -257,3 +257,15 @@ class PromoRedemption(Base):
     gems_awarded: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint('promo_code', 'user_id'),)
+
+
+class SupportMessage(Base):
+    __tablename__ = 'support_messages'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    category: Mapped[str] = mapped_column(String(30), default='обращение')
+    body: Mapped[str] = mapped_column(Text)
+    anonymous: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default='new', index=True)
+    admin_reply: Mapped[str] = mapped_column(Text, default='')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
