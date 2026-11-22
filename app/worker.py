@@ -79,7 +79,7 @@ async def prepare_match(match_id,bot=None):
             else:
                 m.away_name='KHL Bot' if m.mode=='bot' else f'AI · {m.league}'; m.away_power=random.randint(max(65,m.home_power-10),min(100,m.home_power+10))
                 m.away_goalie=random.randint(max(65,m.away_power-4),min(100,m.away_power+4)); m.away_card_ids=[]
-        home_names=[c.player_name for c in home]; away_names=[c.player_name for c in away]
+        home_names=[f'{c.player_name} · {c.ovr} OVR' for c in home]; away_names=[f'{c.player_name} · {c.ovr} OVR' for c in away]
         hs,as_,ot,so,events,hg,ag=simulate(m.home_power,m.away_power,m.home_goalie,m.away_goalie,home_chem,away_chem,home_names,away_names)
         if m.mode=='pve' and hs==as_:
             # Every PvE match has a winner; OT/skill is represented by tie-break goal.
