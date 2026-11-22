@@ -741,7 +741,9 @@ async def main():
                 admin_steps.pop(m.from_user.id,None)
                 await m.answer(f'✅ Карточка #{cid} выдана игроку {state["uid"]}.',reply_markup=admin_keyboard())
         except ValueError:
-            await m.answer('Введите корректное целое число или /canceladmin.')\n\n    @dp.message(Command('givecoins'))
+            await m.answer('Введите корректное целое число или /canceladmin.')
+
+    @dp.message(Command('givecoins'))
     async def givecoins(m):
         if not admin(m.from_user.id): return
         try: _,uid,amount=m.text.split(); uid=int(uid); amount=int(amount)
