@@ -127,6 +127,29 @@ async def start_pvp_queue(session,user,ranked=False,mode=None):
     p=team_power(cards); g=next(c.ovr for c in cards if c.position=='G')
     match_mode=mode or ('ranked' if ranked else 'pvp')
     if match_mode not in ('pvp','ranked','clan'): raise ValueError('Неизвестный PvP-режим.')
+    # Join the oldest compatible waiting player immediately instead of relying
+    # only on the background worker's polling interval.
+    candidate_modes=['clan'] if match_mode=='clan' else ['pvp','ranked']
+    candidates=(await session.scalars(
+        select(Match).where(Match.status=='searching',Match.mode.in_(candidate_modes),
+            Match.home_user_id!=user.id).order_by(Match.created_at,Match.id).with_for_update()
+    )).all()
+    for candidate in candidates:
+        if match_mode=='clan':
+            mine=await session.scalar(select(ClanMember).where(ClanMember.user_id==user.id))
+            theirs=await session.scalar(select(ClanMember).where(ClanMember.user_id==candidate.home_user_id))
+            if not mine or not theirs or mine.clan_id==theirs.clan_id:
+                continue
+        candidate.mode='clan' if match_mode=='clan' else 'pvp'
+        candidate.away_user_id=user.id
+        candidate.away_name=user.first_name or str(user.id)
+        candidate.away_power=p
+        candidate.away_goalie=g
+        candidate.status='queued'
+        await session.commit()
+        await session.refresh(candidate)
+        return candidate
+
     m=Match(mode=match_mode,status='searching',home_user_id=user.id,
         home_name=user.first_name or str(user.id),home_power=p,home_goalie=g)
     session.add(m); await session.commit(); await session.refresh(m); return m
