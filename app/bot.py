@@ -11,7 +11,7 @@ from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, BattlePassProgress,
-    QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption)
+    QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, team_power, league_for_rating
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
@@ -21,7 +21,7 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
     create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner)
 
-MENU=[['🏒 Моя команда','🎮 Играть'],['🃏 Карточки','📦 Паки'],['🏪 Рынок','🔨 Аукционы'],['🏆 Рейтинг','🎁 Ежедневная награда'],['⚔️ Турнир','🛡 Кланы'],['🎟 Battle Pass','👤 Профиль'],['🪙 Баланс','❔ Помощь']]
+MENU=[['🏒 Моя команда','🎮 Играть'],['✉️ Написать админу'],['🃏 Карточки','📦 Паки'],['🏪 Рынок','🔨 Аукционы'],['🏆 Рейтинг','🎁 Ежедневная награда'],['⚔️ Турнир','🛡 Кланы'],['🎟 Battle Pass','👤 Профиль'],['🪙 Баланс','❔ Помощь']]
 def keyboard(): return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=x) for x in row] for row in MENU],resize_keyboard=True)
 def admin(uid): return uid in ADMIN_IDS
 
@@ -43,10 +43,8 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    for l,r in PVE_REWARDS.items(): kb.button(text=f'PvE · {l} · {r} 🪙',callback_data=f'pve:{l}')
-    kb.button(text='⚔️ Обычный PvP',callback_data='pvp_start')
-    kb.button(text='🏆 Рейтинговый PvP',callback_data='ranked_start')
-    kb.button(text='🛡 Клановая битва',callback_data='clan_start')
+    kb.button(text='⚔️ PvP',callback_data='pvp_start')
+    kb.button(text='🛡 Клановые битвы',callback_data='clan_start')
     kb.adjust(1); return kb.as_markup()
 
 async def active_user(session,tg):
@@ -95,6 +93,70 @@ async def main():
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
             await send_section_photo(m,PHOTO_ARENA,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
+
+
+    support_steps={}
+    @dp.message(F.text=='✉️ Написать админу')
+    async def support_start(m:Message):
+        kb=InlineKeyboardBuilder()
+        for label,key in [('💡 Предложение','suggestion'),('⚠️ Жалоба','complaint'),('💬 Обращение','request')]:
+            kb.button(text=label,callback_data=f'support_type:{key}')
+        kb.adjust(1)
+        await m.answer('Выберите тип сообщения:',reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('support_type:'))
+    async def support_choose_type(c:CallbackQuery):
+        category=c.data.split(':',1)[1]
+        if category not in ('suggestion','complaint','request'):
+            await c.answer('Неизвестный тип.',show_alert=True); return
+        support_steps[c.from_user.id]={'category':category,'step':'body'}
+        await c.message.answer('Напишите сообщение администратору одним сообщением. Для отмены отправьте /cancelmessage.')
+        await c.answer()
+
+    @dp.message(Command('cancelmessage'))
+    async def support_cancel(m:Message):
+        support_steps.pop(m.from_user.id,None)
+        await m.answer('Отправка сообщения отменена.')
+
+    @dp.message(lambda m: m.from_user.id in support_steps and support_steps[m.from_user.id].get('step')=='body')
+    async def support_body(m:Message):
+        body=(m.text or '').strip()
+        if not body or len(body)>3000:
+            await m.answer('Сообщение должно содержать текст и быть не длиннее 3000 символов.'); return
+        support_steps[m.from_user.id]={'category':support_steps[m.from_user.id]['category'],'body':body,'step':'privacy'}
+        kb=InlineKeyboardBuilder()
+        kb.button(text='🙈 Анонимно',callback_data='support_privacy:1')
+        kb.button(text='👤 С именем',callback_data='support_privacy:0')
+        kb.button(text='❌ Отмена',callback_data='support_abort')
+        kb.adjust(1)
+        await m.answer('Как отправить сообщение администратору?',reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data=='support_abort')
+    async def support_abort(c:CallbackQuery):
+        support_steps.pop(c.from_user.id,None)
+        await c.message.answer('Отправка отменена.')
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('support_privacy:'))
+    async def support_submit(c:CallbackQuery):
+        state=support_steps.get(c.from_user.id)
+        if not state or state.get('step')!='privacy':
+            await c.answer('Начните отправку заново.',show_alert=True); return
+        anonymous=c.data.endswith(':1')
+        labels={'suggestion':'Предложение','complaint':'Жалоба','request':'Обращение'}
+        async with Session() as s:
+            item=SupportMessage(user_id=c.from_user.id,category=state['category'],body=state['body'],anonymous=anonymous)
+            s.add(item); await s.commit(); await s.refresh(item)
+        support_steps.pop(c.from_user.id,None)
+        sender='Анонимный игрок' if anonymous else f'{c.from_user.full_name} · ID {c.from_user.id}'
+        notice=f'📩 Новое сообщение #{item.id}\nТип: {labels[state["category"]]}\nОт: {sender}\n\n{state["body"]}'
+        for admin_id in ADMIN_IDS:
+            kb=InlineKeyboardBuilder()
+            kb.button(text='📨 Открыть и ответить',callback_data=f'adm:message:{item.id}')
+            try: await c.bot.send_message(admin_id,notice,reply_markup=kb.as_markup())
+            except Exception: pass
+        await c.message.answer('✅ Сообщение отправлено администрации. Спасибо!')
+        await c.answer('Отправлено!')
 
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
@@ -185,17 +247,27 @@ async def main():
 
     @dp.message(Command('pve'))
     @dp.message(F.text=='🎮 Играть')
-    async def play(m): await send_section_photo(m,PHOTO_GAME,'🎮 Выберите режим: PvE за монеты, обычный PvP, рейтинг или клановая битва.',reply_markup=pve_keyboard())
+    async def play(m): await send_section_photo(m,PHOTO_GAME,'🎮 Выберите режим матча:',reply_markup=pve_keyboard())
 
-    @dp.callback_query(F.data.in_({'pvp_start','ranked_start'}))
+    @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
-        ranked=c.data=='ranked_start'
+        ranked=False
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user)
                 match=await start_pvp_queue(s,u,ranked)
                 label='рейтингового' if ranked else 'обычного'
-                await c.message.answer(f'🔎 Поиск {label} соперника запущен. ID #{match.id}. После подбора соперника начнётся текстовая трансляция. /match')
+                kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
+                status_msg=await c.message.answer(f'🔎 Ищем соперника: 30 сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                async def countdown():
+                    for left in range(29,-1,-1):
+                        await asyncio.sleep(1)
+                        async with Session() as check:
+                            current=await check.get(Match,match.id)
+                            if not current or current.status!='searching': return
+                        try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                        except Exception: pass
+                asyncio.create_task(countdown())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -313,6 +385,19 @@ async def main():
             try: await m.bot.send_message(row.away_user_id,f'Вызов #{row.id} отменён отправителем.')
             except Exception: pass
             await m.answer(f'Вызов #{row.id} отменён. Ставка {row.bet} 🪙 возвращена.')
+
+
+    @dp.callback_query(F.data.startswith('match_cancel:'))
+    async def match_cancel_button(c:CallbackQuery):
+        try: mid=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Некорректный номер матча.',show_alert=True); return
+        async with Session() as s:
+            mt=await s.scalar(select(Match).where(Match.id==mid,Match.home_user_id==c.from_user.id,Match.status=='searching').with_for_update())
+            if not mt:
+                await c.answer('Этот поиск уже завершён или отменён.',show_alert=True); return
+            mt.status='cancelled'; await s.commit()
+        await c.message.edit_text(f'❌ Поиск матча #{mid} отменён.')
+        await c.answer('Поиск отменён.')
 
     @dp.message(Command('match'))
     async def match_status(m):
@@ -636,7 +721,7 @@ async def main():
     admin_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
-        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📖 Все команды','adm:help')]:
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
         return kb.as_markup()
@@ -727,6 +812,42 @@ async def main():
                 lines.append(f'\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎')
             if not codes: lines.append('Промокодов пока нет.')
             await c.message.answer(''.join(lines),reply_markup=admin_back_keyboard())
+
+        elif action[1]=='messages':
+            async with Session() as s:
+                rows=(await s.scalars(select(SupportMessage).order_by(SupportMessage.created_at.desc()).limit(25))).all()
+                unread=await s.scalar(select(func.count(SupportMessage.id)).where(SupportMessage.status=='new')) or 0
+            lines=[f'📩 СООБЩЕНИЯ ИГРОКОВ · новых: {unread}']
+            kb=InlineKeyboardBuilder()
+            for item in rows:
+                title={'suggestion':'Предложение','complaint':'Жалоба','request':'Обращение'}.get(item.category,item.category)
+                who='анонимно' if item.anonymous else f'ID {item.user_id}'
+                lines.append(f'\n#{item.id} · {title} · {who} · {item.status}')
+                kb.button(text=f'Открыть #{item.id}',callback_data=f'adm:message:{item.id}')
+            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(2)
+            await c.message.answer('\n'.join(lines) if rows else 'Сообщений пока нет.',reply_markup=kb.as_markup())
+        elif action[1]=='message':
+            mid=int(action[2])
+            async with Session() as s:
+                item=await s.get(SupportMessage,mid)
+                if not item:
+                    await c.answer('Сообщение не найдено.',show_alert=True); return
+                title={'suggestion':'Предложение','complaint':'Жалоба','request':'Обращение'}.get(item.category,item.category)
+                who='анонимно' if item.anonymous else f'{item.user_id}'
+                kb=InlineKeyboardBuilder()
+                kb.button(text='✍️ Ответить игроку',callback_data=f'adm:reply:{mid}')
+                kb.button(text='⬅️ К сообщениям',callback_data='adm:messages'); kb.adjust(1)
+                item.status='read'; await s.commit()
+            await c.message.answer(f'📩 Сообщение #{mid}\nТип: {title}\nОт: {who}\n\n{item.body}',reply_markup=kb.as_markup())
+        elif action[1]=='reply':
+            mid=int(action[2])
+            async with Session() as s:
+                item=await s.get(SupportMessage,mid)
+                if not item:
+                    await c.answer('Сообщение не найдено.',show_alert=True); return
+            admin_steps[c.from_user.id]={'kind':'support_reply','step':'reply','message_id':mid}
+            await c.message.answer(f'Введите ответ для сообщения #{mid}. Игрок получит его в боте.')
+
         elif action[1]=='help':
             await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
         elif action[1]=='home':
@@ -745,6 +866,22 @@ async def main():
         if not state or not admin(m.from_user.id) or not m.text: return
         kind=state['kind']; step=state['step']
         try:
+            if kind=='support_reply' and step=='reply':
+                reply_text=m.text.strip()
+                if not reply_text or len(reply_text)>3000:
+                    await m.answer('Ответ должен содержать текст до 3000 символов.'); return
+                async with Session() as s:
+                    item=await s.get(SupportMessage,state['message_id'])
+                    if not item:
+                        await m.answer('Сообщение не найдено.'); admin_steps.pop(m.from_user.id,None); return
+                    target=item.user_id; item.admin_reply=reply_text; item.status='answered'; await s.commit()
+                try:
+                    await m.bot.send_message(target,f'✉️ Ответ администрации на ваше сообщение #{item.id}:\n\n{reply_text}')
+                    await m.answer('✅ Ответ отправлен игроку.',reply_markup=admin_keyboard())
+                except Exception:
+                    await m.answer('Ответ сохранён, но доставить его игроку не удалось.')
+                admin_steps.pop(m.from_user.id,None)
+                return
             if kind=='promo':
                 data=state.setdefault('data',{})
                 if step=='code':
