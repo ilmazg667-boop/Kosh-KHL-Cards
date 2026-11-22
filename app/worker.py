@@ -359,13 +359,13 @@ async def matchmaking(bot=None):
                 break
 
         # Only searches still unmatched after pairing become bot matches at 30 seconds.
-        cutoff=now()-timedelta(seconds=30)
+        cutoff=now().astimezone(timezone.utc)-timedelta(seconds=30)
         for match in waiting:
             if match.id in paired or match.status!='searching':
                 continue
             created=match.created_at
             if created and created.tzinfo is None:
-                created=created.replace(tzinfo=now().tzinfo)
+                created=created.replace(tzinfo=timezone.utc)
             if not created or created>cutoff:
                 continue
             match.mode='bot'
