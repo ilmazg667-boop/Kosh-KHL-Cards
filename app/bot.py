@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -100,6 +100,7 @@ async def main():
 
     @dp.message(Command('start'))
     async def start(m:Message):
+        await m.answer('Меню обновлено: теперь управление через кнопки ниже.',reply_markup=ReplyKeyboardRemove())
         async with Session() as s:
             u,new=await get_or_create_user(s,m.from_user)
             await s.commit()
@@ -269,18 +270,22 @@ async def main():
             try:
                 u=await active_user(s,c.from_user)
                 match=await start_pvp_queue(s,u,ranked)
-                label='рейтингового' if ranked else 'обычного'
-                kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
-                status_msg=await c.message.answer(f'🔎 Ищем соперника: 30 сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
-                async def countdown():
-                    for left in (25,20,15,10,5,0):
-                        await asyncio.sleep(5)
-                        async with Session() as check:
-                            current=await check.get(Match,match.id)
-                            if not current or current.status!='searching': return
-                        try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
-                        except Exception: pass
-                asyncio.create_task(countdown())
+                if match.status=='queued' and match.away_user_id==u.id:
+                    await c.bot.send_message(match.home_user_id,
+                        f'✅ Соперник найден! Матч #{match.id}: {match.home_name} — {u.first_name or u.id}. Матч скоро начнётся.')
+                    await c.message.answer(f'✅ Соперник найден! Матч #{match.id} начинается.')
+                else:
+                    kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
+                    status_msg=await c.message.answer(f'🔎 Ищем соперника: 30 сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                    async def countdown():
+                        for left in (25,20,15,10,5,0):
+                            await asyncio.sleep(5)
+                            async with Session() as check:
+                                current=await check.get(Match,match.id)
+                                if not current or current.status!='searching': return
+                            try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                            except Exception: pass
+                    asyncio.create_task(countdown())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -292,17 +297,22 @@ async def main():
                 member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
                 if not member: await c.answer('Сначала вступите в клан через /clan.',show_alert=True); return
                 match=await start_pvp_queue(s,u,False,mode='clan')
-                kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
-                status_msg=await c.message.answer(f'🛡 Поиск соперника: 30 сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
-                async def countdown():
-                    for left in range(29,-1,-1):
-                        await asyncio.sleep(1)
-                        async with Session() as check:
-                            current=await check.get(Match,match.id)
-                            if not current or current.status!='searching': return
-                        try: await status_msg.edit_text(f'🛡 Поиск соперника: {left} сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
-                        except Exception: pass
-                asyncio.create_task(countdown())
+                if match.status=='queued' and match.away_user_id==u.id:
+                    await c.bot.send_message(match.home_user_id,
+                        f'✅ Найден соперник из другого клана! Матч #{match.id} начинается.')
+                    await c.message.answer(f'✅ Соперник найден! Клановый матч #{match.id} начинается.')
+                else:
+                    kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
+                    status_msg=await c.message.answer(f'🛡 Поиск соперника: 30 сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
+                    async def countdown():
+                        for left in (25,20,15,10,5,0):
+                            await asyncio.sleep(5)
+                            async with Session() as check:
+                                current=await check.get(Match,match.id)
+                                if not current or current.status!='searching': return
+                            try: await status_msg.edit_text(f'🛡 Поиск соперника: {left} сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
+                            except Exception: pass
+                    asyncio.create_task(countdown())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
