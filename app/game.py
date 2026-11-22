@@ -48,7 +48,7 @@ def poisson(lam):
         k += 1; p *= random.random()
     return k-1
 
-def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away_chem=0, home_names=None, away_names=None):
+def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away_chem=0, home_names=None, away_names=None, home_goalie_name='Вратарь', away_goalie_name='Вратарь', home_team_name='Команда 1', away_team_name='Команда 2'):
     """Returns score + goal/event log; small edges matter, randomness remains significant."""
     home_rate=max(0.7, 2.75 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (home_goalie-away_goalie)*0.010)
     away_rate=max(0.7, 2.75 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (away_goalie-home_goalie)*0.010)
@@ -66,21 +66,41 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             helpers=[n for n in names if n!=scorer] or names
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
-            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2}
+            team_name=home_team_name if side=='home' else away_team_name
+            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2,'team':team_name}
             (home_goals if side=='home' else away_goals).append(goal)
-            assist_text=f"(ассисты: {assist} и {assist2})" if assist2 else f"(ассист: {assist})"
-            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! {scorer} {assist_text}"})
+            assist_text=f"; ассисты: {assist} и {assist2}" if assist2 else f"; ассист: {assist}"
+            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! {scorer} ({team_name}){assist_text}"})
     action_templates=[
         ('attack','🏒 Команда выходит из зоны и начинает атаку.'),
         ('danger','🔥 Опасный момент у ворот!'),
         ('shot','🎯 Бросок по воротам!'),
-        ('save','🧤 Вратарь спасает после броска!'),
-        ('penalty','⚠️ Удаление на 2 минуты.'),
-        ('powerplay','🔵 Большинство!'),
     ]
     for _ in range(random.randint(8,14)):
-        minute=random.randint(1,60); kind,text=random.choice(action_templates)
-        events.append({'minute':minute,'type':kind,'side':random.choice(['home','away']),'text':text})
+        minute=random.randint(1,60)
+        side=random.choice(['home','away'])
+        team_name=home_team_name if side=='home' else away_team_name
+        kind,text=random.choice(action_templates)
+        if kind=='attack':
+            text=f"🏒 {team_name} выходит из зоны и начинает атаку."
+        elif kind=='danger':
+            text=f"🔥 Опасный момент у ворот команды {team_name}!"
+        elif kind=='shot':
+            text=f"🎯 Бросок команды {team_name} по воротам!"
+        roll=random.random()
+        if roll<0.22:
+            goalie_name=home_goalie_name if side=='home' else away_goalie_name
+            kind='save'
+            text=f"🧤 {goalie_name} ({team_name}) спасает после броска!"
+        elif roll<0.40:
+            names=home_names if side=='home' else away_names
+            penalized=random.choice(names) if names else 'Игрок команды'
+            kind='penalty'
+            text=f"⚠️ {penalized} ({team_name}) удалён на 2 минуты."
+        elif roll<0.52:
+            kind='powerplay'
+            text=f"🔵 Большинство у команды {team_name}."
+        events.append({'minute':minute,'type':kind,'side':side,'text':text})
     events.sort(key=lambda e:e['minute'])
     ot=False; shootout=False
     if home==away:
@@ -108,13 +128,14 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             helpers=[n for n in names if n!=scorer] or names
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
-            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2}
+            ot_team_name=home_team_name if ot_side=='home' else away_team_name
+            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2,'team':ot_team_name}
             if ot_side=='home':
                 home+=1; home_goals.append(goal)
             else:
                 away+=1; away_goals.append(goal)
-            assist_text=f"(ассисты: {assist} и {assist2})" if assist2 else f"(ассист: {assist})"
-            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! {scorer} {assist_text}'})
+            assist_text=f"; ассисты: {assist} и {assist2}" if assist2 else f"; ассист: {assist}"
+            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! {scorer} ({ot_team_name}){assist_text}'})
             events.append({'minute':65,'type':'overtime','text':'🏒 Овертайм завершён. Победитель определён.'})
     events.sort(key=lambda e:e['minute'])
     events.insert(0,{'minute':0,'type':'start','text':'🏒 Матч начался! 60 минут игрового времени.'})
