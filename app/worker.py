@@ -109,11 +109,13 @@ async def finish_match(match_id,bot):
                 away.rating=max(0,away.rating+(-delta if winner==home.id else delta))
                 home.lifetime_rating=max(home.lifetime_rating,home.rating); away.lifetime_rating=max(away.lifetime_rating,away.rating)
                 m.rating_change=delta if winner==home.id else -delta
-            if winner==home.id and not is_ot: home.gems+=3
-            if winner==away.id and not is_ot: away.gems+=3
-            if m.mode in ('pvp','bot'):
+            if home and winner==home.id and not is_ot: home.gems+=3
+            if away and winner==away.id and not is_ot: away.gems+=3
+            if m.mode=='pvp' and home and away:
                 if winner==home.id: home.coins+=1000; away.coins+=500
                 else: away.coins+=1000; home.coins+=500
+            elif m.mode=='bot' and home:
+                home.coins+=1000 if winner==home.id else 500
             if m.bet and home and away:
                 stake=m.bet
                 if winner==home.id: home.coins+=stake*2
