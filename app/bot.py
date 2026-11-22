@@ -581,18 +581,129 @@ async def main():
                     except Exception: pass
             except ValueError as e: await m.answer(str(e))
 
+    auction_steps={}
+    def auction_menu_keyboard():
+        kb=InlineKeyboardBuilder()
+        kb.button(text='➕ Начать аукцион',callback_data='auctionmenu:start')
+        kb.button(text='🔥 Текущие аукционы',callback_data='auctionmenu:current')
+        kb.button(text='⏹ Завершить мой аукцион',callback_data='auctionmenu:end')
+        kb.button(text='📚 История аукционов',callback_data='auctionmenu:history')
+        kb.button(text='⬅️ Главное меню',callback_data='player:home')
+        kb.adjust(1); return kb.as_markup()
+
     @dp.message(F.text=='🔨 Аукционы')
     @dp.message(Command('auctions'))
     async def auctions(m):
+        await m.answer('🔨 АУКЦИОНЫ\nВыберите действие. Для выставления карточки она выбирается из вашей коллекции — вводить ID не нужно.',reply_markup=auction_menu_keyboard())
+
+    @dp.callback_query(F.data.startswith('auctionmenu:'))
+    async def auction_menu_action(c:CallbackQuery):
+        action=c.data.split(':',1)[1]
         async with Session() as s:
-            rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(15))).all()
-            if not rows: await m.answer('Активных аукционов нет. Передать карточку: /auction_submit ID'); return
-            lines=['🔨 АКТИВНЫЕ АУКЦИОНЫ']
-            for a in rows:
-                oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
-                if card: lines.append(f'\n#{a.id} · {card.player_name} · {card.ovr} OVR\nТекущая ставка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nЗавершение UTC: {a.ends_at:%Y-%m-%d %H:%M}\n/bid {a.id} СУММА')
-            await send_section_photo(m,PHOTO_GOALIE,'🔨 Аукционы карточек — следите за ставками.')
-            await m.answer('\n'.join(lines))
+            await active_user(s,c.from_user)
+            if action=='start':
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(50))).all()
+                kb=InlineKeyboardBuilder()
+                for oc in cards:
+                    card=await s.get(Card,oc.card_id)
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}',callback_data=f'auctioncard:{oc.id}')
+                kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
+                await c.message.answer('Шаг 1 из 2. Выберите свободную карточку для аукциона:',reply_markup=kb.as_markup())
+            elif action=='current':
+                rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
+                lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ']; kb=InlineKeyboardBuilder()
+                for a in rows:
+                    oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    if card:
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {a.ends_at:%d.%m %H:%M} UTC')
+                        kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
+                if not rows: lines.append('\nПока нет активных аукционов.')
+                kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            elif action=='end':
+                rows=(await s.scalars(select(Auction).where(Auction.owner_id==c.from_user.id,Auction.status.in_(['submitted','active'])).order_by(Auction.created_at.desc()))).all()
+                kb=InlineKeyboardBuilder(); lines=['⏹ ВАШИ АУКЦИОНЫ']
+                for a in rows:
+                    oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    if card:
+                        lines.append(f'{card.player_name} · {card.ovr} OVR · {("на проверке" if a.status=="submitted" else "идёт")} ')
+                        kb.button(text=f'Завершить · {card.player_name}',callback_data=f'auctionstop:{a.id}')
+                if not rows: lines.append('У вас нет активных аукционов.')
+                kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            elif action=='history':
+                rows=(await s.scalars(select(Auction).where(Auction.owner_id==c.from_user.id,Auction.status.in_(['completed','cancelled','expired'])).order_by(Auction.created_at.desc()).limit(15))).all()
+                lines=['📚 ВАША ИСТОРИЯ АУКЦИОНОВ']
+                for a in rows:
+                    oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    if card: lines.append(f'{card.player_name} · {card.ovr} OVR · {a.status} · итог {a.highest_bid} 🪙')
+                if len(lines)==1: lines.append('Завершённых аукционов пока нет.')
+                await c.message.answer('\n'.join(lines),reply_markup=auction_menu_keyboard())
+            elif action=='home':
+                await c.message.answer('🔨 АУКЦИОНЫ — выберите действие:',reply_markup=auction_menu_keyboard())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('auctioncard:'))
+    async def auction_card_selected(c:CallbackQuery):
+        try: oid=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Карточка не найдена.',show_alert=True); return
+        async with Session() as s:
+            try:
+                await active_user(s,c.from_user)
+                a=await submit_auction_card(s,c.from_user.id,oid)
+                oc=await s.get(OwnedCard,oid); card=await s.get(Card,oc.card_id)
+                await c.message.answer(f'✅ {card.player_name} передан на проверку администрации. После одобрения аукцион появится в текущих.')
+                for admin_id in ADMIN_IDS:
+                    try: await c.bot.send_message(admin_id,f'Новая заявка на аукцион: {card.player_name} · {card.ovr} OVR. Откройте /admin → Аукционы.')
+                    except Exception: pass
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer('Заявка отправлена.')
+
+    @dp.callback_query(F.data.startswith('auctionbid:'))
+    async def auction_bid_start(c:CallbackQuery):
+        aid=int(c.data.split(':',1)[1])
+        async with Session() as s:
+            a=await s.get(Auction,aid)
+            if not a or a.status!='active': await c.answer('Аукцион уже недоступен.',show_alert=True); return
+            oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+            minimum=a.start_price if not a.highest_bid else a.highest_bid+a.bid_step
+        auction_steps[c.from_user.id]={'step':'bid','auction_id':aid}
+        await c.message.answer(f'Шаг 1 из 1. Введите ставку для {card.player_name if card else "карточки"} (минимум {minimum} 🪙).')
+        await c.answer()
+
+    @dp.message(lambda m: m.from_user.id in auction_steps and auction_steps[m.from_user.id].get('step')=='bid')
+    async def auction_bid_amount(m:Message):
+        state=auction_steps.get(m.from_user.id,{})
+        try: amount=int((m.text or '').strip())
+        except ValueError: await m.answer('Введите сумму целым числом. Для отмены отправьте /cancelauction.'); return
+        async with Session() as s:
+            try:
+                u=await active_user(s,m.from_user); a=await place_bid(s,u,state['auction_id'],amount)
+                auction_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Ставка {amount} 🪙 принята. Деньги зарезервированы.')
+            except (ValueError,KeyError) as e: await m.answer(str(e))
+
+    @dp.callback_query(F.data.startswith('auctionstop:'))
+    async def auction_stop(c:CallbackQuery):
+        aid=int(c.data.split(':',1)[1])
+        async with Session() as s:
+            a=await s.scalar(select(Auction).where(Auction.id==aid, Auction.owner_id==c.from_user.id).with_for_update())
+            if not a or a.status not in ('submitted','active'):
+                await c.answer('Этот аукцион уже нельзя завершить.',show_alert=True); return
+            if a.winner_id and a.highest_bid:
+                bidder=await s.scalar(select(User).where(User.id==a.winner_id).with_for_update())
+                if bidder:
+                    bidder.coins+=a.highest_bid
+                    s.add(EconomyLedger(user_id=bidder.id,currency='coins',amount=a.highest_bid,reason='auction_bid_refund',reference_id=a.id))
+            oc=await s.get(OwnedCard,a.owned_card_id)
+            if oc: oc.locked=False
+            a.status='cancelled'; await s.commit()
+        await c.message.answer('⏹ Аукцион завершён. Карточка разблокирована, зарезервированная ставка возвращена.')
+        await c.answer()
+
+    @dp.message(Command('cancelauction'))
+    async def cancel_auction_input(m:Message):
+        auction_steps.pop(m.from_user.id,None); await m.answer('Действие с аукционом отменено.')
 
     @dp.message(Command('bid'))
     async def bid(m):
@@ -751,7 +862,15 @@ async def main():
         async with Session() as s:
             try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            ok=await claim_daily(s,u); await m.answer('🎁 Получено 1000 🪙!' if ok else 'Вы уже забрали награду сегодня.')
+            reward=await claim_daily(s,u)
+            if reward is None: await m.answer('🎁 Вы уже забрали ежедневную награду. Возвращайтесь завтра!')
+            else:
+                coins,gems,bonus=reward
+                text=f'🎉 ЕЖЕДНЕВНЫЙ БОНУС\n\n🪙 +{coins} монет'
+                if gems: text+=f'\n💎 +{gems} алмаз(а)'
+                if bonus: text+='\n✨ Бонус дня! Дополнительная награда выпала случайно.'
+                text+='\n\nЗаглядывайте завтра — награда снова будет другой!'
+                await m.answer(text)
 
     @dp.message(F.text=='🏆 Рейтинг')
     @dp.message(Command('leaderboard'))
