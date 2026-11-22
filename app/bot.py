@@ -1362,7 +1362,7 @@ async def main():
     @dp.message(Command('season'))
     async def season(m):
         async with Session() as s:
-            ss=await ensure_season(s); await m.answer(f'🗓 Сезон {ss.season_key}\nНачало UTC: {ss.starts_at}\nКонец UTC: {ss.ends_at}\nПосле сезона рейтинг сбрасывается до 0, статистика сохраняется.')
+            ss=await ensure_season(s); await m.answer(f'🗓 Сезон {ss.season_key}\nНачало МСК: {ss.starts_at:%d.%m.%Y %H:%M}\nКонец МСК: {ss.ends_at:%d.%m.%Y %H:%M}\nПосле сезона рейтинг сбрасывается до 0, статистика сохраняется.')
 
 
     @dp.message(Command('myid'))
