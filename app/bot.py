@@ -1254,7 +1254,14 @@ async def main():
         if not handler:
             await c.answer('Раздел не найден.',show_alert=True); return
         try:
-            await handler(c.message)
+            async def proxy_answer(*args,**kwargs):
+                return await c.message.answer(*args,**kwargs)
+            async def proxy_answer_photo(*args,**kwargs):
+                return await c.message.answer_photo(*args,**kwargs)
+            from types import SimpleNamespace
+            player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,
+                answer=proxy_answer,answer_photo=proxy_answer_photo)
+            await handler(player_message)
             await c.message.answer('🏠 Главное меню',reply_markup=keyboard())
             await c.answer()
         except Exception:
