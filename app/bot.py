@@ -21,8 +21,21 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
     create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner)
 
-MENU=[['🏒 Моя команда','🎮 Играть'],['✉️ Написать админу'],['🃏 Карточки','📦 Паки'],['🏪 Рынок','🔨 Аукционы'],['🏆 Рейтинг','🎁 Ежедневная награда'],['⚔️ Турнир','🛡 Кланы'],['🎟 Battle Pass','👤 Профиль'],['🪙 Баланс','❔ Помощь']]
-def keyboard(): return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=x) for x in row] for row in MENU],resize_keyboard=True)
+def keyboard():
+    kb=InlineKeyboardBuilder()
+    items=[
+        ('🏒 Моя команда','team'),('🎮 Играть','play'),
+        ('✉️ Написать админу','support'),('🃏 Карточки','cards'),
+        ('📦 Паки','packs'),('🏪 Рынок','market'),
+        ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
+        ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
+        ('🛡 Кланы','clans'),('🎟 Battle Pass','battlepass'),
+        ('👤 Профиль','profile'),('🪙 Баланс','balance'),
+        ('❔ Помощь','help')
+    ]
+    for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
+    kb.adjust(2)
+    return kb.as_markup()
 def admin(uid): return uid in ADMIN_IDS
 
 async def send_section_photo(m, url, caption, reply_markup=None):
@@ -1216,5 +1229,25 @@ async def main():
                 await s.rollback(); await m.answer(f'Импорт не выполнен: {e}'); return
         await m.answer(f'✅ Импортировано: {count} {task}.')
 
+
+
+    @dp.callback_query(F.data.startswith('player:'))
+    async def player_menu_callback(c:CallbackQuery):
+        action=c.data.split(':',1)[1]
+        handlers={
+            'team':team,'play':play,'support':support_start,'cards':collection,
+            'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
+            'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
+            'profile':profile,'balance':balance,'help':help_cmd
+        }
+        handler=handlers.get(action)
+        if not handler:
+            await c.answer('Раздел не найден.',show_alert=True); return
+        try:
+            await handler(c.message)
+            await c.message.answer('🏠 Главное меню',reply_markup=keyboard())
+            await c.answer()
+        except Exception:
+            await c.answer('Не удалось открыть раздел. Попробуйте ещё раз.',show_alert=True)
 
     await dp.start_polling(bot)
