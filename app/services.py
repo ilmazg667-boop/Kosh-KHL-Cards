@@ -188,7 +188,7 @@ async def buy_market_listing(session,buyer,listing_id):
 async def create_trade(session,sender_id,receiver_id,give_id,receive_id):
     if sender_id==receiver_id: raise ValueError('Нельзя обмениваться с самим собой.')
     receiver=await session.get(User,receiver_id)
-    if not receiver: raise ValueError('Игрок не найден. Он должен хотя бы раз запустить бота.')
+    if not receiver or receiver.is_banned: raise ValueError('Игрок не найден или заблокирован. Он должен хотя бы раз запустить бота.')
     a=await session.scalar(select(OwnedCard).where(OwnedCard.id==give_id).with_for_update())
     b=await session.scalar(select(OwnedCard).where(OwnedCard.id==receive_id).with_for_update())
     if not a or a.user_id!=sender_id or a.slot or a.locked: raise ValueError('Ваша карточка недоступна для обмена.')
@@ -202,7 +202,8 @@ async def resolve_trade(session,offer_id,receiver_id,accept):
     if not offer or offer.status!='pending' or offer.receiver_id!=receiver_id: raise ValueError('Предложение недоступно.')
     a=await session.scalar(select(OwnedCard).where(OwnedCard.id==offer.give_card_ids[0]).with_for_update())
     b=await session.scalar(select(OwnedCard).where(OwnedCard.id==offer.receive_card_ids[0]).with_for_update())
-    if not a or not b or a.user_id!=offer.sender_id or b.user_id!=offer.receiver_id: raise ValueError('Карточки уже недоступны. Обмен отменён.')
+    if not a or not b or a.user_id!=offer.sender_id or b.user_id!=offer.receiver_id or not a.locked or not b.locked or a.slot or b.slot:
+        raise ValueError('Карточки уже недоступны или изменили состояние. Обмен отменён.')
     if accept:
         a.user_id=receiver_id; b.user_id=offer.sender_id
         offer.status='accepted'
