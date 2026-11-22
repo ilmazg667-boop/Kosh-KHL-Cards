@@ -1,13 +1,16 @@
 """Persistent match/auction worker. Run separately: python -m app.worker"""
-import asyncio, os, random
+import asyncio, os, random, logging
 from datetime import timedelta
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL
 from .db import Session, init_db
 from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, DailyTournament, Auction, EconomyLedger
 from .game import simulate, team_power, chemistry, league_for_rating
 from .services import now, ensure_season, ensure_daily_tournament, progress_after_match, settle_auction, expire_trade_offers
+
+logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
+logger=logging.getLogger('kosh.match_worker')
 
 TICK=float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))
 if TICK<=0: TICK=1.5
@@ -42,12 +45,16 @@ async def choose_ai_roster(session,desired_power):
 async def send(bot, chat_id, text):
     if chat_id and bot:
         try: await bot.send_message(chat_id,text)
-        except Exception: pass  # event remains in DB; user can fetch it using /match
+        except Exception:
+            logger.exception('Telegram send failed: chat_id=%s text=%r', chat_id, text[:160])  # event remains in DB; user can fetch it using /match
 
 async def prepare_match(match_id,bot=None):
+    logger.info('Preparing match #%s', match_id)
     async with Session() as s:
         m=await s.get(Match,match_id)
-        if not m or m.status not in ('queued','running'): return
+        if not m or m.status not in ('queued','running'):
+            logger.warning('Match #%s skipped: missing or status=%s', match_id, m.status if m else 'missing')
+            return
         if m.status=='running' and m.events: return
         if m.mode in ('pvp','ranked','clan') and not m.away_user_id:
             m.status='searching'; await s.commit(); return
@@ -81,6 +88,7 @@ async def prepare_match(match_id,bot=None):
         m.home_score=hs; m.away_score=as_; m.shootout=so; m.overtime=ot; m.events=events
         m.home_goals=hg; m.away_goals=ag; m.minute=0; m.event_index=0; m.status='running'
         m.updated_at=now(); await s.commit()
+        logger.info('Match #%s started: mode=%s home=%s away=%s score=%s:%s events=%s', m.id, m.mode, m.home_user_id, m.away_user_id, hs, as_, len(events))
         def roster_text(label, roster, fallback):
             if not roster:
                 return f'{label}: {fallback}'
@@ -173,6 +181,7 @@ def format_result(m,home_user,away_user,for_home=True):
     return title
 
 async def process_match(match_id,bot):
+    logger.info('Processing match #%s', match_id)
     await prepare_match(match_id,bot)
     while True:
         async with Session() as s:
@@ -191,6 +200,7 @@ async def process_match(match_id,bot):
         if done: break
         await asyncio.sleep(TICK)
     await finish_match(match_id,bot)
+    logger.info('Finished processing match #%s', match_id)
 
 async def close_old_tournaments(session,bot):
     from .models import DailyTournament, TournamentEntry, OwnedCard, Card
@@ -250,6 +260,8 @@ async def matchmaking(bot=None):
         waiting=(await s.scalars(
             select(Match).where(Match.status=='searching').order_by(Match.created_at,Match.id)
         )).all()
+        if waiting:
+            logger.info('Matchmaking found %s searching requests: %s', len(waiting), [(m.id, m.home_user_id, m.mode) for m in waiting])
         paired=set()
 
         # First pair waiting players. Do this BEFORE the 30-second bot fallback.
@@ -309,6 +321,8 @@ async def matchmaking(bot=None):
 
     for user_id,message in notifications:
         await send(bot,user_id,message)
+    if notifications:
+        logger.info('Matchmaking sent %s notifications', len(notifications))
 
 async def guarded_process_match(match_id,bot,redis_client=None):
     lock=None
@@ -319,54 +333,81 @@ async def guarded_process_match(match_id,bot,redis_client=None):
             if not acquired: return
         except Exception:
             lock=None
-    try: await process_match(match_id,bot)
+    try:
+        await process_match(match_id,bot)
+    except Exception:
+        logger.exception('Unhandled error while processing match #%s', match_id)
+        raise
     finally:
         if lock is not None:
             try: await lock.release()
             except Exception: pass
 
 async def run_worker():
+    logger.info('Worker starting; tick=%ss bot_token_configured=%s redis_configured=%s', TICK, bool(BOT_TOKEN), bool(REDIS_URL))
     await init_db()
+    logger.info('Database initialized')
     bot=Bot(BOT_TOKEN) if BOT_TOKEN else None
+    if bot is None:
+        raise RuntimeError('BOT_TOKEN is missing; worker cannot send match updates')
     redis_client=None
     try:
         from redis.asyncio import Redis
-        redis_client=Redis.from_url(REDIS_URL,decode_responses=True)
-        await redis_client.ping()
+        if REDIS_URL:
+            redis_client=Redis.from_url(REDIS_URL,decode_responses=True)
+            await redis_client.ping()
+            logger.info('Redis connected; distributed match locks enabled')
+        else:
+            logger.warning('REDIS_URL is empty; running without distributed match locks')
     except Exception:
+        logger.exception('Redis unavailable; continuing without distributed match locks')
         redis_client=None
+    cycle=0
     while True:
-        async with Session() as s:
-            await ensure_season(s); await ensure_daily_tournament(s)
-            await expire_challenges(s,bot)
-            await expire_match_searches(s,bot)
-            await expire_trade_offers(s)
-            await close_old_tournaments(s,bot)
-            expired=(await s.scalars(select(Auction).where(Auction.status=='active',Auction.ends_at<=now()))).all()
-            for a in expired:
-                oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
-                settled=await settle_auction(s,a)
-                if not settled: continue  # another worker/admin already closed it
-                owner_id=a.owner_id; winner_id=a.winner_id; bid=a.highest_bid; minimum=a.min_price
-                oc_after=await s.get(OwnedCard,a.owned_card_id)
-                sold=bool(winner_id and bid>=minimum and oc_after and oc_after.user_id==winner_id and not oc_after.locked)
-                if sold:
-                    payout=bid*90//100
-                    await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён: карточка {card.player_name if card else ""} продана. Вам начислено {payout} 🪙 (комиссия 10%).')
-                    await send(bot,winner_id,f'🏆 Вы выиграли аукцион #{a.id}. Карточка {card.player_name if card else ""} передана в коллекцию.')
-                else:
-                    await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён без продажи. Карточка не передана; ставка возвращена.')
-                    if winner_id: await send(bot,winner_id,f'Аукцион #{a.id}: минимальная цена не достигнута или лот недоступен. Ставка {bid} 🪙 возвращена.')
-        # Pair searches before taking the queued snapshot so newly paired matches
-        # can be picked up by this same worker cycle.
-        await matchmaking(bot)
-        async with Session() as s:
-            queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(5))).all()
-            running=(await s.scalars(select(Match.id).where(Match.status=='running').limit(5))).all()
-        ids=list(dict.fromkeys(queued+running))
-        if ids:
-            await asyncio.gather(*(guarded_process_match(mid,bot,redis_client) for mid in ids))
-        else: await asyncio.sleep(2)
+        cycle+=1
+        try:
+            async with Session() as s:
+                await ensure_season(s); await ensure_daily_tournament(s)
+                await expire_challenges(s,bot)
+                await expire_match_searches(s,bot)
+                await expire_trade_offers(s)
+                await close_old_tournaments(s,bot)
+                expired=(await s.scalars(select(Auction).where(Auction.status=='active',Auction.ends_at<=now()))).all()
+                for a in expired:
+                    oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    settled=await settle_auction(s,a)
+                    if not settled: continue
+                    owner_id=a.owner_id; winner_id=a.winner_id; bid=a.highest_bid; minimum=a.min_price
+                    oc_after=await s.get(OwnedCard,a.owned_card_id)
+                    sold=bool(winner_id and bid>=minimum and oc_after and oc_after.user_id==winner_id and not oc_after.locked)
+                    if sold:
+                        payout=bid*90//100
+                        await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён: карточка {card.player_name if card else ""} продана. Вам начислено {payout} 🪙 (комиссия 10%).')
+                        await send(bot,winner_id,f'🏆 Вы выиграли аукцион #{a.id}. Карточка {card.player_name if card else ""} передана в коллекцию.')
+                    else:
+                        await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён без продажи. Карточка не передана; ставка возвращена.')
+                        if winner_id: await send(bot,winner_id,f'Аукцион #{a.id}: минимальная цена не достигнута или лот недоступен. Ставка {bid} 🪙 возвращена.')
+            await matchmaking(bot)
+            async with Session() as s:
+                queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(5))).all()
+                running=(await s.scalars(select(Match.id).where(Match.status=='running').limit(5))).all()
+                searching_count=await s.scalar(select(func.count(Match.id)).where(Match.status=='searching'))
+            ids=list(dict.fromkeys(queued+running))
+            if ids:
+                logger.info('Cycle %s: queued=%s running=%s searching=%s; processing=%s', cycle, queued, running, searching_count, ids)
+                results=await asyncio.gather(*(guarded_process_match(mid,bot,redis_client) for mid in ids),return_exceptions=True)
+                for mid,result in zip(ids,results):
+                    if isinstance(result,BaseException):
+                        logger.error('Match task #%s failed: %s',mid,result)
+            elif cycle==1 or cycle%30==0:
+                logger.info('Worker alive; searching=%s queued=0 running=0', searching_count)
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            logger.info('Worker shutdown requested')
+            raise
+        except Exception:
+            logger.exception('Worker cycle %s failed; retrying in 5 seconds', cycle)
+            await asyncio.sleep(5)
 
 if __name__=='__main__':
     if not BOT_TOKEN: raise RuntimeError('Set BOT_TOKEN in .env before starting the worker')
