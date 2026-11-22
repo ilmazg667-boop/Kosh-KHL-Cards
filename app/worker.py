@@ -64,13 +64,13 @@ async def prepare_match(match_id,bot=None):
             m.away_power=team_power(away); m.away_goalie=goalie(away)
             m.away_card_ids=[c.id for c in away]
             away_chem=await chemistry(s,away)
-        elif m.mode=='pve':
+        elif m.mode in ('pve','bot'):
             chosen=await choose_ai_roster(s,m.home_power)
             if chosen:
                 m.away_name,away=chosen; m.away_power=team_power(away); m.away_goalie=goalie(away)
                 m.away_card_ids=[c.id for c in away]; away_chem=await chemistry(s,away)
             else:
-                m.away_name=f'AI · {m.league}'; m.away_power=random.randint(max(65,m.home_power-10),min(100,m.home_power+10))
+                m.away_name='KHL Bot' if m.mode=='bot' else f'AI · {m.league}'; m.away_power=random.randint(max(65,m.home_power-10),min(100,m.home_power+10))
                 m.away_goalie=random.randint(max(65,m.away_power-4),min(100,m.away_power+4)); m.away_card_ids=[]
         home_names=[c.player_name for c in home]; away_names=[c.player_name for c in away]
         hs,as_,ot,so,events,hg,ag=simulate(m.home_power,m.away_power,m.home_goalie,m.away_goalie,home_chem,away_chem,home_names,away_names)
