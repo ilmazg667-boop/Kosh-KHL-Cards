@@ -31,7 +31,7 @@ def keyboard():
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
         ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
         ('🛡 Кланы','clans'),('🎟 Battle Pass','battlepass'),
-        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('📋 Задания','quests'),
+        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('🎟 Промокоды','promo'),('📋 Задания','quests'),
         ('❔ Помощь','help')
     ]
     for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
@@ -1103,11 +1103,21 @@ async def main():
                 return
             level=min(100,bp.xp//100)
             kb=InlineKeyboardBuilder()
+            claimed_free=set(bp.claimed_free or []); claimed_premium=set(bp.claimed_premium or [])
+            lines=[f'🎟 BATTLE PASS · сезон {bp.season}',f'Уровень: {level}/100 · XP: {bp.xp} · до следующего уровня: {0 if level>=100 else 100-bp.xp%100} XP','', 'Ближайшие уровни:']
+            for tier in range(max(1,level-2),min(100,level+7)+1):
+                free_reward='Карточка 99 OVR' if tier==100 else f'{250+tier*25} 🪙'
+                premium_reward=f'{1+tier//10} 💎'
+                free_state='получено' if tier in claimed_free else ('доступно' if tier<=level else 'закрыто')
+                premium_state='получено' if tier in claimed_premium else ('доступно' if tier<=level and bp.premium else 'закрыто')
+                lines.append(f'Ур. {tier}: Free — {free_reward} ({free_state}); Premium — {premium_reward} ({premium_state})')
+                if tier<=level and tier not in claimed_free: kb.button(text=f'🎁 Free · уровень {tier}',callback_data=f'bp:one:free:{tier}')
+                if tier<=level and bp.premium and tier not in claimed_premium: kb.button(text=f'💎 Premium · уровень {tier}',callback_data=f'bp:one:premium:{tier}')
             if not bp.premium: kb.button(text=f'💎 Активировать Premium · {BATTLEPASS_PREMIUM_PRICE}',callback_data='bp:premium')
-            if level>0: kb.button(text='🎁 Забрать доступные Free-награды',callback_data='bp:claim:free')
-            if level>0 and bp.premium: kb.button(text='💎 Забрать доступные Premium-награды',callback_data='bp:claim:premium')
+            if level>0: kb.button(text='🎁 Забрать все Free-награды',callback_data='bp:claim:free')
+            if level>0 and bp.premium: kb.button(text='💎 Забрать все Premium-награды',callback_data='bp:claim:premium')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await m.answer(f'🎟 BATTLE PASS · сезон {bp.season}\nУровень: {level}/100 · XP: {bp.xp}\nНаграды можно забирать кнопками ниже. На 100 уровне: Семён Кошелев · 99 OVR.',reply_markup=kb.as_markup())
+            await m.answer('\n'.join(lines)+'\n\nЗа матч начисляется 100 XP, за выполненное задание — 50 XP.',reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('bp:'))
     async def battlepass_button(c:CallbackQuery):
@@ -1115,7 +1125,11 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user)
-                if action=='premium':
+                if action=='one':
+                    premium=rest[0]=='premium'; tier=int(rest[1])
+                    reward=await claim_bp_reward(s,u.id,tier,premium)
+                    await c.message.answer(f'🎁 Награда уровня {tier}: {reward}.')
+                elif action=='premium':
                     u=await s.scalar(select(User).where(User.id==u.id).with_for_update())
                     bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
                     if not bp: bp=BattlePassProgress(user_id=u.id,season=season_key()); s.add(bp)
@@ -1155,11 +1169,12 @@ async def main():
                 ('play3',today,3,'Ежедневное: сыграть 3 матча'),('win1',today,1,'Ежедневное: выиграть 1 матч'),('score5goals',today,5,'Ежедневное: забить 5 голов'),
                 ('play20',week,20,'Еженедельное: сыграть 20 матчей'),('win10',week,10,'Еженедельное: выиграть 10 матчей'),
                 ('play100',season,100,'Сезонное: сыграть 100 матчей'),('win50',season,50,'Сезонное: одержать 50 побед'),('reach_khl',season,1,'Сезонное: достичь КХЛ'),('open50packs',season,50,'Сезонное: открыть 50 паков')]
-            lines=['📋 ЗАДАНИЯ']; kb=InlineKeyboardBuilder()
+            rewards={'play3':300,'win1':500,'score5goals':500,'play20':1500,'win10':2000,'play100':5000,'win50':7000,'reach_khl':2500,'open50packs':5000}
+            lines=['📋 ЗАДАНИЯ · награды за выполнение']; kb=InlineKeyboardBuilder()
             for key,period,need,title in definitions:
                 q=await s.scalar(select(QuestProgress).where(QuestProgress.user_id==m.from_user.id,QuestProgress.quest_key==key,QuestProgress.period_key==period))
                 value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
-                lines.append(f'{title}: {value}/{need} {status}')
+                lines.append(f'{title}: {value}/{need} · 🎁 {rewards[key]} 🪙'+(f' · {status}' if status else ''))
                 if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
@@ -1458,6 +1473,11 @@ async def main():
         except ValueError:
             await m.answer('Введите целое число (без букв) или отправьте /canceladmin для отмены.')
 
+    @dp.callback_query(F.data=='promo:enter')
+    async def promo_button(c:CallbackQuery):
+        await c.message.answer('🎟 Для активации промокода отправьте команду:\n/promo ВАШ_КОД')
+        await c.answer()
+
     @dp.message(Command('promo'))
     async def redeem_promo(m:Message):
         parts=(m.text or '').split(maxsplit=1)
@@ -1755,7 +1775,7 @@ async def main():
             'team':team,'play':play,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
             'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
-            'profile':profile,'balance':balance,'quests':quest,'help':help_cmd
+            'profile':profile,'balance':balance,'promo':promo_button,'quests':quest,'help':help_cmd
         }
         handler=handlers.get(action)
         if not handler and action!='home':
