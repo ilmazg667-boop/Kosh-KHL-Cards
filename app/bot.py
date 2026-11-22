@@ -1393,6 +1393,8 @@ async def main():
                     last=await team_session.scalar(select(Match).where(or_(Match.home_user_id==u.id,Match.away_user_id==u.id),Match.status=='completed').order_by(Match.id.desc()).limit(1))
                 avg_text=f'{float(avg_team):.1f} OVR' if avg_team is not None else 'состав не собран'
                 display_name=u.first_name or (f'@{u.username}' if u.username else 'Без имени')
+                from html import escape
+                display_name=escape(display_name)
                 if last:
                     own=last.home_score if last.home_user_id==u.id else last.away_score
                     opp=last.away_score if last.home_user_id==u.id else last.home_score
