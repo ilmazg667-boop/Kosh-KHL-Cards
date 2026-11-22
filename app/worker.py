@@ -189,7 +189,8 @@ async def process_match(match_id,bot):
             if not m or m.status!='running': return
             next_min=min(65 if any(e.get('minute')==65 for e in m.events) else 60,m.minute+1)
             available=[e for e in m.events if e['minute']<=next_min]
-            to_send=available[m.event_index:]
+            previous_index=m.event_index
+            to_send=available[previous_index:]
             m.minute=next_min; m.event_index=len(available); m.updated_at=now()
             done=m.minute>= (65 if any(e.get('minute')==65 for e in m.events) else 60)
             await s.commit()
@@ -197,14 +198,17 @@ async def process_match(match_id,bot):
             home_name=m.home_name or 'Команда 1'
             away_name=m.away_name or 'Команда 2'
             # Calculate the live scoreboard from all events already reached.
-            live_events=available
-            live_home=sum(1 for e in live_events if e.get('type')=='goal' and e.get('side')=='home')
-            live_away=sum(1 for e in live_events if e.get('type')=='goal' and e.get('side')=='away')
+            prior_events=available[:previous_index]
+            live_home=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='home')
+            live_away=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='away')
             messages=[]
             for event in to_send:
                 minute=event.get('minute',next_min)
                 if event.get('type')=='goal':
-                    scoring_team=home_name if event.get('side')=='home' else away_name
+                    if event.get('side')=='home':
+                        live_home+=1; scoring_team=home_name
+                    else:
+                        live_away+=1; scoring_team=away_name
                     detail=f" ({scoring_team} забила)"
                 else:
                     detail=''
