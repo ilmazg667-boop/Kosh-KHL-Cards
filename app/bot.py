@@ -1524,26 +1524,39 @@ async def main():
                     async with Session() as s:
                         if await s.get(PromoCode,code): await m.answer('Такой промокод уже существует. Придумайте другой.'); return
                     data['code']=code; state['step']='coins'
-                    await m.answer('Шаг 2 из 4. Сколько монет выдавать? Введите 0, если монеты не нужны.')
+                    await m.answer('Шаг 2 из 6. Сколько монет выдавать? 0 — без монет.')
                 elif step=='coins':
                     value=int(m.text.strip())
                     if value<0: raise ValueError()
                     data['coins']=value; state['step']='gems'
-                    await m.answer('Шаг 3 из 4. Сколько алмазов выдавать? Введите 0, если алмазы не нужны.')
+                    await m.answer('Шаг 3 из 6. Сколько алмазов выдавать? 0 — без алмазов.')
                 elif step=='gems':
                     value=int(m.text.strip())
-                    if value<0 or (value==0 and data.get('coins',0)==0): raise ValueError()
-                    data['gems']=value; state['step']='limit'
-                    await m.answer('Шаг 4 из 4. Укажите максимальное число активаций. 0 — без ограничений.')
+                    if value<0: raise ValueError()
+                    data['gems']=value; state['step']='xp'
+                    await m.answer('Шаг 4 из 6. Сколько XP Battle Pass начислить? 0 — без XP.')
+                elif step=='xp':
+                    value=int(m.text.strip())
+                    if value<0 or value>100000: raise ValueError()
+                    data['xp']=value; state['step']='premium'
+                    await m.answer('Шаг 5 из 6. Подарить Premium Battle Pass? Ответьте да или нет.')
+                elif step=='premium':
+                    value=m.text.strip().lower()
+                    if value not in ('да','нет','yes','no'): await m.answer('Ответьте «да» или «нет».'); return
+                    data['premium']=value in ('да','yes'); state['step']='limit'
+                    await m.answer('Шаг 6 из 6. Укажите максимальное число активаций. 0 — без ограничений.')
                 elif step=='limit':
                     limit=int(m.text.strip())
                     if limit<0: raise ValueError()
+                    if not any((data.get('coins',0),data.get('gems',0),data.get('xp',0),data.get('premium',False))):
+                        await m.answer('Укажите хотя бы одну награду: монеты, алмазы, XP или Premium.'); return
                     async with Session() as s:
-                        s.add(PromoCode(code=data['code'],reward_coins=data['coins'],reward_gems=data['gems'],max_uses=limit,uses_count=0,active=True))
-                        await audit(s,m.from_user.id,'promo_create',0,f'{data["code"]}:{data["coins"]}:{data["gems"]}:{limit}')
+                        s.add(PromoCode(code=data['code'],reward_coins=data['coins'],reward_gems=data['gems'],
+                            reward_xp=data['xp'],reward_premium=data['premium'],max_uses=limit,uses_count=0,active=True))
+                        await audit(s,m.from_user.id,'promo_create',0,f'{data["code"]}:{data["coins"]}:{data["gems"]}:{data["xp"]}:{data["premium"]}:{limit}')
                         await s.commit()
                     admin_steps.pop(m.from_user.id,None)
-                    await m.answer(f'✅ Промокод {data["code"]} создан!\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎\nЛимит активаций: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
+                    await m.answer(f'✅ Промокод {data["code"]} создан!\\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎 · {data["xp"]} XP · Premium: {"да" if data["premium"] else "нет"}\\nЛимит: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
                 return
             if step=='user':
                 uid=int(m.text.strip())
@@ -1605,9 +1618,16 @@ async def main():
             if used:
                 await m.answer('Вы уже активировали этот промокод.'); return
             u.coins+=promo.reward_coins; u.gems+=promo.reward_gems; promo.uses_count+=1
-            s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems))
+            if promo.reward_xp or promo.reward_premium:
+                bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
+                if not bp:
+                    bp=BattlePassProgress(user_id=u.id,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
+                bp.xp=min(10000,bp.xp+promo.reward_xp)
+                if promo.reward_premium: bp.premium=True
+            s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems,
+                xp_awarded=promo.reward_xp,premium_awarded=promo.reward_premium))
             await s.commit()
-        await m.answer(f'🎉 Промокод {code} активирован!\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎')
+        await m.answer(f'🎉 Промокод {code} активирован!\\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎 · {promo.reward_xp} XP · Premium: {"да" if promo.reward_premium else "нет"}')
 
     @dp.message(Command('givecoins'))
     async def givecoins(m):
