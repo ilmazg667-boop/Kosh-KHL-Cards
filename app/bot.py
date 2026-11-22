@@ -109,7 +109,7 @@ async def main():
     async with Session() as s:
         await seed_cards(s); await ensure_season(s); await ensure_daily_tournament(s)
     bot=Bot(BOT_TOKEN); dp=Dispatcher()
-    await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='help',description='Помощь')])
+    await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='tournament',description='Ежедневный турнир'),BotCommand(command='clan',description='Кланы'),BotCommand(command='help',description='Помощь')])
 
     @dp.message(Command('start'))
     async def start(m:Message):
@@ -257,6 +257,7 @@ async def main():
                 await m.answer(f'✅ {c.player_name} установлен на позицию {slot}.\n\n'+await render_team(s,m.from_user.id))
             except ValueError as e: await m.answer(str(e))
 
+    @dp.message(Command('cards'))
     @dp.message(F.text=='🃏 Карточки')
     async def collection(m):
         async with Session() as s:
@@ -331,6 +332,7 @@ async def main():
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Готово!')
 
+    @dp.message(Command('play'))
     @dp.message(Command('pve'))
     @dp.message(F.text=='🎮 Играть')
     async def play(m): await send_section_photo(m,PHOTO_GAME,'🎮 Выберите режим матча:',reply_markup=pve_keyboard())
