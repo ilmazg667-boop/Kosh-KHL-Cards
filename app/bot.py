@@ -102,8 +102,8 @@ async def main():
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await m.answer('Нижняя клавиатура отключена.',reply_markup=ReplyKeyboardRemove())
-            await m.answer(f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел:',reply_markup=menu_keyboard())
+            await m.answer(f'🏒 KOSH KHL CARDS\n\n{welcome}',reply_markup=ReplyKeyboardRemove())
+            await m.answer('Выберите раздел:',reply_markup=menu_keyboard())
 
 
     @dp.callback_query(F.data.startswith('menu:'))
@@ -177,8 +177,7 @@ async def main():
                 try: await active_user(s,c.from_user)
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
                 t,e,new=await make_tournament_entry(s,c.from_user.id)
-                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()                lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}','Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\nТОП-10:']
-                for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
+                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()                lines=[f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}',f'Вы участвуете. Ваши очки: {e.points}','Очки: обычная победа 3 · победа в OT/буллитах 2 · поражение в OT/буллитах 1.','\nТОП-10:']                for i,row in enumerate(rows,1): lines.append(f'{i}. {row.user_id} — {row.points} очк. · {row.wins} побед')
                 await c.message.answer('\n'.join(lines),reply_markup=back_keyboard())        elif key=='clans':
             async with Session() as s:
                 try: await active_user(s,c.from_user)
@@ -357,8 +356,7 @@ async def main():
         try:
             parts=m.text.split(); target=int(parts[1]); bet=int(parts[2]) if len(parts)>2 else 0
             if bet<0 or bet>1_000_000: raise ValueError()        except: await m.answer('Формат: /challenge USER_ID [ставка_в_монетах]'); return
-        async with Session() as s:            try:
-                u=await active_user(s,m.from_user); target_user=await s.get(User,target)
+        async with Session() as s:            try:                u=await active_user(s,m.from_user); target_user=await s.get(User,target)
                 if not target_user or target_user.is_banned: raise ValueError('Игрок не найден или заблокирован.')
                 if target==u.id: raise ValueError('Нельзя вызвать самого себя.')
                 u=await s.scalar(select(User).where(User.id==u.id).with_for_update())
@@ -538,7 +536,6 @@ async def main():
                 await c.message.answer('✅ Обмен проведён.' if accept else 'Обмен отклонён.')                try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')                except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
-
     @dp.message(Command('auction_submit'))
     async def auction_submit(m):
         try: oid=int(m.text.split()[1])
@@ -757,8 +754,7 @@ async def main():
         except: await m.answer('Использование: /givegems USER_ID AMOUNT'); return        async with Session() as s:            u=await s.get(User,uid)
             if not u or amount==0: await m.answer('Игрок не найден или сумма равна нулю.'); return
             if u.gems+amount<0: await m.answer('Операция приведёт к отрицательному балансу.'); return
-            u.gems+=amount; await audit(s,m.from_user.id,'givegems',uid,str(amount)); await s.commit()
-        await m.answer('Баланс алмазов изменён.')
+            u.gems+=amount; await audit(s,m.from_user.id,'givegems',uid,str(amount)); await s.commit()        await m.answer('Баланс алмазов изменён.')
 
     @dp.message(Command('givecard'))
     async def givecard(m):
