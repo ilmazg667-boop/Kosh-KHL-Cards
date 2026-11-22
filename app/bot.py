@@ -1251,7 +1251,7 @@ async def main():
             'profile':profile,'balance':balance,'help':help_cmd
         }
         handler=handlers.get(action)
-        if not handler:
+        if not handler and action!='home':
             await c.answer('Раздел не найден.',show_alert=True); return
         try:
             def add_player_back(kwargs):
