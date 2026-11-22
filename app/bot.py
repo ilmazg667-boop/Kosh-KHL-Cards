@@ -1161,7 +1161,8 @@ async def main():
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
             if len(parts)==3 and parts[1]=='claim':
-                try: reward=await claim_quest(s,m.from_user.id,parts[2]); await m.answer(f'✅ Получено {reward} 🪙.')
+                try:
+                    coins,gems=await claim_quest(s,m.from_user.id,parts[2]); await m.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎.')
                 except ValueError as e: await m.answer(str(e))
                 return
             today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; season=season_key()
@@ -1169,12 +1170,13 @@ async def main():
                 ('play3',today,3,'Ежедневное: сыграть 3 матча'),('win1',today,1,'Ежедневное: выиграть 1 матч'),('score5goals',today,5,'Ежедневное: забить 5 голов'),
                 ('play20',week,20,'Еженедельное: сыграть 20 матчей'),('win10',week,10,'Еженедельное: выиграть 10 матчей'),
                 ('play100',season,100,'Сезонное: сыграть 100 матчей'),('win50',season,50,'Сезонное: одержать 50 побед'),('reach_khl',season,1,'Сезонное: достичь КХЛ'),('open50packs',season,50,'Сезонное: открыть 50 паков')]
-            rewards={'play3':300,'win1':500,'score5goals':500,'play20':1500,'win10':2000,'play100':5000,'win50':7000,'reach_khl':2500,'open50packs':5000}
+            rewards={'play3':(300,0),'win1':(500,0),'score5goals':(500,1),'play20':(1500,2),'win10':(2000,3),'play100':(5000,5),'win50':(7000,8),'reach_khl':(2500,3),'open50packs':(5000,5)}
             lines=['📋 ЗАДАНИЯ · награды за выполнение']; kb=InlineKeyboardBuilder()
             for key,period,need,title in definitions:
                 q=await s.scalar(select(QuestProgress).where(QuestProgress.user_id==m.from_user.id,QuestProgress.quest_key==key,QuestProgress.period_key==period))
                 value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
-                lines.append(f'{title}: {value}/{need} · 🎁 {rewards[key]} 🪙'+(f' · {status}' if status else ''))
+                coins,gems=rewards[key]
+                lines.append(f'{title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎'+(f' · {status}' if status else ''))
                 if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
@@ -1184,8 +1186,8 @@ async def main():
         key=c.data.split(':',1)[1]
         async with Session() as s:
             try:
-                await active_user(s,c.from_user); reward=await claim_quest(s,c.from_user.id,key)
-                await c.message.answer(f'✅ Получено {reward} 🪙.')
+                await active_user(s,c.from_user); coins,gems=await claim_quest(s,c.from_user.id,key)
+                await c.message.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎.')
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
