@@ -173,7 +173,7 @@ def format_result(m,home_user,away_user,for_home=True):
     def goal_lines(goals):
         if not goals: return '—'
         return '\\n'.join(
-            f"• {g.get('minute','?')}-я минута — {g.get('scorer','Неизвестный')} (ассист: {g.get('assist') or 'нет'})"
+            f"• {g.get('minute','?')}' — {g.get('scorer','Неизвестный')} (ассисты: {g.get('assist') or '—'} и {g.get('assist2') or '—'})"
             for g in sorted(goals,key=lambda x:x.get('minute',0))
         )
     title+=f"\\n\\n🥅 Голы вашей команды ({len(own_goals or [])}):\\n{goal_lines(own_goals)}"
@@ -228,7 +228,7 @@ async def process_match(match_id,bot):
                 else:
                     detail=''
                 messages.append(
-                    f"⏱ {minute}-я минута | 🏒 {home_name} {live_home}:{live_away} {away_name}"
+                    f"⏱ {minute}' | 🏒 {home_name} {live_home}:{live_away} {away_name}"
                     f"{detail}\n{event.get('text','')}"
                 )
         for message in messages:
