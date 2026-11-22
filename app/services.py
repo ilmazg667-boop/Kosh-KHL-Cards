@@ -66,8 +66,14 @@ async def audit(session, actor, action, target=0, details=''):
 async def claim_daily(session, user):
     user=await session.scalar(select(User).where(User.id==user.id).with_for_update())
     today=now().date().isoformat()
-    if user.daily_claimed==today: return False
-    user.daily_claimed=today; user.coins+=1000; await session.commit(); return True
+    if user.daily_claimed==today: return None
+    coins=random.randint(800,1600)
+    bonus=random.random()<0.18
+    if bonus: coins+=random.randint(300,700)
+    gems=random.randint(1,3) if random.random()<0.16 else 0
+    user.daily_claimed=today; user.coins+=coins; user.gems+=gems
+    await session.commit()
+    return coins,gems,bonus
 
 async def open_pack(session,user,pack_name):
     if pack_name not in PACKS: raise ValueError('Неизвестный тип пака.')
