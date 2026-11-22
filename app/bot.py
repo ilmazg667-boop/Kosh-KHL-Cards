@@ -260,6 +260,9 @@ async def main():
 
     async def render_collection(target, uid, rarity=None, page=0):
         async with Session() as s:
+            u=await s.get(User,uid)
+            if not u or u.is_banned:
+                await target.answer('Аккаунт недоступен.'); return
             query=select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid)
             if rarity: query=query.where(Card.rarity==rarity)
             total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid,*( [Card.rarity==rarity] if rarity else [] ))) or 0
@@ -281,8 +284,6 @@ async def main():
     @dp.message(Command('cards'))
     @dp.message(F.text=='🃏 Карточки')
     async def collection(m):
-        try: await active_user(Session(),m.from_user)
-        except Exception: pass
         await render_collection(m,m.from_user.id)
 
     @dp.callback_query(F.data.startswith('collection:'))
