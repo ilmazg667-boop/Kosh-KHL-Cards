@@ -11,7 +11,7 @@ from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, BattlePassProgress,
-    QuestProgress, Season, AuditLog, EconomyLedger)
+    QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, team_power, league_for_rating
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
@@ -636,9 +636,14 @@ async def main():
     admin_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
-        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('📖 Все команды','adm:help')]:
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📖 Все команды','adm:help')]:
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
+        return kb.as_markup()
+
+    def admin_back_keyboard():
+        kb=InlineKeyboardBuilder()
+        kb.button(text='⬅️ Назад в админ-меню',callback_data='adm:home')
         return kb.as_markup()
 
     @dp.message(Command('admin'))
@@ -669,13 +674,17 @@ async def main():
             async with Session() as s:
                 rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.games)).offset(page*15).limit(15))).all()
                 total=await s.scalar(select(func.count(User.id))) or 0
-            lines=[f'👥 ИГРОКИ · страница {page+1} · всего {total}']
+            lines=[f'👥 СПИСОК ИГРОКОВ · страница {page+1} · всего {total}', 'Средний уровень команды — средний рейтинг экипированных карточек.']
             for u in rows:
-                lines.append(f'\n{u.first_name or u.username or "Без имени"} · ID {u.id}\n🪙 {u.coins} · 💎 {u.gems} · ⭐ {league_for_rating(u.rating)} ({u.rating}) · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
+                async with Session() as team_session:
+                    avg_team=await team_session.scalar(select(func.avg(Card.ovr)).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==u.id,OwnedCard.slot!=''))
+                avg_text=f'{float(avg_team):.1f} OVR' if avg_team is not None else 'состав не собран'
+                display_name=u.first_name or (f'@{u.username}' if u.username else 'Без имени')
+                lines.append(f'\n👤 {display_name}\n🆔 ID: {u.id}\n⭐ Рейтинг: {u.rating} · {league_for_rating(u.rating)}\n🏒 Средний уровень команды: {avg_text}'+(' · 🚫 Заблокирован' if u.is_banned else ''))
             kb=InlineKeyboardBuilder()
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
             if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
-            kb.button(text='🛡 В меню',callback_data='adm:home'); kb.adjust(2)
+            kb.button(text='⬅️ В админ-меню',callback_data='adm:home'); kb.adjust(2)
             await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         elif action[1]=='wiz':
             kind=action[2]
@@ -683,11 +692,43 @@ async def main():
             prompt={'givecoins':'💰 Введите Telegram ID игрока — это числовой номер аккаунта в Telegram. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока — это числовой номер аккаунта в Telegram. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите Telegram ID игрока, которому нужно выдать карточку.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
             await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
-            await c.message.answer('🔨 АУКЦИОНЫ\n/auction_queue — показать заявки игроков на аукцион.\n/auction_create ID НАЧАЛЬНАЯ_ЦЕНА ШАГ_СТАВКИ СРОК_В_ЧАСАХ МИН_ЦЕНА МАКС_СТАВКА — запустить аукцион.\n  ID — номер заявки; начальная цена — цена первого предложения; шаг ставки — минимальное повышение; срок — длительность аукциона в часах; мин. цена — нижний порог продажи; макс. ставка — верхний предел ставки.\n/auction_cancel ID — отменить аукцион и вернуть зарезервированные монеты.',reply_markup=admin_keyboard())
+            kb=InlineKeyboardBuilder()
+            kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
+            kb.button(text='❌ Отменить аукцион',callback_data='adm:auction_cancel')
+            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
+            await c.message.answer('🔨 УПРАВЛЕНИЕ АУКЦИОНАМИ\\nЗдесь можно просматривать заявки, запускать и отменять аукционы. Выберите действие:',reply_markup=kb.as_markup())
+        elif action[1]=='auction_queue':
+            async with Session() as s:
+                rows=(await s.scalars(select(Auction).where(Auction.status=='submitted').order_by(Auction.created_at))).all()
+                lines=['📋 ЗАЯВКИ НА АУКЦИОН']
+                for a in rows:
+                    oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                    if card: lines.append(f'\\nЗаявка #{a.id} · игрок {a.owner_id} · {card.player_name} · рейтинг {card.ovr}\\nДля запуска: /auction_create {a.id} НАЧАЛЬНАЯ_ЦЕНА ШАГ СРОК_ЧАСЫ МИН_ЦЕНА МАКС_СТАВКА')
+            await c.message.answer('\\n'.join(lines) if len(lines)>1 else 'Заявок пока нет.',reply_markup=admin_back_keyboard())
+        elif action[1]=='auction_cancel':
+            await c.message.answer('Чтобы отменить аукцион, укажите его номер командой /auction_cancel НОМЕР. Кнопочное управление добавим следующим этапом.',reply_markup=admin_back_keyboard())
         elif action[1]=='cards':
-            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать шаблон карточки. После команды укажите через |: имя игрока | позиция | общий рейтинг | редкость | страна | клуб | лига | ссылка на фото | ключ игрока.\n/editcard ID ПОЛЕ ЗНАЧЕНИЕ — изменить карточку. ID — номер шаблона; поле: ovr (общий рейтинг), rarity (редкость), country (страна) или image_url (ссылка на фото).\n/transfercard ID НОВЫЙ_КЛУБ НОВАЯ_ЛИГА СЕЗОН — создать новую версию карточки после трансфера.\n/cardactive ID on|off — включить или отключить карточку в новых выпадениях (уже выданные карты сохраняются).\n/setpack — изменить стоимость пака и вероятности выпадения редкостей.\n/importcards и /importchem — загрузить CSV-файл с карточками или сыгранностью.',reply_markup=admin_keyboard())
+            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать шаблон карточки. После команды укажите через |: имя игрока | позиция | общий рейтинг | редкость | страна | клуб | лига | ссылка на фото | ключ игрока.\n/editcard ID ПОЛЕ ЗНАЧЕНИЕ — изменить карточку. ID — номер шаблона; поле: ovr (общий рейтинг), rarity (редкость), country (страна) или image_url (ссылка на фото).\n/transfercard ID НОВЫЙ_КЛУБ НОВАЯ_ЛИГА СЕЗОН — создать новую версию карточки после трансфера.\n/cardactive ID on|off — включить или отключить карточку в новых выпадениях (уже выданные карты сохраняются).\n/setpack — изменить стоимость пака и вероятности выпадения редкостей.\n/importcards и /importchem — загрузить CSV-файл с карточками или сыгранностью.',reply_markup=admin_back_keyboard())
+        elif action[1]=='promos':
+            kb=InlineKeyboardBuilder()
+            kb.button(text='➕ Создать промокод',callback_data='adm:promo_create')
+            kb.button(text='📈 Статистика промокодов',callback_data='adm:promo_stats')
+            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
+            await c.message.answer('🎟 УПРАВЛЕНИЕ ПРОМОКОДАМИ\\nСоздавайте коды с наградой в монетах и/или алмазах. Лимит 0 означает без ограничений.',reply_markup=kb.as_markup())
+        elif action[1]=='promo_create':
+            admin_steps[c.from_user.id]={'kind':'promo','step':'code','data':{}}
+            await c.message.answer('🎟 Шаг 1 из 4. Введите промокод латинскими буквами или цифрами (до 40 символов).')
+        elif action[1]=='promo_stats':
+            async with Session() as s:
+                codes=(await s.scalars(select(PromoCode).order_by(PromoCode.created_at.desc()).limit(30))).all()
+                total=await s.scalar(select(func.count(PromoRedemption.id))) or 0
+            lines=[f'📈 СТАТИСТИКА ПРОМОКОДОВ\\nВсего активаций: {total}']
+            for p in codes:
+                lines.append(f'\\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎')
+            if not codes: lines.append('Промокодов пока нет.')
+            await c.message.answer(''.join(lines),reply_markup=admin_back_keyboard())
         elif action[1]=='help':
-            await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_keyboard())
+            await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
         elif action[1]=='home':
             await c.message.answer('🛡 Панель администратора',reply_markup=admin_keyboard())
         await c.answer()
@@ -704,6 +745,36 @@ async def main():
         if not state or not admin(m.from_user.id) or not m.text: return
         kind=state['kind']; step=state['step']
         try:
+            if kind=='promo':
+                data=state.setdefault('data',{})
+                if step=='code':
+                    code=m.text.strip().upper()
+                    if not code or len(code)>40 or not code.replace('_','').isalnum():
+                        await m.answer('Код должен содержать только латинские буквы, цифры и знак _. Введите ещё раз.'); return
+                    async with Session() as s:
+                        if await s.get(PromoCode,code): await m.answer('Такой промокод уже существует. Придумайте другой.'); return
+                    data['code']=code; state['step']='coins'
+                    await m.answer('Шаг 2 из 4. Сколько монет выдавать? Введите 0, если монеты не нужны.')
+                elif step=='coins':
+                    value=int(m.text.strip())
+                    if value<0: raise ValueError()
+                    data['coins']=value; state['step']='gems'
+                    await m.answer('Шаг 3 из 4. Сколько алмазов выдавать? Введите 0, если алмазы не нужны.')
+                elif step=='gems':
+                    value=int(m.text.strip())
+                    if value<0 or (value==0 and data.get('coins',0)==0): raise ValueError()
+                    data['gems']=value; state['step']='limit'
+                    await m.answer('Шаг 4 из 4. Укажите максимальное число активаций. 0 — без ограничений.')
+                elif step=='limit':
+                    limit=int(m.text.strip())
+                    if limit<0: raise ValueError()
+                    async with Session() as s:
+                        s.add(PromoCode(code=data['code'],reward_coins=data['coins'],reward_gems=data['gems'],max_uses=limit,uses_count=0,active=True))
+                        await audit(s,m.from_user.id,'promo_create',0,f'{data["code"]}:{data["coins"]}:{data["gems"]}:{limit}')
+                        await s.commit()
+                    admin_steps.pop(m.from_user.id,None)
+                    await m.answer(f'✅ Промокод {data["code"]} создан!\\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎\\nЛимит активаций: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
+                return
             if step=='user':
                 uid=int(m.text.strip())
                 async with Session() as s:
@@ -742,6 +813,27 @@ async def main():
                 await m.answer(f'✅ Карточка #{cid} выдана игроку {state["uid"]}.',reply_markup=admin_keyboard())
         except ValueError:
             await m.answer('Введите целое число (без букв) или отправьте /canceladmin для отмены.')
+
+    @dp.message(Command('promo'))
+    async def redeem_promo(m:Message):
+        parts=(m.text or '').split(maxsplit=1)
+        if len(parts)<2:
+            await m.answer('🎟 Чтобы активировать промокод, отправьте: /promo КОД'); return
+        code=parts[1].strip().upper()
+        async with Session() as s:
+            u=await s.scalar(select(User).where(User.id==m.from_user.id).with_for_update())
+            if not u:
+                await m.answer('Сначала запустите бота командой /start.'); return
+            promo=await s.scalar(select(PromoCode).where(PromoCode.code==code).with_for_update())
+            if not promo or not promo.active or (promo.max_uses and promo.uses_count>=promo.max_uses):
+                await m.answer('❌ Промокод не найден, отключён или лимит активаций исчерпан.'); return
+            used=await s.scalar(select(PromoRedemption.id).where(PromoRedemption.promo_code==code,PromoRedemption.user_id==u.id))
+            if used:
+                await m.answer('Вы уже активировали этот промокод.'); return
+            u.coins+=promo.reward_coins; u.gems+=promo.reward_gems; promo.uses_count+=1
+            s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems))
+            await s.commit()
+        await m.answer(f'🎉 Промокод {code} активирован!\\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎')
 
     @dp.message(Command('givecoins'))
     async def givecoins(m):
