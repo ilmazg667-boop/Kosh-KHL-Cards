@@ -80,7 +80,7 @@ async def render_team(session,uid):
     lines.append(f'\n💪 Сила состава: {team_power(cards)} OVR')
     from .game import chemistry
     ch=await chemistry(session,cards); lines.append(f'🤝 Сыгранность: {ch}/40')
-    lines.append('\nЗамена: /equip ID LW|C|RW|LD|RD|G')
+    lines.append('\nДобавить или снять карточку можно кнопками ниже.')
     return '\n'.join(lines)
 
 def team_keyboard():
@@ -1005,9 +1005,7 @@ async def main():
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
-                await c.message.answer('⚔️ Запускаем поиск соперника из другого клана.')
-                await c.bot.send_message(c.from_user.id,'Используйте кнопку ниже для поиска кланового матча.',reply_markup=None)
-                await c.message.answer('Клановая битва:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='⚔️ Найти соперника',callback_data='clan_start')],[InlineKeyboardButton(text='⬅️ Назад',callback_data='player:clans')]]))
+                await c.message.answer('⚔️ КЛАНОВАЯ БИТВА\nНайдите соперника из другого клана:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='⚔️ Найти соперника',callback_data='clan_start')],[InlineKeyboardButton(text='⬅️ Назад',callback_data='player:clans')]]))
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
