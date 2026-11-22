@@ -84,10 +84,10 @@ async def prepare_match(match_id,bot=None):
         def roster_text(label, roster, fallback):
             if not roster:
                 return f'{label}: {fallback}'
-            return label+'\\n'+'\\n'.join(f'{c.position} — {c.player_name} · {c.ovr} OVR' for c in roster)
-        lineup_message=(f'🏒 МАТЧ #{m.id} НАЧИНАЕТСЯ!\\n\\n'
+            return label+'\n'+'\n'.join(f'{c.position} — {c.player_name} · {c.ovr} OVR' for c in roster)
+        lineup_message=(f'🏒 МАТЧ #{m.id} НАЧИНАЕТСЯ!\n\n'
             +roster_text(f'🔴 {m.home_name} · {m.home_power} OVR',home,'Состав не найден')
-            +'\\n\\n'
+            +'\n\n'
             +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
         await send(bot,m.home_user_id,lineup_message)
         if m.away_user_id:
