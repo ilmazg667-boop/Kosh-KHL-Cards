@@ -357,9 +357,12 @@ async def run_worker():
                 else:
                     await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён без продажи. Карточка не передана; ставка возвращена.')
                     if winner_id: await send(bot,winner_id,f'Аукцион #{a.id}: минимальная цена не достигнута или лот недоступен. Ставка {bid} 🪙 возвращена.')
+        # Pair searches before taking the queued snapshot so newly paired matches
+        # can be picked up by this same worker cycle.
+        await matchmaking(bot)
+        async with Session() as s:
             queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(5))).all()
             running=(await s.scalars(select(Match.id).where(Match.status=='running').limit(5))).all()
-        await matchmaking(bot)
         ids=list(dict.fromkeys(queued+running))
         if ids:
             await asyncio.gather(*(guarded_process_match(mid,bot,redis_client) for mid in ids))
