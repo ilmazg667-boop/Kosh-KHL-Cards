@@ -210,7 +210,9 @@ async def resolve_trade(session,offer_id,receiver_id,accept):
 
 async def submit_auction_card(session,user_id,owned_id):
     oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
-    if not oc or oc.user_id!=user_id or oc.slot or oc.locked: raise ValueError('Можно передать только свободную карточку.')
+    if not oc or oc.user_id!=user_id or oc.locked: raise ValueError('Эта карточка недоступна для аукциона.')
+    # A card can be selected directly from the lineup; remove it from its slot before locking.
+    oc.slot=''
     oc.locked=True
     auction=Auction(owner_id=user_id,owned_card_id=owned_id,start_price=0,status='submitted',ends_at=now()+timedelta(days=1))
     session.add(auction); await session.commit(); await session.refresh(auction); return auction
