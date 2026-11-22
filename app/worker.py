@@ -1,6 +1,7 @@
 """Persistent match/auction worker. Run separately: python -m app.worker"""
 import asyncio, os, random, logging
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL
@@ -11,6 +12,9 @@ from .services import now, ensure_season, ensure_daily_tournament, progress_afte
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
 logger=logging.getLogger('kosh.match_worker')
+MOSCOW=ZoneInfo('Europe/Moscow')
+PHOTO_MATCH_START='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
+PHOTO_MATCH_END='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 
 TICK=float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))
 if TICK<=0: TICK=1.5
@@ -41,6 +45,11 @@ async def choose_ai_roster(session,desired_power):
     pool=candidates[:min(5,len(candidates))]
     chosen=random.choice(pool)
     return chosen[1],chosen[2]
+
+async def send_photo(bot, chat_id, photo, caption):
+    if chat_id and bot:
+        try: await bot.send_photo(chat_id,photo,caption=caption)
+        except Exception: logger.exception('Telegram photo send failed: chat_id=%s',chat_id)
 
 async def send(bot, chat_id, text):
     if chat_id and bot:
@@ -103,9 +112,9 @@ async def prepare_match(match_id,bot=None):
             +roster_text(f'🔴 {m.home_name} · {m.home_power} OVR',home,'Состав не найден')
             +'\n\n'
             +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
-        await send(bot,m.home_user_id,lineup_message)
-        if m.away_user_id:
-            await send(bot,m.away_user_id,lineup_message)
+        for chat_id in [m.home_user_id]+([m.away_user_id] if m.away_user_id else []):
+            await send_photo(bot,chat_id,PHOTO_MATCH_START,f'🏒 Матч #{m.id} · стартовое вбрасывание!')
+            await send(bot,chat_id,lineup_message)
 
 async def finish_match(match_id,bot):
     async with Session() as s:
@@ -152,7 +161,7 @@ async def finish_match(match_id,bot):
                         clan=await s.get(Clan,member.clan_id); clan.points+=pts; clan.rating=max(0,clan.rating+(10 if pts else -2))
             if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
             if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
-            tournament_day=(m.created_at.date().isoformat() if m.created_at else now().date().isoformat())
+            tournament_day=(m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo else (m.created_at.date().isoformat() if m.created_at else now().date().isoformat()))
             t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
             if t:
                 for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
@@ -163,8 +172,11 @@ async def finish_match(match_id,bot):
                         elif m.shootout: entry.points+=1
                         entry.goals+=score
         await s.commit()
+        await send_photo(bot,m.home_user_id,PHOTO_MATCH_END,f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
         await send(bot,m.home_user_id,format_result(m,home,away,for_home=True))
-        if away: await send(bot,m.away_user_id,format_result(m,home,away,for_home=False))
+        if away:
+            await send_photo(bot,m.away_user_id,PHOTO_MATCH_END,f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
+            await send(bot,m.away_user_id,format_result(m,home,away,for_home=False))
 
 
 def format_result(m,home_user,away_user,for_home=True):
@@ -189,7 +201,15 @@ def format_result(m,home_user,away_user,for_home=True):
         return sum(1 for e in home_events if e.get('type')==kind and e.get('side')==side)
     side='home' if for_home else 'away'
     other='away' if for_home else 'home'
-    title+=f"\\n\\n🎯 Броски: {stat('shot',side)}:{stat('shot',other)} · 🧤 Сейвы: {stat('save',side)}:{stat('save',other)}"
+    own_goals_count=len(own_goals or []); opp_goals_count=len(opp_goals or [])
+    own_shots=stat('shot',side)+own_goals_count
+    opp_shots=stat('shot',other)+opp_goals_count
+    # Saves are derived from shots faced minus goals conceded, never from random event labels.
+    own_saves=max(0,opp_shots-own_goals_count)
+    opp_saves=max(0,own_shots-opp_goals_count)
+    own_pct=(own_saves/opp_shots*100) if opp_shots else 0
+    opp_pct=(opp_saves/own_shots*100) if own_shots else 0
+    title+=f"\\n\\n🎯 Броски: {own_shots}:{opp_shots} · 🧤 Сейвы вратарей: {own_saves} ({own_pct:.1f}%):{opp_saves} ({opp_pct:.1f}%)"
     title+=f"\\n⚠️ Удаления: {stat('penalty',side)}:{stat('penalty',other)} · 🔵 Большинство: {stat('powerplay',side)}:{stat('powerplay',other)}"
     scorers=[g.get('scorer') for g in (own_goals or []) if g.get('scorer')]
     if scorers:
@@ -250,7 +270,7 @@ async def close_old_tournaments(session,bot):
     for old in olds:
         # Finish games/searches/challenges created on that date before locking the leaderboard.
         from datetime import datetime, timezone
-        day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=timezone.utc)
+        day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW)
         day_end=day_start+timedelta(days=1)
         unfinished=await session.scalar(select(Match.id).where(Match.created_at>=day_start,Match.created_at<day_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
         if unfinished:
