@@ -286,7 +286,7 @@ async def main():
             if not oc.locked:
                 kb.button(text='🏒 Поставить в состав',callback_data=f'team:choose:{card.position}')
                 if oc.slot: kb.button(text='➖ Снять из состава',callback_data=f'team:remove:{oc.slot}')
-                kb.button(text='🏪 Выставить на рынок',callback_data=f'market:sellcard:{oc.id}')
+                kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
             kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
             await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
@@ -621,7 +621,7 @@ async def main():
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
                 await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
             elif action=='mine':
-                listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at))).all()
+                listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at)))).all()
                 kb=InlineKeyboardBuilder(); lines=['📦 МОИ ЛОТЫ']
                 for listing in listings:
                     oc=await s.get(OwnedCard,listing.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
