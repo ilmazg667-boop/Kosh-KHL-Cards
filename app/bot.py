@@ -258,23 +258,42 @@ async def main():
                 await m.answer(f'✅ {c.player_name} установлен на позицию {slot}.\n\n'+await render_team(s,m.from_user.id))
             except ValueError as e: await m.answer(str(e))
 
-    @dp.message(Command('cards'))
-    @dp.message(F.text=='🃏 Карточки')
-    async def collection(m):
+    async def render_collection(target, uid, rarity=None, page=0):
         async with Session() as s:
-            try: await active_user(s,m.from_user)
-            except ValueError as e: await m.answer(str(e)); return
-            cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==m.from_user.id).order_by(OwnedCard.id.desc()).limit(60))).all()
-            lines=['🃏 КОЛЛЕКЦИЯ · последние 60 карточек']; kb=InlineKeyboardBuilder()
+            query=select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid)
+            if rarity: query=query.where(Card.rarity==rarity)
+            total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid,*( [Card.rarity==rarity] if rarity else [] ))) or 0
+            cards=(await s.scalars(query.order_by(OwnedCard.id.desc()).offset(page*12).limit(12))).all()
+            lines=[f'🃏 КОЛЛЕКЦИЯ · {rarity or "все редкости"} · страница {page+1} · всего {total}']
+            kb=InlineKeyboardBuilder()
             for oc in cards:
                 card=await s.get(Card,oc.card_id)
                 if not card: continue
                 lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {card.rarity}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
-                if not oc.locked:
-                    kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
+                if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
+            for index,name in enumerate(RARITIES): kb.button(text=name,callback_data=f'collection:r:{index}:0')
+            kb.button(text='Все редкости',callback_data='collection:all:0')
+            if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page-1}')
+            if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page+1}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await send_section_photo(m,PHOTO_GAME,'🃏 Ваша коллекция карточек.')
-            await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            await target.answer('\n'.join(lines),reply_markup=kb.as_markup())
+
+    @dp.message(Command('cards'))
+    @dp.message(F.text=='🃏 Карточки')
+    async def collection(m):
+        try: await active_user(Session(),m.from_user)
+        except Exception: pass
+        await render_collection(m,m.from_user.id)
+
+    @dp.callback_query(F.data.startswith('collection:'))
+    async def collection_filter(c:CallbackQuery):
+        parts=c.data.split(':')
+        if parts[1]=='all': rarity=None; page=int(parts[2])
+        else:
+            try: rarity=RARITIES[int(parts[2])]; page=int(parts[3])
+            except (ValueError,IndexError): await c.answer('Фильтр не найден.',show_alert=True); return
+        await render_collection(c.message,c.from_user.id,rarity,page)
+        await c.answer()
 
     @dp.callback_query(F.data.startswith('cardmenu:'))
     async def card_menu(c:CallbackQuery):
