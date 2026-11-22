@@ -1,5 +1,6 @@
 import random
 from datetime import datetime, timezone, timedelta, date
+from zoneinfo import ZoneInfo
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.exc import IntegrityError
 from .models import (User, Card, OwnedCard, MarketListing, TradeOffer, Auction, AuctionBid,
@@ -10,8 +11,9 @@ from .seed import read_csv_cards
 from .economy import available_bid_balance, auction_payout_and_fee
 
 UTC=timezone.utc
+MOSCOW=ZoneInfo('Europe/Moscow')
 
-def now(): return datetime.now(UTC)
+def now(): return datetime.now(MOSCOW)
 def season_key(dt=None):
     dt=dt or now(); q=((dt.month-1)//3)+1
     return f'{dt.year}-Q{q}'
@@ -45,9 +47,9 @@ async def ensure_season(session):
         for u in users: u.rating=0
     # Quarter-aligned season schedule, three months long.
     dt=now(); start_month=((dt.month-1)//3)*3+1
-    starts=datetime(dt.year,start_month,1,tzinfo=UTC)
-    if start_month==10: ends=datetime(dt.year+1,1,1,tzinfo=UTC)
-    else: ends=datetime(dt.year,start_month+3,1,tzinfo=UTC)
+    starts=datetime(dt.year,start_month,1,tzinfo=MOSCOW)
+    if start_month==10: ends=datetime(dt.year+1,1,1,tzinfo=MOSCOW)
+    else: ends=datetime(dt.year,start_month+3,1,tzinfo=MOSCOW)
     s=Season(season_key=key,starts_at=starts,ends_at=ends,active=True); session.add(s); await session.commit()
     return s
 
