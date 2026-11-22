@@ -633,14 +633,115 @@ async def main():
     async def myid(m):
         await m.answer(f'Ваш Telegram ID: {m.from_user.id}')
 
+    admin_steps={}
+    def admin_keyboard():
+        kb=InlineKeyboardBuilder()
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('📖 Все команды','adm:help')]:
+            kb.button(text=label,callback_data=data)
+        kb.adjust(2)
+        return kb.as_markup()
+
     @dp.message(Command('admin'))
     async def admin_help(m):
         if not admin(m.from_user.id):
             await m.answer(f'⛔ Нет доступа. Ваш Telegram ID: {m.from_user.id}. Добавьте его в ADMIN_IDS в Railway Variables.')
             return
-        await m.answer('АДМИН-КОМАНДЫ\n/givecoins USER AMOUNT\n/givegems USER AMOUNT\n/givecard USER CARD_ID\n/createcard name|position|ovr|rarity|country|club|league|image_url|player_key\n/editcard ID ovr|rarity|country|image_url VALUE\n/importcards — отправьте CSV-файл с заголовками\n/importchem — CSV player_key_a,player_key_b,shared_games\n/transfercard ID CLUB LEAGUE SEASON\n/ban USER_ID | /unban USER_ID\n/stats\n/auction_queue\n/auction_create ID START STEP HOURS MIN MAX\n/auction_cancel ID\n/setpack NAME|PRICE|coins|rarity=percent,...\n/season_reset\n/bpgrant USER XP\n/cardactive CARD_ID on|off')
+        await m.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\\nВыберите действие. Кнопки запускают пошаговый ввод.',reply_markup=admin_keyboard())
 
-    @dp.message(Command('givecoins'))
+    @dp.callback_query(F.data.startswith('adm:'))
+    async def admin_menu_callback(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('⛔ Нет доступа',show_alert=True); return
+        action=c.data.split(':')
+        if action[1]=='stats':
+            async with Session() as s:
+                total=await s.scalar(select(func.count(User.id))) or 0
+                banned=await s.scalar(select(func.count(User.id)).where(User.is_banned.is_(True))) or 0
+                cards=await s.scalar(select(func.count(Card.id))) or 0
+                matches=await s.scalar(select(func.count(Match.id))) or 0
+                active=await s.scalar(select(func.count(Match.id)).where(Match.status.in_(['queued','searching','running','challenge']))) or 0
+                listings=await s.scalar(select(func.count(MarketListing.id)).where(MarketListing.status=='active')) or 0
+                coins=await s.scalar(select(func.coalesce(func.sum(User.coins),0))) or 0
+                gems=await s.scalar(select(func.coalesce(func.sum(User.gems),0))) or 0
+            await c.message.answer(f'📊 СТАТИСТИКА БОТА\\n👥 Игроков: {total}\\n🚫 Заблокировано: {banned}\\n🃏 Шаблонов карточек: {cards}\\n🏒 Всего матчей: {matches}\\n🔥 Активных матчей: {active}\\n🏪 Активных лотов: {listings}\\n🪙 Монет в экономике: {coins}\\n💎 Алмазов в экономике: {gems}',reply_markup=admin_keyboard())
+        elif action[1]=='players':
+            page=int(action[2]) if len(action)>2 else 0
+            async with Session() as s:
+                rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.games)).offset(page*15).limit(15))).all()
+                total=await s.scalar(select(func.count(User.id))) or 0
+            lines=[f'👥 ИГРОКИ · страница {page+1} · всего {total}']
+            for u in rows:
+                lines.append(f'\\n{u.first_name or u.username or "Без имени"} · ID {u.id}\\n🪙 {u.coins} · 💎 {u.gems} · ⭐ рейтинг {u.rating} · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
+            kb=InlineKeyboardBuilder()
+            if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
+            if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
+            kb.button(text='🛡 В меню',callback_data='adm:home'); kb.adjust(2)
+            await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+        elif action[1]=='wiz':
+            kind=action[2]
+            admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
+            prompt={'givecoins':'💰 Введите Telegram ID игрока для изменения баланса монет.','givegems':'💎 Введите Telegram ID игрока для изменения баланса алмазов.','givecard':'🃏 Введите Telegram ID получателя карточки.','ban':'🚫 Введите Telegram ID игрока для блокировки.'}.get(kind,'Неизвестное действие.')
+            await c.message.answer(prompt+'\\nШаг 1 из 2. Отмена: /canceladmin')
+        elif action[1]=='auctions':
+            await c.message.answer('🔨 АУКЦИОНЫ\\n/auction_queue — заявки на выставление.\\n/auction_create ID START STEP HOURS MIN MAX — запустить аукцион.\\n/auction_cancel ID — отменить и вернуть резерв ставок.',reply_markup=admin_keyboard())
+        elif action[1]=='cards':
+            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\\n/createcard — создать карточку: name|position|ovr|rarity|country|club|league|image_url|player_key.\\n/editcard ID FIELD VALUE — изменить OVR, редкость, страну или фото.\\n/transfercard ID CLUB LEAGUE SEASON — новая версия при трансфере.\\n/cardactive ID on|off — управление выпадением.\\n/setpack — цена и шансы паков.\\n/importcards и /importchem — CSV.',reply_markup=admin_keyboard())
+        elif action[1]=='help':
+            await c.message.answer('📖 СПРАВОЧНИК АДМИНА\\n/givecoins USER AMOUNT — начислить/списать монеты.\\n/givegems USER AMOUNT — начислить/списать алмазы.\\n/givecard USER CARD_ID — выдать карточку по ID шаблона.\\n/ban USER_ID и /unban USER_ID — блокировка.\\n/createcard — создать шаблон карточки.\\n/editcard — изменить карточку.\\n/transfercard — создать версию после трансфера.\\n/cardactive — включить/выключить выпадение.\\n/auction_queue, /auction_create, /auction_cancel — аукционы.\\n/setpack — цена и шансы паков.\\n/importcards /importchem — импорт CSV.\\n/bpgrant USER XP — начислить XP Battle Pass.\\n/season_reset — сброс сезонного рейтинга.\\n/stats — статистика бота.',reply_markup=admin_keyboard())
+        elif action[1]=='home':
+            await c.message.answer('🛡 Панель администратора',reply_markup=admin_keyboard())
+        await c.answer()
+
+    @dp.message(Command('canceladmin'))
+    async def cancel_admin_wizard(m):
+        if not admin(m.from_user.id): return
+        admin_steps.pop(m.from_user.id,None)
+        await m.answer('❎ Пошаговый ввод отменён.',reply_markup=admin_keyboard())
+
+    @dp.message()
+    async def admin_wizard_input(m:Message):
+        state=admin_steps.get(m.from_user.id)
+        if not state or not admin(m.from_user.id) or not m.text: return
+        kind=state['kind']; step=state['step']
+        try:
+            if step=='user':
+                uid=int(m.text.strip())
+                async with Session() as s:
+                    target=await s.get(User,uid)
+                    if not target: await m.answer('Игрок не найден. Повторите ID или /canceladmin.'); return
+                state['uid']=uid
+                if kind in ('givecoins','givegems'):
+                    state['step']='amount'
+                    await m.answer('Шаг 2 из 2. Введите сумму: положительное число начисляет, отрицательное списывает.')
+                elif kind=='givecard':
+                    state['step']='card'
+                    await m.answer('Шаг 2 из 2. Введите ID шаблона карточки.')
+                elif kind=='ban':
+                    async with Session() as s:
+                        target=await s.get(User,uid); target.is_banned=True
+                        await audit(s,m.from_user.id,'ban',uid); await s.commit()
+                    admin_steps.pop(m.from_user.id,None)
+                    await m.answer(f'🚫 Игрок {uid} заблокирован.',reply_markup=admin_keyboard())
+            elif step=='amount':
+                amount=int(m.text.strip())
+                if amount==0: raise ValueError()
+                async with Session() as s:
+                    target=await s.get(User,state['uid']); field='coins' if kind=='givecoins' else 'gems'
+                    if getattr(target,field)+amount<0: await m.answer('Недостаточно средств для списания. Введите другую сумму.'); return
+                    setattr(target,field,getattr(target,field)+amount)
+                    await audit(s,m.from_user.id,kind,state['uid'],str(amount)); await s.commit()
+                admin_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Баланс обновлён: {amount:+} {"🪙" if kind=="givecoins" else "💎"}.',reply_markup=admin_keyboard())
+            elif step=='card':
+                cid=int(m.text.strip())
+                async with Session() as s:
+                    if not await s.get(Card,cid): await m.answer('Шаблон карточки не найден. Введите другой ID.'); return
+                    s.add(OwnedCard(user_id=state['uid'],card_id=cid,slot=''))
+                    await audit(s,m.from_user.id,'givecard',state['uid'],str(cid)); await s.commit()
+                admin_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Карточка #{cid} выдана игроку {state["uid"]}.',reply_markup=admin_keyboard())
+        except ValueError:
+            await m.answer('Введите корректное целое число или /canceladmin.')\n\n    @dp.message(Command('givecoins'))
     async def givecoins(m):
         if not admin(m.from_user.id): return
         try: _,uid,amount=m.text.split(); uid=int(uid); amount=int(amount)
