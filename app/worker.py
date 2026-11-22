@@ -399,8 +399,9 @@ async def run_worker():
                 for mid,result in zip(ids,results):
                     if isinstance(result,BaseException):
                         logger.error('Match task #%s failed: %s',mid,result)
-            elif cycle==1 or cycle%30==0:
-                logger.info('Worker alive; searching=%s queued=0 running=0', searching_count)
+            else:
+                if cycle==1 or cycle%30==0:
+                    logger.info('Worker alive; searching=%s queued=0 running=0', searching_count)
                 await asyncio.sleep(2)
         except asyncio.CancelledError:
             logger.info('Worker shutdown requested')
