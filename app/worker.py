@@ -145,7 +145,7 @@ async def finish_match(match_id,bot):
                     if not uid: continue
                     entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
                     if entry:
-                        if win: entry.points+=2 if m.shootout else 3; entry.wins+=1
+                        if win: entry.points+=2; entry.wins+=1
                         elif m.shootout: entry.points+=1
                         entry.goals+=score
         await s.commit()
