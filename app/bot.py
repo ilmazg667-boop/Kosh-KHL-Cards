@@ -681,7 +681,7 @@ async def main():
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
             prompt={'givecoins':'💰 Введите Telegram ID игрока для изменения баланса монет.','givegems':'💎 Введите Telegram ID игрока для изменения баланса алмазов.','givecard':'🃏 Введите Telegram ID получателя карточки.','ban':'🚫 Введите Telegram ID игрока для блокировки.'}.get(kind,'Неизвестное действие.')
-            await c.message.answer(prompt+'\nШаг 1 из 2. Отмена: /canceladmin')
+            await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
             await c.message.answer('🔨 АУКЦИОНЫ\n/auction_queue — заявки на выставление.\n/auction_create ID START STEP HOURS MIN MAX — запустить аукцион.\n/auction_cancel ID — отменить и вернуть резерв ставок.',reply_markup=admin_keyboard())
         elif action[1]=='cards':
