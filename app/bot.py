@@ -14,7 +14,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, team_power, league_for_rating
-from .worker import run_worker
+from .worker import run_worker, prepare_match
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, submit_auction_card, place_bid, make_tournament_entry,
@@ -432,6 +432,25 @@ async def main():
             mt.status='cancelled'; await s.commit()
         await c.message.edit_text(f'❌ Поиск матча #{mid} отменён.')
         await c.answer('Поиск отменён.')
+
+    @dp.message(Command('startmatch'))
+    @dp.message(F.text.casefold() == 'старт')
+    async def start_match_now(m):
+        async with Session() as s:
+            mt=await s.scalar(select(Match).where(
+                or_(Match.home_user_id==m.from_user.id,Match.away_user_id==m.from_user.id),
+                Match.status.in_(['queued','running'])
+            ).order_by(Match.id.desc()))
+            if not mt:
+                await m.answer('Нет ожидающего матча. Сначала запустите поиск соперника через /pvp.')
+                return
+            mid=mt.id
+            status=mt.status
+        if status=='queued':
+            await prepare_match(mid,m.bot)
+            await m.answer(f'🚨 Запрос на немедленный старт матча #{mid} отправлен. Трансляция начнётся сейчас.')
+        else:
+            await m.answer(f'🏒 Матч #{mid} уже запущен. Статус и счёт: /match')
 
     @dp.message(Command('match'))
     async def match_status(m):
