@@ -13,8 +13,8 @@ from .services import now, ensure_season, ensure_daily_tournament, progress_afte
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
 logger=logging.getLogger('kosh.match_worker')
 MOSCOW=ZoneInfo('Europe/Moscow')
-PHOTO_MATCH_START='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
-PHOTO_MATCH_END='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
+MATCH_START_PHOTOS=['https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg','https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg','https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg']
+MATCH_END_PHOTOS=['https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg','https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg','https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg']
 
 TICK=float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))
 if TICK<=0: TICK=1.5
@@ -113,7 +113,7 @@ async def prepare_match(match_id,bot=None):
             +'\n\n'
             +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
         for chat_id in [m.home_user_id]+([m.away_user_id] if m.away_user_id else []):
-            await send_photo(bot,chat_id,PHOTO_MATCH_START,f'🏒 Матч #{m.id} · стартовое вбрасывание!')
+            await send_photo(bot,chat_id,random.choice(MATCH_START_PHOTOS),f'🏒 Матч #{m.id} · стартовое вбрасывание!')
             await send(bot,chat_id,lineup_message)
 
 async def finish_match(match_id,bot):
@@ -172,10 +172,10 @@ async def finish_match(match_id,bot):
                         elif m.shootout: entry.points+=1
                         entry.goals+=score
         await s.commit()
-        await send_photo(bot,m.home_user_id,PHOTO_MATCH_END,f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
+        await send_photo(bot,m.home_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
         await send(bot,m.home_user_id,format_result(m,home,away,for_home=True))
         if away:
-            await send_photo(bot,m.away_user_id,PHOTO_MATCH_END,f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
+            await send_photo(bot,m.away_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
             await send(bot,m.away_user_id,format_result(m,home,away,for_home=False))
 
 
