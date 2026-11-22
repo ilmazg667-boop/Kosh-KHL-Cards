@@ -671,7 +671,7 @@ async def main():
                 total=await s.scalar(select(func.count(User.id))) or 0
             lines=[f'👥 ИГРОКИ · страница {page+1} · всего {total}']
             for u in rows:
-                lines.append(f'\\n{u.first_name or u.username or "Без имени"} · ID {u.id}\\n🪙 {u.coins} · 💎 {u.gems} · ⭐ рейтинг {u.rating} · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
+                lines.append(f'\\n{u.first_name or u.username or "Без имени"} · ID {u.id}\\n🪙 {u.coins} · 💎 {u.gems} · ⭐ {league_for_rating(u.rating)} ({u.rating}) · 🏆 {u.wins}W/{u.losses}L'+(' · 🚫 бан' if u.is_banned else ''))
             kb=InlineKeyboardBuilder()
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
             if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
@@ -698,7 +698,7 @@ async def main():
         admin_steps.pop(m.from_user.id,None)
         await m.answer('❎ Пошаговый ввод отменён.',reply_markup=admin_keyboard())
 
-    @dp.message()
+    @dp.message(lambda m: m.from_user.id in admin_steps)
     async def admin_wizard_input(m:Message):
         state=admin_steps.get(m.from_user.id)
         if not state or not admin(m.from_user.id) or not m.text: return
