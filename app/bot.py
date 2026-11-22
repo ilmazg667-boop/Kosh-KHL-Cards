@@ -279,7 +279,17 @@ async def main():
                 member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
                 if not member: await c.answer('Сначала вступите в клан через /clan.',show_alert=True); return
                 match=await start_pvp_queue(s,u,False,mode='clan')
-                await c.message.answer(f'🛡 Поиск клановой битвы запущен. ID #{match.id}. Очки начисляются только за клановый режим.')
+                kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
+                status_msg=await c.message.answer(f'🛡 Поиск соперника: 30 сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
+                async def countdown():
+                    for left in range(29,-1,-1):
+                        await asyncio.sleep(1)
+                        async with Session() as check:
+                            current=await check.get(Match,match.id)
+                            if not current or current.status!='searching': return
+                        try: await status_msg.edit_text(f'🛡 Поиск соперника: {left} сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
+                        except Exception: pass
+                asyncio.create_task(countdown())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
