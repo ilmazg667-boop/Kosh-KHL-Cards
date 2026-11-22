@@ -13,7 +13,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
-from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, team_power, league_for_rating
+from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
 from .worker import run_worker, prepare_match
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
@@ -30,7 +30,7 @@ def keyboard():
         ('📦 Паки','packs'),('🏪 Рынок','market'),
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
         ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
-        ('🛡 Кланы','clans'),('🎟 Battle Pass','battlepass'),
+        ('🛡 Кланы','clans'),('🔁 Обмены','trades'),('🎟 Battle Pass','battlepass'),
         ('👤 Профиль','profile'),('🪙 Баланс','balance'),('🎟 Промокоды','promo'),('📋 Задания','quests'),
         ('❔ Помощь','help')
     ]
@@ -57,7 +57,8 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='⚔️ PvP',callback_data='pvp_start')
+    kb.button(text='⚔️ PvP · обычный матч',callback_data='pvp_start')
+    kb.button(text='🏆 PvP · рейтинговая лига',callback_data='ranked_start')
     kb.button(text='🛡 Клановые битвы',callback_data='clan_start')
     kb.adjust(1); return kb.as_markup()
 
@@ -335,7 +336,15 @@ async def main():
     @dp.message(Command('play'))
     @dp.message(Command('pve'))
     @dp.message(F.text=='🎮 Играть')
-    async def play(m): await send_section_photo(m,PHOTO_GAME,'🎮 Выберите режим матча:',reply_markup=pve_keyboard())
+    async def play(m):
+        async with Session() as s:
+            try: u=await active_user(s,m.from_user)
+            except ValueError as e: await m.answer(str(e)); return
+            league=league_for_rating(u.rating)
+            next_league=next(((name,low) for name,low,high in LEAGUES if low>u.rating),None)
+            progress=f'До лиги {next_league[0]}: {next_league[1]-u.rating} рейтинга.' if next_league else 'Вы в высшей лиге.'
+            caption=f'🎮 РЕЖИМЫ МАТЧЕЙ\\nВаша лига: {league}\\nРейтинг: {u.rating}\\n{progress}\\n\\nВыберите режим:'
+        await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
 
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
@@ -360,6 +369,21 @@ async def main():
                             try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
                             except Exception: pass
                     asyncio.create_task(countdown())
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
+
+    @dp.callback_query(F.data=='ranked_start')
+    async def ranked_queue_from_menu(c:CallbackQuery):
+        async with Session() as s:
+            try:
+                u=await active_user(s,c.from_user)
+                match=await start_pvp_queue(s,u,True)
+                if match.status=='queued' and match.away_user_id==u.id:
+                    await c.bot.send_message(match.home_user_id,f'🏆 Рейтинговый соперник найден! Матч #{match.id}.')
+                    await c.message.answer(f'🏆 Соперник найден! Матч #{match.id} начинается.')
+                else:
+                    kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
+                    await c.message.answer(f'🏆 Поиск соперника в лиге {league_for_rating(u.rating)}. Рейтинг: {u.rating}. Матч #{match.id}.',reply_markup=kb.as_markup())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -730,6 +754,66 @@ async def main():
                 try: await c.bot.send_message(offer.sender_id,'Ваше предложение принято.' if accept else 'Ваше предложение отклонено.')
                 except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer()
+
+    @dp.message(Command('trades'))
+    @dp.message(F.text=='🔁 Обмены')
+    async def trade_menu(m):
+        kb=InlineKeyboardBuilder(); kb.button(text='🤝 Предложить обмен',callback_data='trade:players')
+        kb.button(text='📨 Мои входящие предложения',callback_data='trade:incoming')
+        kb.button(text='📤 Мои исходящие предложения',callback_data='trade:outgoing')
+        kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
+        await m.answer('🔁 ОБМЕНЫ КАРТОЧКАМИ\\nВыбирайте игроков и карточки кнопками. Перед подтверждением обе карточки блокируются.',reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('trade:'))
+    async def trade_menu_action(c:CallbackQuery):
+        parts=c.data.split(':'); action=parts[1]
+        async with Session() as s:
+            try: await active_user(s,c.from_user)
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+            if action=='players':
+                rows=(await s.scalars(select(User).where(User.id!=c.from_user.id,User.is_banned.is_(False)).order_by(desc(User.rating)).limit(30))).all()
+                kb=InlineKeyboardBuilder()
+                for u in rows: kb.button(text=f'{u.first_name or "Игрок"} · {u.rating} ⭐',callback_data=f'trade:target:{u.id}')
+                kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
+                await c.message.answer('Выберите игрока для обмена:',reply_markup=kb.as_markup())
+            elif action=='target':
+                target=int(parts[2])
+                if not await s.get(User,target): await c.answer('Игрок не найден.',show_alert=True); return
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(80))).all()
+                kb=InlineKeyboardBuilder(); count=0
+                for oc in cards:
+                    card=await s.get(Card,oc.card_id)
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {card.rarity}',callback_data=f'trade:give:{target}:{oc.id}'); count+=1
+                kb.button(text='⬅️ Назад',callback_data='trade:players'); kb.adjust(1)
+                await c.message.answer('Выберите карточку, которую отдаёте:' if count else 'Нет свободных карточек для обмена.',reply_markup=kb.as_markup())
+            elif action=='give':
+                target=int(parts[2]); give=int(parts[3])
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==target,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(80))).all()
+                kb=InlineKeyboardBuilder(); count=0
+                for oc in cards:
+                    card=await s.get(Card,oc.card_id)
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {card.rarity}',callback_data=f'trade:send:{target}:{give}:{oc.id}'); count+=1
+                kb.button(text='⬅️ Назад',callback_data=f'trade:target:{target}'); kb.adjust(1)
+                await c.message.answer('Выберите карточку, которую хотите получить:' if count else 'У игрока нет свободных карточек для обмена.',reply_markup=kb.as_markup())
+            elif action=='send':
+                target,give,receive=map(int,parts[2:5])
+                try:
+                    offer=await create_trade(s,c.from_user.id,target,give,receive)
+                    a=await s.get(OwnedCard,give); b=await s.get(OwnedCard,receive)
+                    message=f'🔁 Предложение обмена #{offer.id}\\nВам предлагают: {await owned_card_text(s,a)}\\nВзамен вы отдаёте: {await owned_card_text(s,b)}'
+                    await c.bot.send_message(target,message,reply_markup=trade_keyboard(offer.id))
+                    await c.message.answer(f'Предложение #{offer.id} отправлено. Обе карточки заблокированы до ответа.')
+                except Exception as e:
+                    await c.answer(str(e),show_alert=True); return
+            elif action in ('incoming','outgoing'):
+                field=TradeOffer.receiver_id if action=='incoming' else TradeOffer.sender_id
+                rows=(await s.scalars(select(TradeOffer).where(field==c.from_user.id).order_by(TradeOffer.id.desc()).limit(15))).all()
+                lines=['📨 ОБМЕНЫ' if action=='incoming' else '📤 ИСХОДЯЩИЕ ОБМЕНЫ']
+                for offer in rows:
+                    lines.append(f'#{offer.id} · игрок {offer.sender_id} → {offer.receiver_id} · {offer.status}')
+                kb=InlineKeyboardBuilder(); kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
+                await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
         await c.answer()
 
     @dp.message(Command('auction_submit'))
@@ -1791,7 +1875,7 @@ async def main():
             'team':team,'play':play,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
             'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
-            'profile':profile,'balance':balance,'promo':promo_section,'quests':quest,'help':help_cmd
+            'profile':profile,'balance':balance,'promo':promo_section,'trades':trade_menu,'quests':quest,'help':help_cmd
         }
         handler=handlers.get(action)
         if not handler and action!='home':
