@@ -290,7 +290,7 @@ async def settle_auction(session,a):
     auction.status='completed'; await session.commit(); return True
 
 async def expire_trade_offers(session):
-    cutoff=now()-timedelta(days=7)
+    cutoff=now().astimezone(UTC)-timedelta(days=7)
     offers=(await session.scalars(select(TradeOffer).where(TradeOffer.status=='pending',TradeOffer.created_at<cutoff))).all()
     for offer in offers:
         for cid in offer.give_card_ids+offer.receive_card_ids:
