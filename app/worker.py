@@ -216,6 +216,9 @@ async def process_match(match_id,bot):
                     f"⏱ {minute}-я минута | 🏒 {home_name} {live_home}:{live_away} {away_name}"
                     f"{detail}\n{event.get('text','')}"
                 )
+        for message in messages:
+            for chat_id in chat_ids:
+                await send(bot,chat_id,message)
         if done: break
         await asyncio.sleep(TICK)
     await finish_match(match_id,bot)
