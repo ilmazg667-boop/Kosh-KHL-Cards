@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -83,6 +83,17 @@ async def render_team(session,uid):
     lines.append('\nЗамена: /equip ID LW|C|RW|LD|RD|G')
     return '\n'.join(lines)
 
+def team_keyboard():
+    kb=InlineKeyboardBuilder()
+    for pos in POSITIONS:
+        kb.button(text=f'➕ Поставить {pos}',callback_data=f'team:choose:{pos}')
+        kb.button(text=f'➖ Убрать {pos}',callback_data=f'team:remove:{pos}')
+    kb.button(text='⬅️ Главное меню',callback_data='player:home')
+    kb.adjust(2); return kb.as_markup()
+
+def collection_keyboard(cards, session):
+    return None
+
 async def profile_text(u):
     return (f'👤 Профиль · {u.first_name or u.id}\n🪙 {u.coins} монет · 💎 {u.gems} алмазов\n'
             f'🏆 {league_for_rating(u.rating)} · ⭐ {u.rating} рейтинга\n'
@@ -98,6 +109,7 @@ async def main():
     async with Session() as s:
         await seed_cards(s); await ensure_season(s); await ensure_daily_tournament(s)
     bot=Bot(BOT_TOKEN); dp=Dispatcher()
+    await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='help',description='Помощь')])
 
     @dp.message(Command('start'))
     async def start(m:Message):
@@ -192,12 +204,48 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             await m.answer(await profile_text(u))
 
+    @dp.message(Command('team'))
     @dp.message(F.text=='🏒 Моя команда')
     async def team(m):
         async with Session() as s:
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            await send_section_photo(m,PHOTO_GOALIE,await render_team(s,m.from_user.id))
+            await send_section_photo(m,PHOTO_GOALIE,await render_team(s,m.from_user.id),reply_markup=team_keyboard())
+
+    @dp.callback_query(F.data.startswith('team:'))
+    async def team_action(c:CallbackQuery):
+        _,action,pos=c.data.split(':',2)
+        if pos not in POSITIONS: await c.answer('Позиция не найдена.',show_alert=True); return
+        async with Session() as s:
+            try: await active_user(s,c.from_user)
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+            if action=='remove':
+                oc=await s.scalar(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot==pos).with_for_update())
+                if not oc: await c.answer('На этой позиции уже нет карточки.',show_alert=True); return
+                if oc.locked: await c.answer('Карточка заблокирована торговой операцией.',show_alert=True); return
+                oc.slot=''; await s.commit()
+                await c.message.answer(f'➖ Карточка снята с позиции {pos}.',reply_markup=team_keyboard())
+            elif action=='choose':
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
+                kb=InlineKeyboardBuilder(); count=0
+                for oc in cards:
+                    card=await s.get(Card,oc.card_id)
+                    if card and card.position==pos:
+                        kb.button(text=f'{card.player_name} · {card.ovr} OVR'+(f' · сейчас {oc.slot}' if oc.slot else ''),callback_data=f'teamequip:{oc.id}:{pos}'); count+=1
+                kb.button(text='⬅️ Назад к команде',callback_data='player:team'); kb.adjust(1)
+                await c.message.answer(f'Выберите карточку на позицию {pos}:' if count else f'Нет доступных карточек на позицию {pos}. Откройте паки или снимите блокировку с карточки.',reply_markup=kb.as_markup())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('teamequip:'))
+    async def team_equip_selected(c:CallbackQuery):
+        try: _,oid,pos=c.data.split(':',2); oid=int(oid)
+        except ValueError: await c.answer('Карточка не найдена.',show_alert=True); return
+        async with Session() as s:
+            try:
+                await active_user(s,c.from_user); card=await equip_card(s,c.from_user.id,oid,pos)
+                await c.message.answer(f'✅ {card.player_name} поставлен на {pos}.\n\n'+await render_team(s,c.from_user.id),reply_markup=team_keyboard())
+            except ValueError as e: await c.answer(str(e),show_alert=True); return
+        await c.answer('Состав обновлён.')
 
     @dp.message(Command('equip'))
     async def equip(m):
@@ -215,11 +263,34 @@ async def main():
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
             cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==m.from_user.id).order_by(OwnedCard.id.desc()).limit(60))).all()
-            lines=['🃏 КОЛЛЕКЦИЯ (последние 60)']
-            for oc in cards: lines.append(await owned_card_text(s,oc)+(f' · Слот {oc.slot}' if oc.slot else '')+(' · 🔒' if oc.locked else ''))
-            lines.append('\nКарточки #ID можно выставить, обменять или поставить в состав.')
+            lines=['🃏 КОЛЛЕКЦИЯ · последние 60 карточек']; kb=InlineKeyboardBuilder()
+            for oc in cards:
+                card=await s.get(Card,oc.card_id)
+                if not card: continue
+                lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {card.rarity}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
+                if not oc.locked:
+                    kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
+            kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await send_section_photo(m,PHOTO_GAME,'🃏 Ваша коллекция карточек.')
-            await m.answer('\n'.join(lines))
+            await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('cardmenu:'))
+    async def card_menu(c:CallbackQuery):
+        try: oid=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Карточка не найдена.',show_alert=True); return
+        async with Session() as s:
+            oc=await s.get(OwnedCard,oid)
+            if not oc or oc.user_id!=c.from_user.id: await c.answer('Карточка не принадлежит вам.',show_alert=True); return
+            card=await s.get(Card,oc.card_id)
+            kb=InlineKeyboardBuilder()
+            if not oc.locked:
+                kb.button(text='🏒 Поставить в состав',callback_data=f'team:choose:{card.position}')
+                if oc.slot: kb.button(text='➖ Снять из состава',callback_data=f'team:remove:{oc.slot}')
+                kb.button(text='🏪 Выставить на рынок',callback_data=f'market:sellcard:{oc.id}')
+                kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
+            kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
+            await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
+        await c.answer()
 
     @dp.message(Command('card'))
     async def card_details(m):
@@ -602,13 +673,13 @@ async def main():
         async with Session() as s:
             await active_user(s,c.from_user)
             if action=='start':
-                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(50))).all()
+                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
                 kb=InlineKeyboardBuilder()
                 for oc in cards:
                     card=await s.get(Card,oc.card_id)
-                    if card: kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}',callback_data=f'auctioncard:{oc.id}')
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}'+(f' · в составе {oc.slot}' if oc.slot else ''),callback_data=f'auctioncard:{oc.id}')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
-                await c.message.answer('Шаг 1 из 2. Выберите свободную карточку для аукциона:',reply_markup=kb.as_markup())
+                await c.message.answer('Шаг 1 из 2. Выберите карточку. Если она стоит в составе, при выставлении автоматически освободится её позиция.',reply_markup=kb.as_markup()) if cards else await c.message.answer('У вас пока нет карточек для аукциона. Откройте пак или получите карточку, затем вернитесь сюда.',reply_markup=auction_menu_keyboard())
             elif action=='current':
                 rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
                 lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ']; kb=InlineKeyboardBuilder()
@@ -857,6 +928,7 @@ async def main():
                 lines.append(f'{title}: {value}/{need} {status}')
             await m.answer('\n'.join(lines))
 
+    @dp.message(Command('daily'))
     @dp.message(F.text=='🎁 Ежедневная награда')
     async def daily(m):
         async with Session() as s:
@@ -1446,7 +1518,9 @@ async def main():
             def add_player_back(kwargs):
                 markup=kwargs.get('reply_markup')
                 rows=list(markup.inline_keyboard) if isinstance(markup,InlineKeyboardMarkup) else []
-                rows.append([InlineKeyboardButton(text='⬅️ Назад в главное меню',callback_data='player:home')])
+                has_section_nav=any(btn.callback_data and (btn.callback_data.startswith(('auctionmenu:','player:','market:','team:'))) for row in rows for btn in row)
+                if not has_section_nav:
+                    rows.append([InlineKeyboardButton(text='⬅️ Назад в главное меню',callback_data='player:home')])
                 kwargs['reply_markup']=InlineKeyboardMarkup(inline_keyboard=rows)
                 return kwargs
             async def proxy_answer(*args,**kwargs):
