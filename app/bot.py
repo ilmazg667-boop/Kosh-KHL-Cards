@@ -25,6 +25,17 @@ MENU=[['🏒 Моя команда','🎮 Играть'],['🃏 Карточки
 def keyboard(): return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=x) for x in row] for row in MENU],resize_keyboard=True)
 def admin(uid): return uid in ADMIN_IDS
 
+async def send_section_photo(m, url, caption, reply_markup=None):
+    try:
+        await m.answer_photo(url, caption=caption, reply_markup=reply_markup)
+    except Exception:
+        await m.answer(caption, reply_markup=reply_markup)
+
+PHOTO_ARENA='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
+PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
+PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
+PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
+
 def pack_keyboard():
     kb=InlineKeyboardBuilder()
     for name,d in PACKS.items(): kb.button(text=f"{name} · {d['price']} {'🪙' if d['currency']=='coins' else '💎'}",callback_data=f'pack:{name}')
@@ -83,7 +94,7 @@ async def main():
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await m.answer(f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
+            await send_section_photo(m,PHOTO_ARENA,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
 
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
@@ -109,7 +120,7 @@ async def main():
         async with Session() as s:
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            await m.answer(await render_team(s,m.from_user.id))
+            await send_section_photo(m,PHOTO_GOALIE,await render_team(s,m.from_user.id))
 
     @dp.message(Command('equip'))
     async def equip(m):
@@ -172,7 +183,7 @@ async def main():
 
     @dp.message(Command('pve'))
     @dp.message(F.text=='🎮 Играть')
-    async def play(m): await m.answer('🎮 Выберите режим: PvE за монеты, обычный PvP, рейтинг или клановая битва.',reply_markup=pve_keyboard())
+    async def play(m): await send_section_photo(m,PHOTO_GAME,'🎮 Выберите режим: PvE за монеты, обычный PvP, рейтинг или клановая битва.',reply_markup=pve_keyboard())
 
     @dp.callback_query(F.data.in_({'pvp_start','ranked_start'}))
     async def queue_from_menu(c:CallbackQuery):
@@ -611,9 +622,16 @@ async def main():
         async with Session() as s:
             ss=await ensure_season(s); await m.answer(f'🗓 Сезон {ss.season_key}\nНачало UTC: {ss.starts_at}\nКонец UTC: {ss.ends_at}\nПосле сезона рейтинг сбрасывается до 0, статистика сохраняется.')
 
+
+    @dp.message(Command('myid'))
+    async def myid(m):
+        await m.answer(f'Ваш Telegram ID: {m.from_user.id}')
+
     @dp.message(Command('admin'))
     async def admin_help(m):
-        if not admin(m.from_user.id): return
+        if not admin(m.from_user.id):
+            await m.answer(f'⛔ Нет доступа. Ваш Telegram ID: {m.from_user.id}. Добавьте его в ADMIN_IDS в Railway Variables.')
+            return
         await m.answer('АДМИН-КОМАНДЫ\n/givecoins USER AMOUNT\n/givegems USER AMOUNT\n/givecard USER CARD_ID\n/createcard name|position|ovr|rarity|country|club|league|image_url|player_key\n/editcard ID ovr|rarity|country|image_url VALUE\n/importcards — отправьте CSV-файл с заголовками\n/importchem — CSV player_key_a,player_key_b,shared_games\n/transfercard ID CLUB LEAGUE SEASON\n/ban USER_ID | /unban USER_ID\n/stats\n/auction_queue\n/auction_create ID START STEP HOURS MIN MAX\n/auction_cancel ID\n/setpack NAME|PRICE|coins|rarity=percent,...\n/season_reset\n/bpgrant USER XP\n/cardactive CARD_ID on|off')
 
     @dp.message(Command('givecoins'))
