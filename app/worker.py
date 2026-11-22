@@ -162,23 +162,38 @@ async def finish_match(match_id,bot):
 
 
 def format_result(m,home_user,away_user,for_home=True):
-    own=m.home_score if for_home else m.away_score; opp=m.away_score if for_home else m.home_score
-    own_goals=m.home_goals if for_home else m.away_goals; opp_goals=m.away_goals if for_home else m.home_goals
-    title=f"🏒 Матч #{m.id} завершён\n{m.home_name} {m.home_score}:{m.away_score} {m.away_name}"
-    if m.mode=='ranked': title+=f"\n⭐ Изменение рейтинга: {m.rating_change if for_home else -m.rating_change:+d}"
-    title+=f"\n🥅 Голы: {own_goals} за вас / {opp_goals} соперника"
+    own_goals=m.home_goals if for_home else m.away_goals
+    opp_goals=m.away_goals if for_home else m.home_goals
+    home_name=m.home_name or (home_user.first_name if home_user else None) or f'Игрок {m.home_user_id}'
+    away_name=m.away_name or (away_user.first_name if away_user else None) or ('KHL Bot' if not m.away_user_id else f'Игрок {m.away_user_id}')
+    title=f"🏒 Матч #{m.id} завершён\\n{home_name} {m.home_score}:{m.away_score} {away_name}"
+    if m.mode=='ranked':
+        change=m.rating_change or 0
+        title+=f"\\n⭐ Изменение рейтинга: {change if for_home else -change:+d}"
+    def goal_lines(goals):
+        if not goals: return '—'
+        return '\\n'.join(
+            f"• {g.get('minute','?')}-я минута — {g.get('scorer','Неизвестный')} (ассист: {g.get('assist') or 'нет'})"
+            for g in sorted(goals,key=lambda x:x.get('minute',0))
+        )
+    title+=f"\\n\\n🥅 Голы вашей команды ({len(own_goals or [])}):\\n{goal_lines(own_goals)}"
+    title+=f"\\n\\n🥅 Голы соперника ({len(opp_goals or [])}):\\n{goal_lines(opp_goals)}"
     home_events=m.events or []
-    def stat(kind,side): return sum(1 for e in home_events if e.get('type')==kind and e.get('side')==side)
-    side='home' if for_home else 'away'; other='away' if for_home else 'home'
-    title+=f"\n🎯 Броски: {stat('shot',side)}:{stat('shot',other)} · 🧤 Сейвы: {stat('save',side)}:{stat('save',other)}"
-    title+=f"\n⚠️ Удаления: {stat('penalty',side)}:{stat('penalty',other)} · 🔵 Большинство: {stat('powerplay',side)}:{stat('powerplay',other)}"
-    scorers=[g.get('scorer') for g in (own_goals or [])]
+    def stat(kind,side):
+        return sum(1 for e in home_events if e.get('type')==kind and e.get('side')==side)
+    side='home' if for_home else 'away'
+    other='away' if for_home else 'home'
+    title+=f"\\n\\n🎯 Броски: {stat('shot',side)}:{stat('shot',other)} · 🧤 Сейвы: {stat('save',side)}:{stat('save',other)}"
+    title+=f"\\n⚠️ Удаления: {stat('penalty',side)}:{stat('penalty',other)} · 🔵 Большинство: {stat('powerplay',side)}:{stat('powerplay',other)}"
+    scorers=[g.get('scorer') for g in (own_goals or []) if g.get('scorer')]
     if scorers:
         from collections import Counter
-        top=Counter(scorers).most_common(1)[0][0]; title+=f"\n⭐ Лучший игрок: {top}"
-    title+=f"\n🪙 Награда начислена автоматически."
-    title+='\n\nПосмотреть трансляцию: /match'
+        top=Counter(scorers).most_common(1)[0][0]
+        title+=f"\\n⭐ Лучший игрок: {top}"
+    title+="\\n🪙 Награда начислена автоматически."
+    title+='\\n\\nПосмотреть трансляцию: /match'
     return title
+
 
 async def process_match(match_id,bot):
     logger.info('Processing match #%s', match_id)
