@@ -680,14 +680,14 @@ async def main():
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
-            prompt={'givecoins':'💰 Введите Telegram ID игрока для изменения баланса монет.','givegems':'💎 Введите Telegram ID игрока для изменения баланса алмазов.','givecard':'🃏 Введите Telegram ID получателя карточки.','ban':'🚫 Введите Telegram ID игрока для блокировки.'}.get(kind,'Неизвестное действие.')
+            prompt={'givecoins':'💰 Введите Telegram ID игрока — это числовой номер аккаунта в Telegram. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока — это числовой номер аккаунта в Telegram. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите Telegram ID игрока, которому нужно выдать карточку.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
             await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
-            await c.message.answer('🔨 АУКЦИОНЫ\n/auction_queue — заявки на выставление.\n/auction_create ID START STEP HOURS MIN MAX — запустить аукцион.\n/auction_cancel ID — отменить и вернуть резерв ставок.',reply_markup=admin_keyboard())
+            await c.message.answer('🔨 АУКЦИОНЫ\n/auction_queue — показать заявки игроков на аукцион.\n/auction_create ID НАЧАЛЬНАЯ_ЦЕНА ШАГ_СТАВКИ СРОК_В_ЧАСАХ МИН_ЦЕНА МАКС_СТАВКА — запустить аукцион.\n  ID — номер заявки; начальная цена — цена первого предложения; шаг ставки — минимальное повышение; срок — длительность аукциона в часах; мин. цена — нижний порог продажи; макс. ставка — верхний предел ставки.\n/auction_cancel ID — отменить аукцион и вернуть зарезервированные монеты.',reply_markup=admin_keyboard())
         elif action[1]=='cards':
-            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать карточку: name|position|ovr|rarity|country|club|league|image_url|player_key.\n/editcard ID FIELD VALUE — изменить OVR, редкость, страну или фото.\n/transfercard ID CLUB LEAGUE SEASON — новая версия при трансфере.\n/cardactive ID on|off — управление выпадением.\n/setpack — цена и шансы паков.\n/importcards и /importchem — CSV.',reply_markup=admin_keyboard())
+            await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать шаблон карточки. После команды укажите через |: имя игрока | позиция | общий рейтинг | редкость | страна | клуб | лига | ссылка на фото | ключ игрока.\n/editcard ID ПОЛЕ ЗНАЧЕНИЕ — изменить карточку. ID — номер шаблона; поле: ovr (общий рейтинг), rarity (редкость), country (страна) или image_url (ссылка на фото).\n/transfercard ID НОВЫЙ_КЛУБ НОВАЯ_ЛИГА СЕЗОН — создать новую версию карточки после трансфера.\n/cardactive ID on|off — включить или отключить карточку в новых выпадениях (уже выданные карты сохраняются).\n/setpack — изменить стоимость пака и вероятности выпадения редкостей.\n/importcards и /importchem — загрузить CSV-файл с карточками или сыгранностью.',reply_markup=admin_keyboard())
         elif action[1]=='help':
-            await c.message.answer('📖 СПРАВОЧНИК АДМИНА\n/givecoins USER AMOUNT — начислить/списать монеты.\n/givegems USER AMOUNT — начислить/списать алмазы.\n/givecard USER CARD_ID — выдать карточку по ID шаблона.\n/ban USER_ID и /unban USER_ID — блокировка.\n/createcard — создать шаблон карточки.\n/editcard — изменить карточку.\n/transfercard — создать версию после трансфера.\n/cardactive — включить/выключить выпадение.\n/auction_queue, /auction_create, /auction_cancel — аукционы.\n/setpack — цена и шансы паков.\n/importcards /importchem — импорт CSV.\n/bpgrant USER XP — начислить XP Battle Pass.\n/season_reset — сброс сезонного рейтинга.\n/stats — статистика бота.',reply_markup=admin_keyboard())
+            await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_keyboard())
         elif action[1]=='home':
             await c.message.answer('🛡 Панель администратора',reply_markup=admin_keyboard())
         await c.answer()
@@ -712,10 +712,10 @@ async def main():
                 state['uid']=uid
                 if kind in ('givecoins','givegems'):
                     state['step']='amount'
-                    await m.answer('Шаг 2 из 2. Введите сумму: положительное число начисляет, отрицательное списывает.')
+                    await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
                     state['step']='card'
-                    await m.answer('Шаг 2 из 2. Введите ID шаблона карточки.')
+                    await m.answer('Шаг 2 из 2. Введите номер шаблона карточки, которую нужно выдать игроку.')
                 elif kind=='ban':
                     async with Session() as s:
                         target=await s.get(User,uid); target.is_banned=True
@@ -741,7 +741,7 @@ async def main():
                 admin_steps.pop(m.from_user.id,None)
                 await m.answer(f'✅ Карточка #{cid} выдана игроку {state["uid"]}.',reply_markup=admin_keyboard())
         except ValueError:
-            await m.answer('Введите корректное целое число или /canceladmin.')
+            await m.answer('Введите целое число (без букв) или отправьте /canceladmin для отмены.')
 
     @dp.message(Command('givecoins'))
     async def givecoins(m):
@@ -771,7 +771,7 @@ async def main():
     async def givecard(m):
         if not admin(m.from_user.id): return
         try: _,uid,cid=m.text.split(); uid=int(uid); cid=int(cid)
-        except: await m.answer('Формат: /givecard USER_ID CARD_ID'); return
+        except: await m.answer('Формат: /givecard ID_ИГРОКА ID_ШАБЛОНА_КАРТОЧКИ.'); return
         async with Session() as s:
             if not await s.get(User,uid) or not await s.get(Card,cid): await m.answer('Пользователь или шаблон карточки не найден.'); return
             oc=OwnedCard(user_id=uid,card_id=cid,slot=''); s.add(oc); await audit(s,m.from_user.id,'givecard',uid,str(cid)); await s.commit()
@@ -797,7 +797,7 @@ async def main():
         if not admin(m.from_user.id): return
         try:
             _,cid,club,league,season_value=m.text.split(maxsplit=4); cid=int(cid)
-        except: await m.answer('Формат: /transfercard CARD_ID NEW_CLUB NEW_LEAGUE SEASON'); return
+        except: await m.answer('Формат: /transfercard ID_КАРТОЧКИ НОВЫЙ_КЛУБ НОВАЯ_ЛИГА СЕЗОН.'); return
         async with Session() as s:
             old=await s.get(Card,cid)
             if not old: await m.answer('Карточка не найдена.'); return
@@ -847,7 +847,7 @@ async def main():
     async def bpgrant(m):
         if not admin(m.from_user.id): return
         try: _,uid,xp=m.text.split(); uid=int(uid); xp=int(xp)
-        except: await m.answer('Формат: /bpgrant USER_ID XP'); return
+        except: await m.answer('Формат: /bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP.'); return
         if xp<=0 or xp>100000: await m.answer('XP должен быть от 1 до 100000.'); return
         async with Session() as s:
             if not await s.get(User,uid): await m.answer('Игрок не найден.'); return
@@ -861,7 +861,7 @@ async def main():
     async def cardactive(m):
         if not admin(m.from_user.id): return
         try: _,cid,value=m.text.split(); cid=int(cid); value=value.lower()
-        except: await m.answer('Формат: /cardactive CARD_ID on|off'); return
+        except: await m.answer('Формат: /cardactive ID_КАРТОЧКИ on|off. Укажите on, чтобы включить выпадение, или off, чтобы отключить.'); return
         if value not in ('on','off'): await m.answer('Укажите on или off.'); return
         async with Session() as s:
             card=await s.get(Card,cid)
@@ -873,7 +873,7 @@ async def main():
     async def ban(m):
         if not admin(m.from_user.id): return
         try: uid=int(m.text.split()[1])
-        except: await m.answer('Формат: /ban USER_ID'); return
+        except: await m.answer('Формат: /ban ID_ИГРОКА.'); return
         async with Session() as s:
             u=await s.get(User,uid)
             if not u: await m.answer('Игрок не найден.'); return
@@ -884,7 +884,7 @@ async def main():
     async def unban(m):
         if not admin(m.from_user.id): return
         try: uid=int(m.text.split()[1])
-        except: await m.answer('Формат: /unban USER_ID'); return
+        except: await m.answer('Формат: /unban ID_ИГРОКА.'); return
         async with Session() as s:
             u=await s.get(User,uid)
             if not u: await m.answer('Игрок не найден.'); return
@@ -907,7 +907,7 @@ async def main():
             lines=['ЗАЯВКИ НА АУКЦИОН']
             for a in rows:
                 oc=await s.get(OwnedCard,a.owned_card_id); c=await s.get(Card,oc.card_id) if oc else None
-                if c: lines.append(f'#{a.id} · владелец {a.owner_id} · {c.player_name} · OVR {c.ovr}\n/auction_create {a.id} START STEP HOURS MIN MAX')
+                if c: lines.append(f'#{a.id} · владелец {a.owner_id} · {c.player_name} · OVR {c.ovr}\n/auction_create {a.id} СТАРТ ШАГ ЧАСЫ МИН_СТАВКА МАКС_СТАВКА')
             await m.answer('\n'.join(lines) if len(lines)>1 else 'Очередь пуста.')
 
     @dp.message(Command('auction_create'))
@@ -916,7 +916,7 @@ async def main():
         try:
             _,aid,start,step,hours,minprice,maxbid=m.text.split()
             aid=int(aid); start=int(start); step=int(step); hours=int(hours); minprice=int(minprice); maxbid=int(maxbid)
-        except: await m.answer('Формат: /auction_create ID START STEP HOURS MIN MAX'); return
+        except: await m.answer('Формат: /auction_create ID НАЧАЛЬНАЯ_ЦЕНА ШАГ_СТАВКИ СРОК_В_ЧАСАХ МИН_ЦЕНА МАКС_СТАВКА'); return
         async with Session() as s:
             a=await s.get(Auction,aid)
             if not a or a.status!='submitted': await m.answer('Заявка не найдена или уже обработана.'); return
