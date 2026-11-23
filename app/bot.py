@@ -739,7 +739,7 @@ async def main():
                 if not count: lines.append('\nПока нет активных лотов.')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
                 try: await c.message.edit_text('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
-            except Exception: await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
+                except Exception: await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
             elif action=='mine':
                 listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at)))).all()
                 kb=InlineKeyboardBuilder(); lines=['📦 МОИ ЛОТЫ']
