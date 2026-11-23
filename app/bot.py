@@ -1667,7 +1667,7 @@ async def main():
     admin_auction_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
-        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('🏒 История матчей','adm:match_history'),('🔁 История обменов','adm:trade_history'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🎟 Выдать Premium Pass','adm:wiz:givepremium'),('⭐ Выдать уровни Pass','adm:wiz:givebpxp'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('🏒 История матчей','adm:match_history'),('🔁 История обменов','adm:trade_history'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🎟 Выдать Premium Pass','adm:wiz:givepremium'),('⭐ Выдать уровни Pass','adm:wiz:givebpxp'),('🚫 Блокировка','adm:wiz:ban'),('🏆 Управление турниром','adm:tournaments'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
         return kb.as_markup()
@@ -1734,6 +1734,61 @@ async def main():
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
             prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите числовой Telegram ID игрока, которому нужно выдать карточку.','givepremium':'🎟 Введите Telegram ID игрока, которому нужно выдать Premium Pass.','givebpxp':'⭐ Введите Telegram ID игрока, которому нужно начислить уровни Battle Pass.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
             await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 4.' if kind=='givecard' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
+        elif action[1]=='tournaments':
+            async with Session() as s:
+                rows=(await s.scalars(select(DailyTournament).order_by(DailyTournament.tournament_date.desc()).limit(10))).all()
+            lines=['🏆 УПРАВЛЕНИЕ ЕЖЕДНЕВНЫМИ ТУРНИРАМИ','Выберите существующий турнир для просмотра или управления:']
+            kb=InlineKeyboardBuilder()
+            for t in rows:
+                lines.append(f"\\n{t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
+                kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
+            kb.button(text='➕ Управлять по дате',callback_data='adm:tournament_date')
+            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
+            await c.message.answer(''.join(lines),reply_markup=kb.as_markup())
+        elif action[1]=='tournament_date':
+            admin_steps[c.from_user.id]={'kind':'tournament','step':'date'}
+            await c.message.answer('🏆 Введите дату существующего или нового ежедневного турнира в формате ГГГГ-ММ-ДД.\\nШаг 1 из 2. Затем выберете: начать или завершить. Отмена: /canceladmin')
+        elif action[1]=='tournament_view':
+            tid=int(action[2])
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+                count=await s.scalar(select(func.count(TournamentEntry.id)).where(TournamentEntry.tournament_id==tid)) if t else 0
+            if not t:
+                await c.answer('Турнир не найден.',show_alert=True); return
+            kb=InlineKeyboardBuilder()
+            if t.status=='open': kb.button(text='🔴 Завершить турнир',callback_data=f'adm:tournament_finish:{tid}')
+            else: kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
+            kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
+            await c.message.answer(f'🏆 Турнир {t.tournament_date}\\nСтатус: {"открыт" if t.status=="open" else "завершён"}\\nУчастников: {count}\\nID: {tid}',reply_markup=kb.as_markup())
+        elif action[1] in ('tournament_start','tournament_finish'):
+            tid=int(action[2]); mode='open' if action[1]=='tournament_start' else 'closed'
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+                if not t:
+                    await c.answer('Турнир не найден.',show_alert=True); return
+                if t.status==mode:
+                    await c.answer('Турнир уже в этом статусе.',show_alert=True); return
+                admin_steps[c.from_user.id]={'kind':'tournament_confirm','step':'confirm','tournament_id':tid,'mode':mode}
+            kb=InlineKeyboardBuilder()
+            kb.button(text='✅ Подтвердить',callback_data=f'adm:tournament_apply:{tid}:{mode}')
+            kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
+            await c.message.answer(f"Подтвердите {'открытие' if mode=='open' else 'завершение'} турнира {t.tournament_date}.",reply_markup=kb.as_markup())
+        elif action[1]=='tournament_apply':
+            tid=int(action[2]); mode=action[3]
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+                if not t:
+                    await c.answer('Турнир не найден.',show_alert=True); return
+                t.status=mode
+                if mode=='open':
+                    users=(await s.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
+                    existing=set((await s.scalars(select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==tid))).all())
+                    for uid in users:
+                        if uid not in existing: s.add(TournamentEntry(tournament_id=tid,user_id=uid))
+                await audit(s,c.from_user.id,'tournament_status',tid,mode)
+                await s.commit()
+            admin_steps.pop(c.from_user.id,None)
+            await c.message.answer(f"✅ Турнир {t.tournament_date} {'открыт' if mode=='open' else 'завершён'}.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
@@ -1899,6 +1954,25 @@ async def main():
         if not state or not admin(m.from_user.id) or not m.text: return
         kind=state['kind']; step=state['step']
         try:
+            if kind=='tournament' and step=='date':
+                raw=m.text.strip()
+                try:
+                    parsed=date.fromisoformat(raw)
+                    if parsed.isoformat()!=raw: raise ValueError()
+                except ValueError:
+                    await m.answer('Введите корректную дату в формате ГГГГ-ММ-ДД.'); return
+                async with Session() as s:
+                    t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==raw))
+                    if not t:
+                        t=DailyTournament(tournament_date=raw,status='closed'); s.add(t); await s.commit(); await s.refresh(t)
+                    tid=t.id
+                admin_steps.pop(m.from_user.id,None)
+                kb=InlineKeyboardBuilder()
+                kb.button(text='🟢 Начать / открыть',callback_data=f'adm:tournament_start:{tid}')
+                kb.button(text='🔴 Завершить / закрыть',callback_data=f'adm:tournament_finish:{tid}')
+                kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
+                await m.answer(f'Шаг 2 из 2. Турнир {raw} найден/создан. Выберите действие:',reply_markup=kb.as_markup())
+                return
             if kind=='support_reply' and step=='reply':
                 reply_text=m.text.strip()
                 if not reply_text or len(reply_text)>3000:
