@@ -474,10 +474,6 @@ async def close_old_tournaments(session,bot):
         else:
             expired=old.tournament_date<today.date().isoformat()
         if not expired: continue
-        day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW).astimezone(timezone.utc)
-        day_end=day_start+timedelta(days=1)
-        unfinished=await session.scalar(select(Match.id).where(Match.created_at>=day_start,Match.created_at<day_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
-        if unfinished: continue
         await finalize_daily_tournament(session,old,bot)
 
 async def close_old_clan_tournaments(session,bot):
