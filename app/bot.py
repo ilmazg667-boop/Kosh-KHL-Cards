@@ -18,7 +18,7 @@ from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUE
 from .worker import run_worker, prepare_match
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
-    create_trade, resolve_trade, submit_auction_card, place_bid, make_tournament_entry,
+    create_trade, resolve_trade, submit_auction_card, place_bid,
     create_clan, join_clan, ensure_daily_tournament, ensure_season, progress_after_match,
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
     create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member)
@@ -1202,7 +1202,6 @@ async def main():
 
     def tournament_keyboard():
         kb=InlineKeyboardBuilder()
-        kb.button(text='📝 Зарегистрироваться',callback_data='tournament:join')
         kb.button(text='🏆 Таблица турнира',callback_data='tournament:table')
         kb.button(text='🏆 Играть рейтинговый матч',callback_data='pvp_start')
         kb.button(text='⬅️ Главное меню',callback_data='player:home')
@@ -1211,7 +1210,9 @@ async def main():
     @dp.message(Command('tournament'))
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
-        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nИграйте рейтинговые матчи — они автоматически идут в личный турнир и в недельную битву вашего клана. Регистрироваться отдельно не обязательно. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
+        async with Session() as s:
+            await ensure_daily_tournament_participants(s)
+        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
@@ -1219,11 +1220,8 @@ async def main():
         async with Session() as s:
             try: await active_user(s,c.from_user)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
-            if action=='join':
-                t,e,new=await make_tournament_entry(s,c.from_user.id)
-                await c.message.answer(f'✅ Вы зарегистрированы в турнире на {t.tournament_date}. Ваши очки: {e.points}.',reply_markup=tournament_keyboard())
-            elif action=='table':
-                t=await ensure_daily_tournament(s)
+            if action=='table':
+                t=await ensure_daily_tournament_participants(s)
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
                 lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}','']
                 prizes={1:'10 000 🪙 + 20 💎 + элитный пак',2:'7 000 🪙 + 15 💎',3:'5 000 🪙 + 10 💎',4:'3 000 🪙 + 7 💎',5:'2 000 🪙 + 5 💎'}
