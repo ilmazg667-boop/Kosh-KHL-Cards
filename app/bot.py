@@ -1440,7 +1440,7 @@ async def main():
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
             prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','givepremium':'🎟 Введите Telegram ID игрока, которому нужно выдать Premium Pass.','givebpxp':'⭐ Введите Telegram ID игрока, которому нужно начислить уровни Battle Pass.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
-            await c.message.answer(prompt+'\\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 4.' if kind=='givecard' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
+            await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 4.' if kind=='givecard' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
