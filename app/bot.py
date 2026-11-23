@@ -405,20 +405,22 @@ async def main():
                 except Exception: await m.answer(caption+'\n(Фото недоступно по указанной ссылке.)')
             else: await m.answer(caption)
 
-    async def render_pack_carousel(target, index, edit=False):
+    async def render_pack_carousel(target, index, uid, edit=False):
         from .models import PackConfig
         names=list(PACKS)
         index=max(0,min(index,len(names)-1))
         name=names[index]; base=PACKS[name]
         async with Session() as s:
+            user=await s.get(User,uid)
             cfg=await s.get(PackConfig,name)
             d={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else base
+            balance=f'🪙 Монеты: <b>{user.coins}</b> · 💎 Алмазы: <b>{user.gems}</b>' if user else ''
         currency='🪙' if d['currency']=='coins' else '💎'
         odds='\n'.join(f'  {rarity_label(r)} — <b>{p}%</b>' for r,p in d['odds'])
         caption=(
             f'📦 <b>{name.upper()} ПАК</b>\n'
             f'━━━━━━━━━━━━━━\n'
-            f'💰 Цена: <b>{d["price"]} {currency}</b>\n\n'
+            f'{balance}\n💰 Цена: <b>{d["price"]} {currency}</b>\n\n'
             f'🎲 <b>Шансы выпадения</b>\n{odds}\n\n'
             f'Пак {index+1} из {len(names)}'
         )
@@ -435,13 +437,13 @@ async def main():
 
     @dp.message(F.text=='📦 Паки')
     async def packs(m):
-        await render_pack_carousel(m,0)
+        await render_pack_carousel(m,0,m.from_user.id)
 
     @dp.callback_query(F.data.startswith('packview:'))
     async def pack_view(c:CallbackQuery):
         try: index=int(c.data.split(':',1)[1])
         except ValueError: await c.answer('Пак не найден.',show_alert=True); return
-        await render_pack_carousel(c.message,index,edit=True)
+        await render_pack_carousel(c.message,index,c.from_user.id,edit=True)
         await c.answer()
 
     def pack_reveal_text(card, oc, stage):
