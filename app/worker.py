@@ -66,10 +66,22 @@ async def send_photo(bot, chat_id, photo, caption):
         except Exception: logger.exception('Telegram photo send failed: chat_id=%s',chat_id)
 
 async def send(bot, chat_id, text, parse_mode=None):
-    if chat_id and bot:
-        try: await bot.send_message(chat_id,text,parse_mode=parse_mode)
-        except Exception:
-            logger.exception('Telegram send failed: chat_id=%s text=%r', chat_id, text[:160])  # event remains in DB; user can fetch it using /match
+    if not chat_id or not bot:
+        return
+    try:
+        await bot.send_message(chat_id,text,parse_mode=parse_mode)
+        return
+    except Exception:
+        logger.exception('Telegram send failed (first attempt): chat_id=%s text=%r', chat_id, text[:160])
+    # Retry HTML messages as plain text so malformed markup or entities won't hide match stats.
+    fallback = html.unescape(text)
+    if parse_mode == 'HTML':
+        import re
+        fallback = re.sub(r'<[^>]*>', '', fallback)
+    try:
+        await bot.send_message(chat_id,fallback)
+    except Exception:
+        logger.exception('Telegram send failed (plain-text retry): chat_id=%s text=%r', chat_id, fallback[:160])
 
 async def prepare_match(match_id,bot=None):
     logger.info('Preparing match #%s', match_id)
