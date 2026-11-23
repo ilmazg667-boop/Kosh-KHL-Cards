@@ -1,6 +1,6 @@
 """Persistent match/auction worker. Run separately: python -m app.worker"""
 import asyncio, os, random, logging, html
-from datetime import timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, func
 from aiogram import Bot
