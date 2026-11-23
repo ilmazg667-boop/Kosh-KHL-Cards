@@ -1225,7 +1225,7 @@ async def main():
             if action=='table':
                 t=await ensure_daily_tournament_participants(s)
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
-                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}','']
+                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
                 defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                 prizes={}
                 for place,(coins,gems) in defaults.items():
@@ -1781,16 +1781,18 @@ async def main():
                 await c.answer('Турнир не найден.',show_alert=True); return
             kb=InlineKeyboardBuilder()
             if t.status=='open': kb.button(text='🔴 Завершить турнир',callback_data=f'adm:tournament_finish:{tid}')
-            else: kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
+            else:
+                kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
+                if not t.rewarded_at: kb.button(text='🎁 Начислить награды',callback_data=f'adm:tournament_reward:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
             await c.message.answer(f'🏆 Турнир {t.tournament_date}\\nСтатус: {"открыт" if t.status=="open" else "завершён"}\\nУчастников: {count}\\nID: {tid}',reply_markup=kb.as_markup())
-        elif action[1] in ('tournament_start','tournament_finish'):
+        elif action[1] in ('tournament_start','tournament_finish','tournament_reward'):
             tid=int(action[2]); mode='open' if action[1]=='tournament_start' else 'closed'
             async with Session() as s:
                 t=await s.get(DailyTournament,tid)
                 if not t:
                     await c.answer('Турнир не найден.',show_alert=True); return
-                if t.status==mode:
+                if t.status==mode and not (mode=='closed' and action[1]=='tournament_reward' and not t.rewarded_at):
                     await c.answer('Турнир уже в этом статусе.',show_alert=True); return
                 admin_steps[c.from_user.id]={'kind':'tournament_confirm','step':'confirm','tournament_id':tid,'mode':mode}
             kb=InlineKeyboardBuilder()
