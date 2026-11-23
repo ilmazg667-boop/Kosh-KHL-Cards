@@ -274,28 +274,51 @@ async def main():
                 await m.answer(f'✅ {c.player_name} установлен на позицию {slot}.\n\n'+await render_team(s,m.from_user.id))
             except ValueError as e: await m.answer(str(e))
 
-    async def render_collection(target, uid, rarity=None, page=0):
+    async def render_collection(target, uid, league=None, position=None, rarity=None, page=0):
         async with Session() as s:
             u=await s.get(User,uid)
             if not u or u.is_banned:
                 await target.answer('Аккаунт недоступен.'); return
-            query=select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid)
-            if rarity: query=query.where(Card.rarity==rarity)
-            total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid,*( [Card.rarity==rarity] if rarity else [] ))) or 0
+            conditions=[OwnedCard.user_id==uid]
+            if league: conditions.append(Card.league==league)
+            if position: conditions.append(Card.position==position)
+            if rarity: conditions.append(Card.rarity==rarity)
+            query=select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(*conditions)
+            total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(*conditions)) or 0
             cards=(await s.scalars(query.order_by(OwnedCard.id.desc()).offset(page*12).limit(12))).all()
-            lines=[f'🃏 КОЛЛЕКЦИЯ · {rarity_label(rarity) if rarity else "все редкости"} · страница {page+1} · всего {total}']
+            active=[]
+            if league: active.append(f'лига: {league}')
+            if position: active.append(f'позиция: {position}')
+            if rarity: active.append(f'редкость: {rarity_label(rarity)}')
+            lines=[f'🃏 МОИ КАРТОЧКИ · {", ".join(active) if active else "все карточки"} · стр. {page+1} · всего {total}']
             kb=InlineKeyboardBuilder()
             for oc in cards:
                 card=await s.get(Card,oc.card_id)
                 if not card: continue
-                lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
+                lines.append(f'\\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
                 if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
-            for index,name in enumerate(RARITIES): kb.button(text=rarity_label(name),callback_data=f'collection:r:{index}:0')
-            kb.button(text='Все редкости',callback_data='collection:all:0')
-            if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page-1}')
-            if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page+1}')
+            kb.button(text='🔎 Фильтр',callback_data='collection:filter')
+            if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:page:{page-1}')
+            if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:page:{page+1}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await target.answer('\n'.join(lines),reply_markup=kb.as_markup())
+            await target.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+
+    async def render_collection_filters(target, uid):
+        async with Session() as s:
+            leagues=list((await s.scalars(select(Card.league).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid,Card.league!='').distinct().order_by(Card.league))).all())
+            positions=list((await s.scalars(select(Card.position).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.position))).all())
+            rarities=list((await s.scalars(select(Card.rarity).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.rarity))).all())
+            kb=InlineKeyboardBuilder()
+            kb.button(text='🏒 Лиги',callback_data='collection:group:l')
+            for i,value in enumerate(leagues): kb.button(text=value,callback_data=f'collection:pick:l:{i}')
+            kb.button(text='📍 Позиции',callback_data='collection:group:p')
+            for i,value in enumerate(positions): kb.button(text=value,callback_data=f'collection:pick:p:{i}')
+            kb.button(text='💎 Редкости',callback_data='collection:group:r')
+            for i,value in enumerate(rarities): kb.button(text=rarity_label(value),callback_data=f'collection:pick:r:{i}')
+            kb.button(text='♻️ Сбросить фильтры',callback_data='collection:clear')
+            kb.button(text='⬅️ К карточкам',callback_data='collection:page:0')
+            kb.adjust(1)
+            await target.answer('🔎 ФИЛЬТР КАРТОЧЕК\\nВыбери лигу, позицию или редкость:',reply_markup=kb.as_markup())
 
     @dp.message(Command('cards'))
     @dp.message(F.text=='🃏 Карточки')
@@ -305,15 +328,36 @@ async def main():
     @dp.callback_query(F.data.startswith('collection:'))
     async def collection_filter(c:CallbackQuery):
         parts=c.data.split(':')
-        if parts[1]=='all': rarity=None; page=int(parts[2])
-        else:
-            try: rarity=RARITIES[int(parts[2])]; page=int(parts[3])
-            except (ValueError,IndexError): await c.answer('Фильтр не найден.',show_alert=True); return
         from types import SimpleNamespace
         async def edit_collection(text, **kwargs):
             try: return await c.message.edit_text(text, **kwargs)
             except Exception: return await c.message.answer(text, **kwargs)
-        await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,rarity,page)
+        if parts[1]=='filter':
+            await render_collection_filters(SimpleNamespace(answer=edit_collection),c.from_user.id)
+        elif parts[1]=='clear':
+            await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id)
+        elif parts[1]=='page':
+            try: page=max(0,int(parts[2]))
+            except (ValueError,IndexError): page=0
+            await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,page=page)
+        elif parts[1]=='group':
+            await render_collection_filters(SimpleNamespace(answer=edit_collection),c.from_user.id)
+        elif parts[1]=='pick':
+            try:
+                kind=parts[2]; index=int(parts[3])
+                async with Session() as s:
+                    if kind=='l':
+                        values=list((await s.scalars(select(Card.league).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==c.from_user.id,Card.league!='').distinct().order_by(Card.league))).all())
+                        await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,league=values[index])
+                    elif kind=='p':
+                        values=list((await s.scalars(select(Card.position).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==c.from_user.id).distinct().order_by(Card.position))).all())
+                        await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,position=values[index])
+                    elif kind=='r':
+                        values=list((await s.scalars(select(Card.rarity).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==c.from_user.id).distinct().order_by(Card.rarity))).all())
+                        await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,rarity=values[index])
+                    else: raise ValueError()
+            except (ValueError,IndexError):
+                await c.answer('Фильтр не найден.',show_alert=True); return
         await c.answer()
 
     @dp.callback_query(F.data.startswith('cardmenu:'))
