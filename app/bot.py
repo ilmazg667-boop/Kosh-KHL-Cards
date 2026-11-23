@@ -2688,20 +2688,49 @@ async def main():
                 return kwargs
             async def proxy_answer(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
-                # Text-only menus: edit the existing message, including legacy photo messages.
-                if c.message.photo:
-                    try: return await c.message.edit_caption(*args,**kwargs)
-                    except Exception:
-                        try: await c.message.delete()
-                        except Exception: pass
-                        return await c.message.answer(*args,**kwargs)
-                try: return await c.message.edit_text(*args,**kwargs)
-                except Exception:
+                text_value=args[0] if args else kwargs.pop('text',None)
+                if text_value is None:
+                    text_value=kwargs.pop('caption','')
+                text_value=str(text_value or '')
+                parse_mode=kwargs.pop('parse_mode',None)
+                reply_markup=kwargs.pop('reply_markup',None)
+                # Every opened section gets the same menu artwork. Keep long
+                # section text in a separate message because Telegram captions
+                # are limited to 1024 characters.
+                try:
+                    from aiogram.types import BufferedInputFile
+                    photo_bytes=await telegram_post_photo()
                     try: await c.message.delete()
                     except Exception: pass
-                    return await c.message.answer(*args,**kwargs)
+                    if len(text_value)<=1024:
+                        return await c.bot.send_photo(
+                            c.from_user.id,
+                            BufferedInputFile(photo_bytes,filename='main-menu.jpg'),
+                            caption=text_value,
+                            reply_markup=reply_markup,
+                            parse_mode=parse_mode
+                        )
+                    await c.bot.send_photo(
+                        c.from_user.id,
+                        BufferedInputFile(photo_bytes,filename='main-menu.jpg'),
+                        caption='🏒 KOSH KHL CARDS'
+                    )
+                    return await c.bot.send_message(
+                        c.from_user.id,text_value,
+                        reply_markup=reply_markup,
+                        parse_mode=parse_mode
+                    )
+                except Exception as e:
+                    print(f'Не удалось показать фото раздела меню: {e}')
+                    try: await c.message.delete()
+                    except Exception: pass
+                    return await c.bot.send_message(
+                        c.from_user.id,text_value,
+                        reply_markup=reply_markup,
+                        parse_mode=parse_mode
+                    )
             async def proxy_answer_photo(*args,**kwargs):
-                # Compatibility for old handlers: discard the image and send only its caption.
+                # Handlers that request a photo use the shared menu artwork.
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
                 return await proxy_answer(caption or '',**kwargs)
