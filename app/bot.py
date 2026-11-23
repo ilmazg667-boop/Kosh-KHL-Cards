@@ -19,7 +19,7 @@ from .worker import run_worker, prepare_match
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, submit_auction_card, place_bid,
-    create_clan, join_clan, ensure_daily_tournament, ensure_season, progress_after_match,
+    create_clan, join_clan, ensure_daily_tournament, ensure_daily_tournament_participants, ensure_season, progress_after_match,
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
     create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member)
 
@@ -125,7 +125,7 @@ async def main():
     if not BOT_TOKEN: raise RuntimeError('Укажите BOT_TOKEN в файле .env')
     await init_db()
     async with Session() as s:
-        await seed_cards(s); await ensure_season(s); await ensure_daily_tournament(s)
+        await seed_cards(s); await ensure_season(s); await ensure_daily_tournament_participants(s); await s.commit()
     bot=Bot(BOT_TOKEN); dp=Dispatcher()
     await bot.set_my_commands([BotCommand(command='start',description='Открыть главное меню'),BotCommand(command='team',description='Моя команда'),BotCommand(command='cards',description='Моя коллекция'),BotCommand(command='play',description='Играть'),BotCommand(command='market',description='Рынок карточек'),BotCommand(command='auctions',description='Аукционы'),BotCommand(command='daily',description='Ежедневная награда'),BotCommand(command='tournament',description='Ежедневный турнир'),BotCommand(command='clan',description='Кланы'),BotCommand(command='ranked',description='Рейтинговая лига'),BotCommand(command='trades',description='Обмены карточками'),BotCommand(command='promo',description='Активировать промокод'),BotCommand(command='help',description='Помощь')])
 
@@ -134,6 +134,7 @@ async def main():
         await m.answer('Меню обновлено: теперь управление через кнопки ниже.',reply_markup=ReplyKeyboardRemove())
         async with Session() as s:
             u,new=await get_or_create_user(s,m.from_user)
+            await ensure_daily_tournament_participants(s)
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
