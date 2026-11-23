@@ -26,7 +26,7 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
 def keyboard():
     kb=InlineKeyboardBuilder()
     items=[
-        ('🏒 Моя команда','team'),('🎮 Играть','play'),
+        ('🏒 Моя команда','team'),('🤝 Товарищеские матчи','play'),
         ('✉️ Написать админу','support'),('🃏 Карточки','cards'),
         ('📦 Паки','packs'),('🏪 Рынок','market'),
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
@@ -65,8 +65,7 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='⚔️ PvP · обычный матч',callback_data='pvp_start')
-    kb.button(text='🏆 PvP · рейтинговая лига',callback_data='ranked_start')
+    kb.button(text='🤝 Найти соперника',callback_data='pvp_start')
     kb.button(text='🛡 Клановые битвы',callback_data='clan_start')
     kb.adjust(1); return kb.as_markup()
 
@@ -371,7 +370,7 @@ async def main():
             league=league_for_rating(u.rating)
             next_league=next(((name,low) for name,low,high in LEAGUES if low>u.rating),None)
             progress=f'До лиги {next_league[0]}: {next_league[1]-u.rating} рейтинга.' if next_league else 'Вы в высшей лиге.'
-            caption='🎮 РЕЖИМЫ МАТЧЕЙ\n'+f'Ваша лига: {league}\nРейтинг: {u.rating}\n{progress}\n\nВыберите режим:'
+            caption='🤝 ТОВАРИЩЕСКИЕ МАТЧИ\n'+f'Ваша лига: {league}\nРейтинг: {u.rating}\n{progress}\n\nОбычный матч учитывается в рейтинге и турнире.'
         await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
 
     @dp.callback_query(F.data=='pvp_start')
@@ -400,22 +399,13 @@ async def main():
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
+        # Legacy ranked button now redirects to the unified regular match queue.
     @dp.callback_query(F.data=='ranked_start')
     async def ranked_queue_from_menu(c:CallbackQuery):
-        async with Session() as s:
-            try:
-                u=await active_user(s,c.from_user)
-                match=await start_pvp_queue(s,u,True)
-                if match.status=='queued' and match.away_user_id==u.id:
-                    await c.bot.send_message(match.home_user_id,f'🏆 Рейтинговый соперник найден! Матч #{match.id}.')
-                    await c.message.answer(f'🏆 Соперник найден! Матч #{match.id} начинается.')
-                else:
-                    kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
-                    await c.message.answer(f'🏆 Поиск соперника в лиге {league_for_rating(u.rating)}. Рейтинг: {u.rating}. Матч #{match.id}.',reply_markup=kb.as_markup())
-            except ValueError as e: await c.answer(str(e),show_alert=True); return
-        await c.answer()
+        await c.answer('Теперь все обычные матчи учитываются в рейтинге и турнире.')
+        await queue_from_menu(c)
 
-    @dp.callback_query(F.data=='clan_start')
+@dp.callback_query(F.data=='clan_start')
     async def clan_queue_from_menu(c:CallbackQuery):
         async with Session() as s:
             try:
@@ -1835,12 +1825,51 @@ async def main():
             if not match: await m.answer('Матч с таким номером не найден.'); return
             def shots(side): return sum(1 for e in (match.events or []) if e.get('type')=='shot' and e.get('side')==side)
             hg=len(match.home_goals or []); ag=len(match.away_goals or [])
-            text=(f'🏒 МАТЧ #{match.id}\nРежим: {match.mode} · статус: {match.status}\n'
-                  f'{match.home_name} (ID {match.home_user_id}) — {match.away_name} (ID {match.away_user_id})\n'
-                  f'Счёт: {match.home_score}:{match.away_score} · голы: {hg}:{ag}\n'
-                  f'Броски с учётом голов: {shots("home")+hg}:{shots("away")+ag}\n'
-                  f'Рейтинг: {match.rating_change} · создан: {format_msk(match.created_at)} МСК · завершён: {format_msk(match.finished_at,naive_is_utc=False)} МСК')
-            await m.answer(text)
+            text=(f'🏒 <b>МАТЧ #{match.id}</b>\n<b>Режим:</b> {match.mode} · <b>Статус:</b> {match.status}\n'
+                  f'<b>{match.home_name}</b> (ID <code>{match.home_user_id}</code>) — <b>{match.away_name}</b> (ID <code>{match.away_user_id}</code>)\n'
+                  f'<b>Счёт: {match.home_score}:{match.away_score}</b> · голы: <b>{hg}:{ag}</b>\n'
+                  f'<b>Броски:</b> {shots("home")+hg}:{shots("away")+ag}\n'
+                  f'<b>Рейтинг:</b> {match.rating_change} · <b>Создан:</b> {format_msk(match.created_at)} МСК · <b>Завершён:</b> {format_msk(match.finished_at,naive_is_utc=False)} МСК')
+            kb=InlineKeyboardBuilder(); kb.button(text='🗑 Удалить данные матча',callback_data=f'adm_match_delete_confirm:{match.id}')
+            await m.answer(text,parse_mode='HTML',reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('adm_match_delete_confirm:'))
+    async def admin_match_delete_confirm(c:CallbackQuery):
+        if not admin(c.from_user.id): await c.answer('Нет доступа.',show_alert=True); return
+        try: mid=int(c.data.split(':')[1])
+        except ValueError: await c.answer('Некорректный номер матча.',show_alert=True); return
+        async with Session() as s:
+            match=await s.get(Match,mid)
+            if not match: await c.answer('Матч уже отсутствует.',show_alert=True); return
+            if match.status in ('queued','searching','running','challenge'):
+                await c.answer('Нельзя удалять активный матч.',show_alert=True); return
+        kb=InlineKeyboardBuilder()
+        kb.button(text='⚠️ Да, удалить матч и трансляцию',callback_data=f'adm_match_delete:{mid}')
+        kb.button(text='Отмена',callback_data='adm_match_delete_cancel')
+        kb.adjust(1)
+        await c.message.answer(f'Подтвердите удаление данных матча #{mid}. Запись и события трансляции будут удалены из базы.',reply_markup=kb.as_markup())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('adm_match_delete:'))
+    async def admin_match_delete(c:CallbackQuery):
+        if not admin(c.from_user.id): await c.answer('Нет доступа.',show_alert=True); return
+        try: mid=int(c.data.split(':')[1])
+        except ValueError: await c.answer('Некорректный номер матча.',show_alert=True); return
+        async with Session() as s:
+            match=await s.get(Match,mid)
+            if not match: await c.answer('Матч уже удалён.',show_alert=True); return
+            if match.status in ('queued','searching','running','challenge'):
+                await c.answer('Нельзя удалять активный матч.',show_alert=True); return
+            await s.delete(match); await s.commit()
+            await audit(s,c.from_user.id,'admin_match_delete',mid,'Удалена запись матча и события')
+        await c.message.answer(f'🗑 Данные матча #{mid} удалены.')
+        await c.answer('Удалено.')
+
+    @dp.callback_query(F.data=='adm_match_delete_cancel')
+    async def admin_match_delete_cancel(c:CallbackQuery):
+        if not admin(c.from_user.id): await c.answer('Нет доступа.',show_alert=True); return
+        await c.message.answer('Удаление отменено.')
+        await c.answer()
 
     @dp.message(Command('tradeinfo'))
     async def admin_trade_info(m:Message):
