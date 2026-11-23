@@ -1600,7 +1600,7 @@ async def main():
                 ('🗓 ЕЖЕМЕСЯЧНЫЕ',[( 'play60month',month,60,'Сыграть 60 матчей за месяц'),('win20month',month,20,'Выиграть 20 матчей за месяц')]),
                 ('🏆 СЕЗОННЫЕ',[( 'play100',season,100,'Сыграть 100 матчей'),('win50',season,50,'Одержать 50 побед'),('reach_khl',season,1,'Достичь КХЛ'),('open50packs',season,50,'Открыть 50 паков')])
             ]
-            rewards={'play3':(300,0,50),'win1':(500,0,50),'score5goals':(500,1,50),'play20':(1500,2,50),'win10':(2000,3,50),'play60month':(3500,4,50),'win20month':(4500,5,50),'play100':(5000,5,50),'win50':(7000,8,50),'reach_khl':(2500,3,50),'open50packs':(5000,5,50)}
+            rewards={'play3':(500,1,100),'win1':(750,2,100),'score5goals':(1000,3,100),'play20':(2500,4,100),'win10':(3500,5,100),'play60month':(6000,8,100),'win20month':(8000,10,100),'play100':(10000,12,100),'win50':(15000,18,100),'reach_khl':(5000,8,100),'open50packs':(10000,15,100)}
             lines=['📋 ЗАДАНИЯ']
             kb=InlineKeyboardBuilder()
             for heading,items in groups:
@@ -1610,7 +1610,7 @@ async def main():
                     value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
                     coins,gems,xp=rewards[key]
                     lines.append(f'• {title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎 + {xp} XP'+(f' · {status}' if status else ''))
-                    if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
+                    if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать награду · {title}',callback_data=f'questclaim:{key}')
             kb.button(text='🎟 К Battle Pass',callback_data='player:battlepass'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
