@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL
 from .db import Session, init_db
-from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, DailyTournament, Auction, EconomyLedger
+from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, Auction, EconomyLedger
 from .game import simulate, team_power, chemistry, league_for_rating
 from .services import now, ensure_season, ensure_daily_tournament, progress_after_match, settle_auction, expire_trade_offers
 
@@ -202,6 +202,19 @@ async def finish_match(match_id,bot):
                             s.add(entry)
                         if win: entry.points+=2; entry.wins+=1
                         elif m.shootout: entry.points+=1
+                        entry.goals+=score
+                # Clan standings aggregate each member's completed PvP result.
+                if m.mode not in ('pve','tournament') and t:
+                    for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
+                        if not uid: continue
+                        member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
+                        if not member: continue
+                        entry=await s.scalar(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id,ClanTournamentEntry.clan_id==member.clan_id))
+                        if not entry:
+                            entry=ClanTournamentEntry(tournament_id=t.id,clan_id=member.clan_id)
+                            s.add(entry)
+                        if win: entry.points+=2; entry.wins+=1
+                        elif m.shootout or m.overtime: entry.points+=1
                         entry.goals+=score
             await s.commit()
         # Send results separately from settlement; failures are retried by the worker without re-awarding.
