@@ -23,8 +23,9 @@ async def get_or_create_user(session, tg_user):
     if user:
         user.username=(tg_user.username or '')
         user.first_name=(tg_user.first_name or '')
+        user.last_name=(tg_user.last_name or '')
         return user, False
-    user=User(id=tg_user.id, username=(tg_user.username or ''), first_name=(tg_user.first_name or ''), coins=5000, gems=20)
+    user=User(id=tg_user.id, username=(tg_user.username or ''), first_name=(tg_user.first_name or ''), last_name=(tg_user.last_name or ''), coins=5000, gems=20)
     session.add(user); await session.flush()
     starter=(await session.scalars(select(Card).where(Card.source=='demo', Card.rarity=='Обычный').order_by(Card.id.asc()).limit(6))).all()
     for pos,card in zip(POSITIONS,starter): session.add(OwnedCard(user_id=user.id,card_id=card.id,slot=pos))
