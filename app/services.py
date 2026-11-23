@@ -450,12 +450,13 @@ async def claim_bp_reward(session,user_id,level,premium=False):
     if level in claimed: raise ValueError('Награда уже получена.')
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
     reward_text=''
-    if level==100 and not premium:
-        card=await session.scalar(select(Card).where(Card.player_name=='Семён Кошелев',Card.ovr==99,Card.source!='demo'))
+    if level==100:
+        target_ovr=99 if premium else 95
+        card=await session.scalar(select(Card).where(Card.player_name=='Семён Кошелев',Card.ovr==target_ovr,Card.source!='demo'))
         if not card:
-            raise ValueError('Карточка Семёна Кошелева 99 OVR ещё не загружена. Администратору нужно импортировать проверенную карточку до выдачи награды.')
+            raise ValueError(f'Карточка Семёна Кошелева {target_ovr} OVR ещё не загружена. Администратору нужно импортировать карточку до выдачи награды.')
         session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
-        reward_text='Карточка Семён Кошелев · 99 OVR'
+        reward_text=f'Карточка Семён Кошелев · {target_ovr} OVR'
     elif premium and level%10==0:
         milestone_rarities={10:'Эпический',20:'Мифический',30:'Мифический',40:'Легендарный',50:'Легендарный',60:'Хроматический',70:'Хроматический',80:'Легенда',90:'Легенда',100:'Икона'}
         target_rarity=milestone_rarities.get(level,'Эпический')
