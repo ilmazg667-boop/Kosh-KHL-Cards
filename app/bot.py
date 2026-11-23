@@ -205,7 +205,7 @@ async def main():
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
     async def help_cmd(m):
-        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan leave | /clanbattle\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
+        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan leave | /clanbattle — таблица клановой войны\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
 
     @dp.message(F.text=='🪙 Баланс')
     async def balance(m):
@@ -1319,10 +1319,14 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
             if not member: await m.answer('Сначала вступите в клан.'); return
-            try:
-                match=await start_pvp_queue(s,u,False,mode='clan')
-            except ValueError as e: await m.answer(str(e)); return
-            await m.answer(f'⚔️ Вы отправлены в поиск клановой битвы. ID #{match.id}. Очки клана начисляются только за этот режим.')
+            t=await ensure_daily_tournament(s)
+            rows=(await s.scalars(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id).order_by(desc(ClanTournamentEntry.points),desc(ClanTournamentEntry.wins),desc(ClanTournamentEntry.goals)).limit(20))).all()
+            lines=[f'⚔️ КЛАНОВАЯ ВОЙНА · {t.tournament_date}','Очки участников суммируются в результат клана. Победа — 2 очка, поражение в овертайме/по буллитам — 1.']
+            for i,row in enumerate(rows,1):
+                cl=await s.get(Clan,row.clan_id)
+                if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
+            if len(lines)==2: lines.append('Пока нет результатов. Играйте матчи, чтобы набрать очки для клана!')
+            await m.answer('\\n\\n'.join(lines))
 
     @dp.message(Command('bp'))
     @dp.message(F.text=='🎟 Battle Pass')
