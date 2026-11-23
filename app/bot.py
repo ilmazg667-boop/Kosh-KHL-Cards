@@ -69,7 +69,7 @@ async def telegram_post_photo():
         block_end=block.find('data-post="bullet_kings_forms/41"')
         if block_end>0:
             block=block[:block_end]
-        match=re.search(r"""tgme_widget_message_photo_wrap[^>]*?style="[^"]*?background-image\\s*:\\s*url\\(['"]?(https?://[^'")]+)""",block,re.I)
+        match=re.search(r"""tgme_widget_message_photo_wrap[^>]*?style="[^"]*?background-image\s*:\s*url\(['"]?(https?://[^'")]+)""",block,re.I)
         if not match:
             match=re.search(r"""<img[^>]+class="[^"]*tgme_widget_message_photo[^"]*"[^>]+src="(https?://[^"]+)""",block,re.I)
         if not match:
