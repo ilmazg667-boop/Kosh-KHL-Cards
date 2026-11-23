@@ -65,10 +65,10 @@ async def telegram_post_photo():
         pos=page.find(marker)
         if pos < 0:
             raise RuntimeError('Публикация #40 не найдена в публичной ленте Telegram')
-        block=page[max(0,pos-12000):pos+30000]
-        block_end=block.find('data-post="bullet_kings_forms/41"')
-        if block_end>0:
-            block=block[:block_end]
+        # Start exactly at post #40: looking backwards can accidentally
+        # select a photo from post #39 or the channel header.
+        next_marker=page.find('data-post="bullet_kings_forms/41"',pos+len(marker))
+        block=page[pos:next_marker if next_marker>0 else pos+30000]
         match=re.search(r"""tgme_widget_message_photo_wrap[^>]*?style="[^"]*?background-image\s*:\s*url\(['"]?(https?://[^'")]+)""",block,re.I)
         if not match:
             match=re.search(r"""<img[^>]+class="[^"]*tgme_widget_message_photo[^"]*"[^>]+src="(https?://[^"]+)""",block,re.I)
