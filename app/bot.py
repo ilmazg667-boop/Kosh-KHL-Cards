@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -48,10 +48,8 @@ def format_msk(value, naive_is_utc=True):
 def admin(uid): return uid in ADMIN_IDS
 
 async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None):
-    try:
-        await m.answer_photo(url, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-    except Exception:
-        await m.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
+    # Photos are temporarily disabled: render every section as a clean text menu.
+    await m.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
 PHOTO_ARENA='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
 PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
@@ -399,10 +397,7 @@ async def main():
             if not oc or oc.user_id!=m.from_user.id: await m.answer('Карточка не найдена.'); return
             c=await s.get(Card,oc.card_id)
             caption=f'🏒 {c.player_name}\n{c.ovr} OVR · {c.position} · {c.rarity}\n{c.country} · {c.club} · {c.league}\nСезон: {c.season or "—"} · ID: #{oc.id}'
-            if c.image_url.startswith(('https://','http://')):
-                try: await m.answer_photo(c.image_url,caption=caption)
-                except Exception: await m.answer(caption+'\n(Фото недоступно по указанной ссылке.)')
-            else: await m.answer(caption)
+            await m.answer(caption)
 
     async def render_pack_carousel(target, index, uid, edit=False):
         from .models import PackConfig
@@ -2431,13 +2426,10 @@ async def main():
                 return kwargs
             async def proxy_answer(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
-                # Keep the original menu photo and replace only its caption.
-                # This prevents a photo in one message and menu text in another.
+                # Text-only menus: edit the existing message, including legacy photo messages.
                 if c.message.photo:
                     try: return await c.message.edit_caption(*args,**kwargs)
                     except Exception:
-                        # Long captions cannot be stored on Telegram photos.
-                        # Remove the old photo before sending the text menu.
                         try: await c.message.delete()
                         except Exception: pass
                         return await c.message.answer(*args,**kwargs)
@@ -2447,30 +2439,10 @@ async def main():
                     except Exception: pass
                     return await c.message.answer(*args,**kwargs)
             async def proxy_answer_photo(*args,**kwargs):
-                kwargs=add_player_back(kwargs)
-                # Replace the current menu image instead of stacking another photo.
-                if c.message.photo and args:
-                    try:
-                        media=InputMediaPhoto(
-                            media=args[0],
-                            caption=kwargs.get('caption'),
-                            parse_mode=kwargs.get('parse_mode')
-                        )
-                        return await c.message.edit_media(media,reply_markup=kwargs.get('reply_markup'))
-                    except Exception:
-                        # If Telegram cannot replace the image, keep the existing
-                        # photo and update its caption rather than sending a second message.
-                        try:
-                            return await c.message.edit_caption(
-                                caption=kwargs.get('caption') or '',
-                                reply_markup=kwargs.get('reply_markup'),
-                                parse_mode=kwargs.get('parse_mode')
-                            )
-                        except Exception:
-                            try: await c.message.delete()
-                            except Exception: pass
-                            return await c.message.answer_photo(*args,**kwargs)
-                return await c.message.answer_photo(*args,**kwargs)
+                # Compatibility for old handlers: discard the image and send only its caption.
+                caption=kwargs.pop('caption',None)
+                if caption is None and len(args)>1: caption=args[1]
+                return await proxy_answer(caption or '',**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
