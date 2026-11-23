@@ -175,7 +175,7 @@ async def finish_match(match_id,bot):
                     m.rating_change=delta if winner==home.id else -delta
                 if home and winner==home.id and not is_ot: home.gems+=3
                 if away and winner==away.id and not is_ot: away.gems+=3
-                if m.mode=='pvp' and home and away:
+                if m.mode in ('pvp','ranked') and home and away:
                     if winner==home.id: home.coins+=1000; away.coins+=500
                     else: away.coins+=1000; home.coins+=500
                 elif m.mode=='bot' and home:
@@ -235,7 +235,7 @@ def format_result(m,home_user,away_user,for_home=True):
     home_name=m.home_name or (home_user.first_name if home_user else None) or f'Игрок {m.home_user_id}'
     away_name=m.away_name or (away_user.first_name if away_user else None) or ('KHL Bot' if not m.away_user_id else f'Игрок {m.away_user_id}')
     title=f"🏒 Матч #{m.id} завершён\n<b>{html.escape(str(home_name))}</b> <b>{m.home_score}:{m.away_score}</b> <b>{html.escape(str(away_name))}</b>"
-    if m.mode=='ranked':
+    if m.mode in ('ranked','pvp'):
         change=m.rating_change or 0
         title+=f"\n⭐ Изменение рейтинга: <b>{change if for_home else -change:+d}</b>"
     from collections import Counter
@@ -391,8 +391,8 @@ async def matchmaking(bot=None):
                     continue
                 if second.home_user_id==first.home_user_id:
                     continue
-                first_group='clan' if first.mode=='clan' else 'pvp'
-                second_group='clan' if second.mode=='clan' else 'pvp'
+                first_group=first.mode if first.mode in ('clan','ranked') else 'pvp'
+                second_group=second.mode if second.mode in ('clan','ranked') else 'pvp'
                 if first_group!=second_group:
                     continue
                 if first_group=='clan':
@@ -402,7 +402,7 @@ async def matchmaking(bot=None):
                         continue
 
                 # One row is the real match; remove the other player's queue placeholder.
-                first.mode='clan' if first_group=='clan' else 'pvp'
+                first.mode=first_group
                 first.away_user_id=second.home_user_id
                 first.away_name=second.home_name
                 first.away_power=second.home_power
@@ -424,7 +424,7 @@ async def matchmaking(bot=None):
             created=match.created_at
             if created and created.tzinfo is None:
                 created=created.replace(tzinfo=timezone.utc)
-            if not created or created>cutoff:
+            if not created or created>cutoff or match.mode=='ranked':
                 continue
             match.mode='bot'
             match.away_user_id=0
