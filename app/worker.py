@@ -159,9 +159,22 @@ async def finish_match(match_id,bot):
             if m.mode in ('pve','tournament'):
                 won=m.home_score>m.away_score
                 reward=m.reward if won else int(m.reward*.5)
-                if home: home.coins+=reward; home.games+=1; home.wins+=int(won); home.losses+=int(not won)
-                if won and not is_ot and home: home.gems+=3
-                if home: await progress_after_match(s,home.id,won,len(m.home_goals or []))
+                if home:
+                    home.coins+=reward
+                    home.games+=1
+                    home.wins+=int(won)
+                    home.losses+=int(not won)
+                    if m.mode=='pve':
+                        # PvE matches also advance rating; losses cannot push it below zero.
+                        rating_delta=10 if won else -5
+                        previous_rating=home.rating
+                        home.rating=max(0,home.rating+rating_delta)
+                        home.lifetime_rating=max(home.lifetime_rating,home.rating)
+                        m.rating_change=home.rating-previous_rating
+                    s.add(EconomyLedger(user_id=home.id,currency='coins',amount=reward,
+                        reason='pve_match_win' if won else 'pve_match_loss',reference_id=m.id))
+                    if won and not is_ot: home.gems+=3
+                    await progress_after_match(s,home.id,won,len(m.home_goals or []),home.rating)
             else:
                 if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
                 if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
@@ -235,7 +248,7 @@ def format_result(m,home_user,away_user,for_home=True):
     home_name=m.home_name or (home_user.first_name if home_user else None) or f'Игрок {m.home_user_id}'
     away_name=m.away_name or (away_user.first_name if away_user else None) or ('KHL Bot' if not m.away_user_id else f'Игрок {m.away_user_id}')
     title=f"🏒 Матч #{m.id} завершён\n<b>{html.escape(str(home_name))}</b> <b>{m.home_score}:{m.away_score}</b> <b>{html.escape(str(away_name))}</b>"
-    if m.mode in ('ranked','pvp'):
+    if m.mode in ('ranked','pvp','pve'):
         change=m.rating_change or 0
         title+=f"\n⭐ Изменение рейтинга: <b>{change if for_home else -change:+d}</b>"
     from collections import Counter
@@ -273,7 +286,12 @@ def format_result(m,home_user,away_user,for_home=True):
     if scorers:
         top=Counter(scorers).most_common(1)[0][0]
         title+=f"\n⭐ Лучший игрок: <b>{html.escape(str(top))}</b>"
-    title+="\n🪙 Награда начислена автоматически.\n\nПосмотреть трансляцию: /match"
+    if m.mode=='pve' and for_home:
+        awarded=m.reward if m.home_score>m.away_score else int(m.reward*.5)
+        title+=f"\n🪙 Начислено: <b>{awarded}</b> монет"
+    else:
+        title+="\n🪙 Награда начислена автоматически."
+    title+="\n\nПосмотреть трансляцию: /match"
     return title
 
 async def process_match(match_id,bot):
