@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
-    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, BattlePassProgress,
+    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, ClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
@@ -26,7 +26,7 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
 def keyboard():
     kb=InlineKeyboardBuilder()
     items=[
-        ('🏒 Моя команда','team'),('🤝 Товарищеские матчи','play'),
+        ('🏒 Моя команда','team'),('🏒 Матчи','matches'),
         ('✉️ Написать админу','support'),('🃏 Карточки','cards'),
         ('📦 Паки','packs'),('🏪 Рынок','market'),
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
@@ -73,8 +73,9 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='🤝 Найти соперника',callback_data='pvp_start')
-    kb.button(text='🛡 Клановые битвы',callback_data='clan_start')
+    kb.button(text='🏆 Рейтинговые',callback_data='pvp_start')
+    kb.button(text='🛡 Клановые',callback_data='clan_start')
+    kb.button(text='🤝 Товарищеские по ID',callback_data='friendly_id_start')
     kb.adjust(1); return kb.as_markup()
 
 async def active_user(session,tg):
@@ -444,14 +445,54 @@ async def main():
     @dp.message(Command('play'))
     @dp.message(F.text=='🎮 Играть')
     async def play(m):
+        await matches(m)
+
+    async def matches(m):
         async with Session() as s:
             try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
             league=league_for_rating(u.rating)
             next_league=next(((name,low) for name,low,high in LEAGUES if low>u.rating),None)
             progress=f'До лиги {next_league[0]}: {next_league[1]-u.rating} рейтинга.' if next_league else 'Вы в высшей лиге.'
-            caption='🤝 ТОВАРИЩЕСКИЕ МАТЧИ\n'+f'Ваша лига: {league}\nРейтинг: {u.rating}\n{progress}\n\nОбычный матч учитывается в рейтинге и турнире.'
+            caption=f'🏒 МАТЧИ\\nВаша лига: {league}\\nРейтинг: {u.rating}\\n{progress}\\n\\nВыберите режим:'
         await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
+
+    friendly_steps=set()
+    @dp.callback_query(F.data=='friendly_id_start')
+    async def friendly_id_prompt(c:CallbackQuery):
+        friendly_steps.add(c.from_user.id)
+        await c.message.answer('Введите Telegram ID соперника для товарищеского матча. Для отмены отправьте /cancelchallenge.')
+        await c.answer()
+
+    @dp.message(lambda m: m.from_user.id in friendly_steps and (m.text or '').strip().isdigit())
+    async def friendly_id_submit(m:Message):
+        friendly_steps.discard(m.from_user.id)
+        target=int((m.text or '').strip())
+        async with Session() as s:
+            try:
+                u=await active_user(s,m.from_user); target_user=await s.get(User,target)
+                if not target_user or target_user.is_banned: raise ValueError('Игрок не найден или заблокирован.')
+                if target==u.id: raise ValueError('Нельзя вызвать самого себя.')
+                rows=await lineup(s,u.id); cards=[x for _,x in rows]
+                if len(rows)!=6 or {x.position for x in cards}!=set(POSITIONS): raise ValueError('Сначала соберите полный состав из шести разных позиций.')
+                active=await s.scalar(select(Match.id).where(or_(Match.home_user_id==u.id,Match.away_user_id==u.id),Match.status.in_(['queued','searching','running','challenge'])))
+                target_active=await s.scalar(select(Match.id).where(or_(Match.home_user_id==target,Match.away_user_id==target),Match.status.in_(['queued','searching','running','challenge'])))
+                if active: raise ValueError('У вас уже есть активный матч.')
+                if target_active: raise ValueError('У выбранного игрока уже есть активный матч.')
+                from .game import team_power
+                match=Match(mode='challenge',status='challenge',home_user_id=u.id,away_user_id=target,home_name=u.first_name or str(u.id),away_name=target_user.first_name or str(target),home_power=team_power(cards),home_goalie=next(x.ovr for x in cards if x.position=='G'))
+                s.add(match); await s.commit(); await s.refresh(match)
+                kb=InlineKeyboardBuilder(); kb.button(text='✅ Принять матч',callback_data=f'chacc:{match.id}'); kb.button(text='❌ Отклонить',callback_data=f'chdec:{match.id}'); kb.adjust(1)
+                try: await m.bot.send_message(target,f'🏒 Товарищеский вызов от {u.first_name or u.id}. Матч #{match.id}, без ставки.',reply_markup=kb.as_markup())
+                except Exception:
+                    match.status='delivery_failed'; await s.commit(); await m.answer('Не удалось доставить вызов. Убедитесь, что соперник запускал бота.'); return
+                await m.answer(f'Вызов отправлен игроку {target}. Ожидаем подтверждения.')
+            except ValueError as e: await m.answer(str(e))
+
+    @dp.message(Command('cancelchallenge'))
+    async def cancel_friendly_prompt(m:Message):
+        if m.from_user.id in friendly_steps:
+            friendly_steps.discard(m.from_user.id); await m.answer('Ввод ID отменён.')
 
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
@@ -1201,7 +1242,15 @@ async def main():
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
-                await c.message.answer('⚔️ КЛАНОВАЯ БИТВА\nНайдите соперника из другого клана:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='⚔️ Найти соперника',callback_data='clan_start')],[InlineKeyboardButton(text='⬅️ Назад',callback_data='player:clans')]]))
+                t=await ensure_daily_tournament(s)
+                rows=(await s.scalars(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id).order_by(desc(ClanTournamentEntry.points),desc(ClanTournamentEntry.wins),desc(ClanTournamentEntry.goals)).limit(20))).all()
+                lines=[f'⚔️ КЛАНОВАЯ ВОЙНА · {t.tournament_date}','Очки всех участников суммируются в общий результат клана. Победа — 2 очка, поражение в овертайме/по буллитам — 1.']
+                for i,row in enumerate(rows,1):
+                    cl=await s.get(Clan,row.clan_id)
+                    if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
+                if len(lines)==2: lines.append('Пока нет набранных очков. Играйте матчи, чтобы вывести клан в лидеры!')
+                kb=InlineKeyboardBuilder(); kb.button(text='🏒 Играть за свой клан',callback_data='clan_start'); kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
+                await c.message.answer('\\n\\n'.join(lines),reply_markup=kb.as_markup())
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
@@ -2227,7 +2276,7 @@ async def main():
     async def player_menu_callback(c:CallbackQuery):
         action=c.data.split(':',1)[1]
         handlers={
-            'team':team,'play':play,'support':support_start,'cards':collection,
+            'team':team,'play':play,'matches':matches,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
             'daily':daily,'tournament':tournament,'clans':clan,'battlepass':battlepass,
             'profile':profile,'balance':balance,'promo':promo_section,'trades':trade_menu,'quests':quest,'help':help_cmd
