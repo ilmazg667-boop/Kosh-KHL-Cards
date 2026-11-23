@@ -204,12 +204,16 @@ def format_result(m,home_user,away_user,for_home=True):
         title+=f"\\n⭐ Изменение рейтинга: {change if for_home else -change:+d}"
     # Summarize all scoring contributions, not individual goal descriptions.
     from collections import Counter
-    points=Counter()
+    goals_by_player=Counter(); assists_by_player=Counter()
     for goal in (m.home_goals or [])+(m.away_goals or []):
-        if goal.get('scorer'): points[goal['scorer']]+=1
-        if goal.get('assist'): points[goal['assist']]+=1
-        if goal.get('assist2'): points[goal['assist2']]+=1
-    point_lines='\\n'.join(f"• {name} — {points[name]//1} оч." for name in sorted(points,key=lambda n:(-points[n],n))) or '—'
+        if goal.get('scorer'): goals_by_player[goal['scorer']]+=1
+        if goal.get('assist'): assists_by_player[goal['assist']]+=1
+        if goal.get('assist2'): assists_by_player[goal['assist2']]+=1
+    point_players=set(goals_by_player)|set(assists_by_player)
+    point_lines='\\n'.join(
+        f"• {name} — {goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)"
+        for name in sorted(point_players,key=lambda n:(-(goals_by_player[n]+assists_by_player[n]),n))
+    ) or '—'
     title+=f"\\n\\n⭐ Очки игроков (гол+пас):\\n{point_lines}"
     home_events=m.events or []
     def stat(kind,side):
