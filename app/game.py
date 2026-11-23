@@ -94,15 +94,25 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
         return any(p['pp_side']==side and p['minute']<=minute<p['end'] for p in penalties)
     home_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='home')
     away_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='away')
-    # Power play increases scoring rate during the advantage and adds a modest extra chance.
-    home_rate=max(0.7, 3.4 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (80-away_goalie)*0.018 + home_pp_minutes*0.075)
-    away_rate=max(0.7, 3.4 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (80-home_goalie)*0.018 + away_pp_minutes*0.075)
+    home_sh_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['side']=='home')
+    away_sh_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['side']=='away')
+    # A power play boosts the advantaged team and suppresses scoring by the shorthanded team.
+    # Five-minute major penalties keep their full duration even if the advantaged team scores.
+    home_rate=max(0.45, 3.4 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (80-away_goalie)*0.018 + home_pp_minutes*0.075 - home_sh_minutes*0.11)
+    away_rate=max(0.45, 3.4 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (80-home_goalie)*0.018 + away_pp_minutes*0.075 - away_sh_minutes*0.11)
     home, away=poisson(home_rate), poisson(away_rate)
     for side, count, rate in [('home',home,home_rate),('away',away,away_rate)]:
         used=set()
         for _ in range(count):
-            minute=random.choices(range(1,61),weights=[2.5 if powerplay_at(side,m) else 1.0 for m in range(1,61)],k=1)[0]
-            while minute in used and len(used)<60: minute=random.choices(range(1,61),weights=[2.5 if powerplay_at(side,m) else 1.0 for m in range(1,61)],k=1)[0]
+            def scoring_weight(m):
+                if powerplay_at(side,m):
+                    return 2.5
+                # Shorthanded goals remain possible, but are substantially rarer.
+                if any(p['side']==side and p['minute']<=m<p['end'] for p in penalties):
+                    return 0.2
+                return 1.0
+            minute=random.choices(range(1,61),weights=[scoring_weight(m) for m in range(1,61)],k=1)[0]
+            while minute in used and len(used)<60: minute=random.choices(range(1,61),weights=[scoring_weight(m) for m in range(1,61)],k=1)[0]
             used.add(minute)
             names=home_names if side=='home' else away_names
             names=names or [f'Игрок {i}' for i in range(1,7)]
