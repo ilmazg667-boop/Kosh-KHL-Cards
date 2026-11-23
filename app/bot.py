@@ -1201,7 +1201,7 @@ async def main():
         kb=InlineKeyboardBuilder()
         kb.button(text='📝 Зарегистрироваться',callback_data='tournament:join')
         kb.button(text='🏆 Таблица турнира',callback_data='tournament:table')
-        kb.button(text='🎮 Найти PvP-соперника',callback_data='pvp_start')
+        kb.button(text='🏆 Играть рейтинговый матч',callback_data='pvp_start')
         kb.button(text='⬅️ Главное меню',callback_data='player:home')
         kb.adjust(1); return kb.as_markup()
 
