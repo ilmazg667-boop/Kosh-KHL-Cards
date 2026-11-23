@@ -282,7 +282,7 @@ async def main():
             if rarity: query=query.where(Card.rarity==rarity)
             total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(OwnedCard.user_id==uid,*( [Card.rarity==rarity] if rarity else [] ))) or 0
             cards=(await s.scalars(query.order_by(OwnedCard.id.desc()).offset(page*12).limit(12))).all()
-            lines=[f'🃏 КОЛЛЕКЦИЯ · {rarity or "все редкости"} · страница {page+1} · всего {total}']
+            lines=[f'🃏 КОЛЛЕКЦИЯ · {rarity_label(rarity) if rarity else "все редкости"} · страница {page+1} · всего {total}']
             kb=InlineKeyboardBuilder()
             for oc in cards:
                 card=await s.get(Card,oc.card_id)
@@ -393,7 +393,7 @@ async def main():
             ('📍 Позиция',card.position),
             ('⭐ Рейтинг',f'{card.ovr} OVR'),
             ('💎 Редкость',rarity_label(card.rarity)),
-            ('🎉 Игрок',f'<b>{card.player_name}</b>')
+            ('🎉 Игрок',card.player_name)
         ]
         lines=['🎁 <b>ОТКРЫТИЕ ПАКА</b>','━━━━━━━━━━━━━━']
         for i,(label,value) in enumerate(fields):
@@ -885,7 +885,7 @@ async def main():
                 kb=InlineKeyboardBuilder(); count=0
                 for oc in cards:
                     card=await s.get(Card,oc.card_id)
-                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {card.rarity}',callback_data=f'trade:send:{target}:{give}:{oc.id}'); count+=1
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {rarity_label(card.rarity)}',callback_data=f'trade:send:{target}:{give}:{oc.id}'); count+=1
                 kb.button(text='⬅️ Назад',callback_data=f'trade:target:{target}'); kb.adjust(1)
                 await c.message.answer('Выберите карточку, которую хотите получить:' if count else 'У игрока нет свободных карточек для обмена.',reply_markup=kb.as_markup())
             elif action=='send':
