@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from aiogram.types import Message, CallbackQuery, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -1613,8 +1613,13 @@ async def main():
     async def leaderboard(m):
         async with Session() as s:
             rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.wins)).limit(15))).all()
-            await send_section_photo(m,PHOTO_ARENA,'🏆 Рейтинг сезона — лучшие игроки лиги.')
-            await m.answer('🏆 РЕЙТИНГ СЕЗОНА\n'+'\n'.join(f'{i}. {u.first_name or u.id} — {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1)))
+            lines=['🏆 <b>РЕЙТИНГ СЕЗОНА</b>','━━━━━━━━━━━━━━','Топ игроков по рейтингу и победам:']
+            if rows:
+                medals={1:'🥇',2:'🥈',3:'🥉'}
+                lines.extend(f'{medals.get(i, f"{i}.")} <b>{u.first_name or u.id}</b> — ⭐ {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1))
+            else:
+                lines.append('Пока нет игроков в рейтинге. Сыграй первый матч!')
+            await send_section_photo(m,PHOTO_ARENA,'\n'.join(lines),parse_mode='HTML')
 
     @dp.message(Command('season'))
     async def season(m):
@@ -2426,16 +2431,37 @@ async def main():
                 return kwargs
             async def proxy_answer(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
+                # Keep the original menu photo and replace only its caption.
+                # This prevents a photo in one message and menu text in another.
+                if c.message.photo:
+                    try: return await c.message.edit_caption(*args,**kwargs)
+                    except Exception: pass
                 try: return await c.message.edit_text(*args,**kwargs)
                 except Exception: return await c.message.answer(*args,**kwargs)
             async def proxy_answer_photo(*args,**kwargs):
-                return await c.message.answer_photo(*args,**add_player_back(kwargs))
+                kwargs=add_player_back(kwargs)
+                # Replace the current menu image instead of stacking another photo.
+                if c.message.photo and args:
+                    try:
+                        media=InputMediaPhoto(
+                            media=args[0],
+                            caption=kwargs.get('caption'),
+                            parse_mode=kwargs.get('parse_mode')
+                        )
+                        return await c.message.edit_media(media,reply_markup=kwargs.get('reply_markup'))
+                    except Exception:
+                        pass
+                return await c.message.answer_photo(*args,**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                await c.message.answer('🏒 ГЛАВНОЕ МЕНЮ\nВыберите раздел:',reply_markup=keyboard())
+                await proxy_answer(
+                    '🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!',
+                    reply_markup=keyboard(),
+                    parse_mode='HTML'
+                )
             else:
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
