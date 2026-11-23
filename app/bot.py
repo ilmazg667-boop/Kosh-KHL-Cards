@@ -2435,9 +2435,17 @@ async def main():
                 # This prevents a photo in one message and menu text in another.
                 if c.message.photo:
                     try: return await c.message.edit_caption(*args,**kwargs)
-                    except Exception: pass
+                    except Exception:
+                        # Long captions cannot be stored on Telegram photos.
+                        # Remove the old photo before sending the text menu.
+                        try: await c.message.delete()
+                        except Exception: pass
+                        return await c.message.answer(*args,**kwargs)
                 try: return await c.message.edit_text(*args,**kwargs)
-                except Exception: return await c.message.answer(*args,**kwargs)
+                except Exception:
+                    try: await c.message.delete()
+                    except Exception: pass
+                    return await c.message.answer(*args,**kwargs)
             async def proxy_answer_photo(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
                 # Replace the current menu image instead of stacking another photo.
@@ -2459,11 +2467,9 @@ async def main():
                                 parse_mode=kwargs.get('parse_mode')
                             )
                         except Exception:
-                            return await c.message.answer(
-                                kwargs.get('caption') or '',
-                                reply_markup=kwargs.get('reply_markup'),
-                                parse_mode=kwargs.get('parse_mode')
-                            )
+                            try: await c.message.delete()
+                            except Exception: pass
+                            return await c.message.answer_photo(*args,**kwargs)
                 return await c.message.answer_photo(*args,**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
