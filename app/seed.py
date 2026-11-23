@@ -48,4 +48,15 @@ async def seed_cards(session):
                 session.add(Card(player_name=key[0], player_key='', position=pos, ovr=n, rarity=rarity,
                     country='—', club='DEMO', league='DEMO', source='demo'))
                 known.add(key)
+    # Import the 116 legacy catalogue cards idempotently on every startup.
+    legacy_path = Path(__file__).resolve().parent.parent / 'data' / 'legacy_players.csv'
+    if legacy_path.exists():
+        legacy_cards = read_csv_cards(legacy_path)
+        existing_legacy = set((await session.scalars(
+            select(Card.player_key).where(Card.source=='legacy116')
+        )).all())
+        for card in legacy_cards:
+            if card.player_key not in existing_legacy:
+                session.add(card)
+                existing_legacy.add(card.player_key)
     await session.commit()
