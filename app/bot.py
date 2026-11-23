@@ -16,6 +16,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
 from .worker import run_worker, prepare_match
+from .team_art import render_team_art_image
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, submit_auction_card, place_bid,
@@ -139,6 +140,23 @@ async def active_user(session,tg):
 async def owned_card_text(session,oc):
     c=await session.get(Card,oc.card_id)
     return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
+
+async def send_team_art(target, session, uid, bot=None, replace_message=False):
+    from aiogram.types import BufferedInputFile
+    from .game import chemistry
+    rows=await lineup(session,uid)
+    cards=[card for _,card in rows]
+    strength=team_power(cards)
+    ch=await chemistry(session,cards)
+    image_bytes=render_team_art_image(rows,strength,ch)
+    photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
+    caption='🏒 <b>МОЯ КОМАНДА</b>\\nСостав обновляется автоматически после каждой замены карточки.'
+    if bot is not None:
+        if replace_message:
+            try: await target.delete()
+            except Exception: pass
+        return await bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
+    return await target.answer_photo(photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
 
 async def render_team(session,uid):
     rows=await lineup(session,uid); mapping={c.position:(o,c) for o,c in rows}
@@ -289,7 +307,7 @@ async def main():
         async with Session() as s:
             try: await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            await send_section_photo(m,PHOTO_GOALIE,await render_team(s,m.from_user.id),reply_markup=team_keyboard())
+            await send_team_art(m,s,m.from_user.id)
 
     @dp.callback_query(F.data.startswith('team:'))
     async def team_action(c:CallbackQuery):
@@ -303,7 +321,7 @@ async def main():
                 if not oc: await c.answer('На этой позиции уже нет карточки.',show_alert=True); return
                 if oc.locked: await c.answer('Карточка заблокирована торговой операцией.',show_alert=True); return
                 oc.slot=''; await s.commit()
-                await c.message.answer(f'➖ Карточка снята с позиции {pos}.',reply_markup=team_keyboard())
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True)
             elif action=='choose':
                 cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
                 kb=InlineKeyboardBuilder(); count=0
@@ -322,7 +340,7 @@ async def main():
         async with Session() as s:
             try:
                 await active_user(s,c.from_user); card=await equip_card(s,c.from_user.id,oid,pos)
-                await c.message.answer(f'✅ {card.player_name} поставлен на {pos}.\n\n'+await render_team(s,c.from_user.id),reply_markup=team_keyboard())
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Состав обновлён.')
 
@@ -2742,9 +2760,16 @@ async def main():
                         parse_mode=parse_mode
                     )
             async def proxy_answer_photo(*args,**kwargs):
-                # Handlers that request a photo use the shared menu artwork.
+                photo=kwargs.pop('photo',None)
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
+                if photo is not None:
+                    kwargs=add_player_back(kwargs)
+                    reply_markup=kwargs.pop('reply_markup',None)
+                    parse_mode=kwargs.pop('parse_mode',None)
+                    try: await c.message.delete()
+                    except Exception: pass
+                    return await c.bot.send_photo(c.from_user.id,photo=photo,caption=caption or '',reply_markup=reply_markup,parse_mode=parse_mode)
                 return await proxy_answer(caption or '',**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
