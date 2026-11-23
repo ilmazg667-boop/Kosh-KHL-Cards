@@ -330,6 +330,8 @@ async def main():
                     if card and card.position==pos:
                         kb.button(text=f'{card.player_name} · {card.ovr} OVR'+(f' · сейчас {oc.slot}' if oc.slot else ''),callback_data=f'teamequip:{oc.id}:{pos}'); count+=1
                 kb.button(text='⬅️ Назад к команде',callback_data='player:team'); kb.adjust(1)
+                try: await c.message.delete()
+                except Exception: pass
                 await c.message.answer(f'Выберите карточку на позицию {pos}:' if count else f'Нет доступных карточек на позицию {pos}. Откройте паки или снимите блокировку с карточки.',reply_markup=kb.as_markup())
         await c.answer()
 
