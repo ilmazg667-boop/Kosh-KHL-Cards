@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL
 from .db import Session, init_db
-from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, Auction, EconomyLedger
+from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger
 from .game import simulate, team_power, chemistry, league_for_rating
 from .services import now, ensure_season, ensure_daily_tournament, progress_after_match, settle_auction, expire_trade_offers
 
@@ -229,6 +229,29 @@ async def finish_match(match_id,bot):
                         if win: entry.points+=2; entry.wins+=1
                         elif m.shootout: entry.points+=1
                         entry.goals+=_counter(score)
+                # Ranked matches also contribute to the weekly clan championship.
+                if m.mode=='ranked':
+                    iso=now().date().isocalendar()
+                    week_key=f'{iso.year}-W{iso.week:02d}'
+                    weekly=await s.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==week_key))
+                    if not weekly:
+                        weekly=WeeklyClanTournament(week_key=week_key,status='open')
+                        s.add(weekly); await s.flush()
+                    if weekly.status=='open':
+                        for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
+                            if not uid: continue
+                            member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
+                            if not member: continue
+                            entry=await s.scalar(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==weekly.id,WeeklyClanTournamentEntry.clan_id==member.clan_id))
+                            if not entry:
+                                entry=WeeklyClanTournamentEntry(tournament_id=weekly.id,clan_id=member.clan_id)
+                                s.add(entry)
+                            entry.points=_counter(entry.points)
+                            entry.wins=_counter(entry.wins)
+                            entry.goals=_counter(entry.goals)
+                            if win: entry.points+=2; entry.wins+=1
+                            elif m.shootout or m.overtime: entry.points+=1
+                            entry.goals+=_counter(score)
                 # Clan standings aggregate each member's completed PvP result.
                 if m.mode not in ('pve','tournament') and t:
                     for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
