@@ -150,60 +150,59 @@ async def finish_match(match_id,bot):
         already_settled = (m.status == 'completed')
         if not already_settled:
             m.status='completed'; m.finished_at=now(); m.minute=65 if any(e.get('minute')==65 for e in (m.events or [])) else 60
-        winner=m.home_user_id if m.home_score>m.away_score else m.away_user_id
-        loser=m.away_user_id if winner==m.home_user_id else m.home_user_id
-        home=await s.get(User,m.home_user_id); away=await s.get(User,m.away_user_id) if m.away_user_id else None
-        is_ot=m.shootout
-        overtime=m.overtime
-        if m.mode in ('pve','tournament'):
-            won=m.home_score>m.away_score
-            reward=m.reward if won else int(m.reward*.5)
-            if home: home.coins+=reward; home.games+=1; home.wins+=int(won); home.losses+=int(not won)
-            if won and not is_ot and home: home.gems+=3
-            if home: await progress_after_match(s,home.id,won,len(m.home_goals or []))
-        else:
-            if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
-            if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
-            if m.mode in ('ranked','pvp') and home and away:
-                diff=away.rating-home.rating
-                raw=16 + max(-6,min(6,int(diff/250))) + min(6,abs(m.home_score-m.away_score))
-                delta=max(5,min(28,raw))
-                home.rating=max(0,home.rating+(delta if winner==home.id else -delta))
-                away.rating=max(0,away.rating+(-delta if winner==home.id else delta))
-                home.lifetime_rating=max(home.lifetime_rating,home.rating); away.lifetime_rating=max(away.lifetime_rating,away.rating)
-                m.rating_change=delta if winner==home.id else -delta
-            if home and winner==home.id and not is_ot: home.gems+=3
-            if away and winner==away.id and not is_ot: away.gems+=3
-            if m.mode=='pvp' and home and away:
-                if winner==home.id: home.coins+=1000; away.coins+=500
-                else: away.coins+=1000; home.coins+=500
-            elif m.mode=='bot' and home:
-                home.coins+=1000 if winner==home.id else 500
-            if m.bet and home and away:
-                stake=m.bet
-                if winner==home.id: home.coins+=stake*2
-                else: away.coins+=stake*2
-            if m.mode=='clan':
-                for uid, pts in [(home.id if home else 0,3 if winner==(home.id if home else -1) else 0),(away.id if away else 0,3 if winner==(away.id if away else -1) else 0)]:
-                    member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid)) if uid else None
-                    if member:
-                        clan=await s.get(Clan,member.clan_id); clan.points+=pts; clan.rating=max(0,clan.rating+(10 if pts else -2))
-            if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
-            if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
-            tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
-            t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
-            if t:
-                for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
-                    if not uid: continue
-                    entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
-                    if not entry:
-                        entry=TournamentEntry(tournament_id=t.id,user_id=uid)
-                        s.add(entry)
-                    if win: entry.points+=2; entry.wins+=1
-                    elif m.shootout: entry.points+=1
-                    entry.goals+=score
-        await s.commit()
         if not already_settled:
+            winner=m.home_user_id if m.home_score>m.away_score else m.away_user_id
+            loser=m.away_user_id if winner==m.home_user_id else m.home_user_id
+            home=await s.get(User,m.home_user_id); away=await s.get(User,m.away_user_id) if m.away_user_id else None
+            is_ot=m.shootout
+            overtime=m.overtime
+            if m.mode in ('pve','tournament'):
+                won=m.home_score>m.away_score
+                reward=m.reward if won else int(m.reward*.5)
+                if home: home.coins+=reward; home.games+=1; home.wins+=int(won); home.losses+=int(not won)
+                if won and not is_ot and home: home.gems+=3
+                if home: await progress_after_match(s,home.id,won,len(m.home_goals or []))
+            else:
+                if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
+                if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
+                if m.mode in ('ranked','pvp') and home and away:
+                    diff=away.rating-home.rating
+                    raw=16 + max(-6,min(6,int(diff/250))) + min(6,abs(m.home_score-m.away_score))
+                    delta=max(5,min(28,raw))
+                    home.rating=max(0,home.rating+(delta if winner==home.id else -delta))
+                    away.rating=max(0,away.rating+(-delta if winner==home.id else delta))
+                    home.lifetime_rating=max(home.lifetime_rating,home.rating); away.lifetime_rating=max(away.lifetime_rating,away.rating)
+                    m.rating_change=delta if winner==home.id else -delta
+                if home and winner==home.id and not is_ot: home.gems+=3
+                if away and winner==away.id and not is_ot: away.gems+=3
+                if m.mode=='pvp' and home and away:
+                    if winner==home.id: home.coins+=1000; away.coins+=500
+                    else: away.coins+=1000; home.coins+=500
+                elif m.mode=='bot' and home:
+                    home.coins+=1000 if winner==home.id else 500
+                if m.bet and home and away:
+                    stake=m.bet
+                    if winner==home.id: home.coins+=stake*2
+                    else: away.coins+=stake*2
+                if m.mode=='clan':
+                    for uid, pts in [(home.id if home else 0,3 if winner==(home.id if home else -1) else 0),(away.id if away else 0,3 if winner==(away.id if away else -1) else 0)]:
+                        member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid)) if uid else None
+                        if member:
+                            clan=await s.get(Clan,member.clan_id); clan.points+=pts; clan.rating=max(0,clan.rating+(10 if pts else -2))
+                if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
+                if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
+                tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
+                t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
+                if t:
+                    for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
+                        if not uid: continue
+                        entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
+                        if not entry:
+                            entry=TournamentEntry(tournament_id=t.id,user_id=uid)
+                            s.add(entry)
+                        if win: entry.points+=2; entry.wins+=1
+                        elif m.shootout: entry.points+=1
+                        entry.goals+=score
             await s.commit()
         # Send results separately from settlement; failures are retried by the worker without re-awarding.
         home_ok = await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
