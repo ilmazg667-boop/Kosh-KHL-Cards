@@ -67,21 +67,22 @@ async def send_photo(bot, chat_id, photo, caption):
 
 async def send(bot, chat_id, text, parse_mode=None):
     if not chat_id or not bot:
-        return
+        return False
     try:
         await bot.send_message(chat_id,text,parse_mode=parse_mode)
-        return
+        return True
     except Exception:
         logger.exception('Telegram send failed (first attempt): chat_id=%s text=%r', chat_id, text[:160])
-    # Retry HTML messages as plain text so malformed markup or entities won't hide match stats.
     fallback = html.unescape(text)
     if parse_mode == 'HTML':
         import re
         fallback = re.sub(r'<[^>]*>', '', fallback)
     try:
         await bot.send_message(chat_id,fallback)
+        return True
     except Exception:
         logger.exception('Telegram send failed (plain-text retry): chat_id=%s text=%r', chat_id, fallback[:160])
+        return False
 
 async def prepare_match(match_id,bot=None):
     logger.info('Preparing match #%s', match_id)
@@ -145,8 +146,10 @@ async def prepare_match(match_id,bot=None):
 async def finish_match(match_id,bot):
     async with Session() as s:
         m=await s.get(Match,match_id)
-        if not m or m.status=='completed': return
-        m.status='completed'; m.finished_at=now(); m.minute=65 if any(e.get('minute')==65 for e in (m.events or [])) else 60
+        if not m: return
+        already_settled = (m.status == 'completed')
+        if not already_settled:
+            m.status='completed'; m.finished_at=now(); m.minute=65 if any(e.get('minute')==65 for e in (m.events or [])) else 60
         winner=m.home_user_id if m.home_score>m.away_score else m.away_user_id
         loser=m.away_user_id if winner==m.home_user_id else m.home_user_id
         home=await s.get(User,m.home_user_id); away=await s.get(User,m.away_user_id) if m.away_user_id else None
@@ -200,12 +203,16 @@ async def finish_match(match_id,bot):
                     elif m.shootout: entry.points+=1
                     entry.goals+=score
         await s.commit()
-        await send_photo(bot,m.home_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
-        await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
+        if not already_settled:
+            await s.commit()
+        # Send results separately from settlement; failures are retried by the worker without re-awarding.
+        home_ok = await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
+        away_ok = True
         if away:
-            await send_photo(bot,m.away_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
-            await send(bot,m.away_user_id,format_result(m,home,away,for_home=False),parse_mode='HTML')
-
+            away_ok = await send(bot,m.away_user_id,format_result(m,home,away,for_home=False),parse_mode='HTML')
+        if home_ok and away_ok:
+            m.result_sent = True
+            await s.commit()
 
 def format_result(m,home_user,away_user,for_home=True):
     own_goals=m.home_goals if for_home else m.away_goals
@@ -260,7 +267,10 @@ async def process_match(match_id,bot):
     while True:
         async with Session() as s:
             m=await s.get(Match,match_id)
-            if not m or m.status!='running': return
+            if not m or m.status not in ('running','completed'): return
+            if m.status=='completed':
+                await finish_match(match_id,bot)
+                return
             next_min=min(65 if any(e.get('minute')==65 for e in m.events) else 60,m.minute+1)
             available=[e for e in m.events if e['minute']<=next_min]
             previous_index=m.event_index
@@ -486,8 +496,9 @@ async def run_worker():
                 async with Session() as s:
                     queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(20))).all()
                     running=(await s.scalars(select(Match.id).where(Match.status=='running').limit(20))).all()
+                    pending_results=(await s.scalars(select(Match.id).where(Match.status=='completed',Match.result_sent.is_(False)).limit(20))).all()
                     searching_count=await s.scalar(select(func.count(Match.id)).where(Match.status=='searching'))
-                ids=list(dict.fromkeys(queued+running))
+                ids=list(dict.fromkeys(queued+running+pending_results))
                 # Run matches concurrently without blocking the matchmaking poll.
                 # This keeps accepting/pairing new players while other matches play.
                 for mid in ids:
