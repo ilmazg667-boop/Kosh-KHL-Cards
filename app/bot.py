@@ -303,22 +303,34 @@ async def main():
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await target.answer('\\n'.join(lines),reply_markup=kb.as_markup())
 
-    async def render_collection_filters(target, uid):
+    async def render_collection_filters(target, uid, group=None):
         async with Session() as s:
-            leagues=list((await s.scalars(select(Card.league).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid,Card.league!='').distinct().order_by(Card.league))).all())
-            positions=list((await s.scalars(select(Card.position).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.position))).all())
-            rarities=list((await s.scalars(select(Card.rarity).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.rarity))).all())
             kb=InlineKeyboardBuilder()
-            # League filter options
-            for i,value in enumerate(leagues): kb.button(text=value,callback_data=f'collection:pick:l:{i}')
-            # Position filter options
-            for i,value in enumerate(positions): kb.button(text=value,callback_data=f'collection:pick:p:{i}')
-            # Rarity filter options
-            for i,value in enumerate(rarities): kb.button(text=rarity_label(value),callback_data=f'collection:pick:r:{i}')
+            if group is None:
+                kb.button(text='🏒 Лиги',callback_data='collection:group:l')
+                kb.button(text='📍 Позиции',callback_data='collection:group:p')
+                kb.button(text='💎 Редкости',callback_data='collection:group:r')
+                title='🔎 ФИЛЬТР КАРТОЧЕК\\nВыбери тип фильтра:'
+            elif group=='l':
+                values=list((await s.scalars(select(Card.league).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid,Card.league!='').distinct().order_by(Card.league))).all())
+                for i,value in enumerate(values): kb.button(text=value,callback_data=f'collection:pick:l:{i}')
+                title='🏒 ВЫБЕРИ ЛИГУ:'
+            elif group=='p':
+                values=list((await s.scalars(select(Card.position).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.position))).all())
+                for i,value in enumerate(values): kb.button(text=value,callback_data=f'collection:pick:p:{i}')
+                title='📍 ВЫБЕРИ ПОЗИЦИЮ:'
+            elif group=='r':
+                values=list((await s.scalars(select(Card.rarity).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.rarity))).all())
+                for i,value in enumerate(values): kb.button(text=rarity_label(value),callback_data=f'collection:pick:r:{i}')
+                title='💎 ВЫБЕРИ РЕДКОСТЬ:'
+            else:
+                title='Фильтр не найден.'
+            if group is not None:
+                kb.button(text='⬅️ К типам фильтра',callback_data='collection:filter')
             kb.button(text='♻️ Сбросить фильтры',callback_data='collection:clear')
             kb.button(text='⬅️ К карточкам',callback_data='collection:page:0')
             kb.adjust(1)
-            await target.answer('🔎 ФИЛЬТР КАРТОЧЕК\\nВыбери лигу, позицию или редкость:',reply_markup=kb.as_markup())
+            await target.answer(title,reply_markup=kb.as_markup())
 
     @dp.message(Command('cards'))
     @dp.message(F.text=='🃏 Карточки')
@@ -341,7 +353,8 @@ async def main():
             except (ValueError,IndexError): page=0
             await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,page=page)
         elif parts[1]=='group':
-            await render_collection_filters(SimpleNamespace(answer=edit_collection),c.from_user.id)
+            group=parts[2] if len(parts)>2 else None
+            await render_collection_filters(SimpleNamespace(answer=edit_collection),c.from_user.id,group)
         elif parts[1]=='pick':
             try:
                 kind=parts[2]; index=int(parts[3])
