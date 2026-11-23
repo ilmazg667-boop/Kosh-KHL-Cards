@@ -139,6 +139,12 @@ class DailyTournament(Base):
     rewarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+class TournamentPrizeConfig(Base):
+    __tablename__ = 'tournament_prize_configs'
+    place: Mapped[int] = mapped_column(Integer, primary_key=True)
+    coins: Mapped[int] = mapped_column(Integer, default=0)
+    gems: Mapped[int] = mapped_column(Integer, default=0)
+
 class TournamentEntry(Base):
     __tablename__ = 'tournament_entries'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
