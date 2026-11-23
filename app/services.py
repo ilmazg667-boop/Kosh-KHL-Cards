@@ -321,11 +321,18 @@ async def expire_trade_offers(session):
         offer.status='expired'
     if offers: await session.commit()
 
-async def make_tournament_entry(session,user_id):
+async def ensure_daily_tournament_participants(session):
+    """Every existing, non-banned bot player is included in today's tournament automatically."""
     t=await ensure_daily_tournament(session)
-    e=await session.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==user_id))
-    if e: return t,e,False
-    e=TournamentEntry(tournament_id=t.id,user_id=user_id); session.add(e); await session.commit(); return t,e,True
+    users=(await session.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
+    existing=set((await session.scalars(
+        select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==t.id)
+    )).all())
+    for user_id in users:
+        if user_id not in existing:
+            session.add(TournamentEntry(tournament_id=t.id,user_id=user_id))
+    await session.flush()
+    return t
 
 async def save_pack_config(session,name,price,currency,odds):
     if name not in PACKS: raise ValueError('Неизвестный тип пака.')
