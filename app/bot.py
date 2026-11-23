@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
-    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
+    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
@@ -1225,7 +1225,11 @@ async def main():
                 t=await ensure_daily_tournament_participants(s)
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
                 lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}','']
-                prizes={1:'10 000 🪙 + 20 💎 + элитный пак',2:'7 000 🪙 + 15 💎',3:'5 000 🪙 + 10 💎',4:'3 000 🪙 + 7 💎',5:'2 000 🪙 + 5 💎'}
+                defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
+                prizes={}
+                for place,(coins,gems) in defaults.items():
+                    cfg=await s.get(TournamentPrizeConfig,place)
+                    prizes[place]=(cfg.coins,cfg.gems) if cfg else (coins,gems)
                 for i,row in enumerate(rows,1):
                     user=await s.get(User,row.user_id)
                     lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
@@ -1234,7 +1238,7 @@ async def main():
                     lead=rows[0]
                     lines.append(f'\n🥇 Первое место: {lead.points} очков, {lead.wins} побед и {lead.goals} голов. Сначала сравниваются очки, затем победы, затем голы.')
                 lines.extend(['','🎁 ПРИЗЫ ТОП-5:'])
-                for place,reward in prizes.items(): lines.append(f'{place}. {reward}')
+                for place,(coins,gems) in prizes.items(): lines.append(f'{place}. {coins} 🪙 + {gems} 💎')
                 await c.message.answer('\n'.join(lines),reply_markup=tournament_keyboard())
         await c.answer()
 
@@ -1742,9 +1746,28 @@ async def main():
             for t in rows:
                 lines.append(f"\\n{t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
+            kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
             kb.button(text='➕ Управлять по дате',callback_data='adm:tournament_date')
             kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
             await c.message.answer(''.join(lines),reply_markup=kb.as_markup())
+        elif action[1]=='tournament_prizes':
+            defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
+            async with Session() as s:
+                lines=['🎁 НАГРАДЫ ЕЖЕДНЕВНОГО ТУРНИРА']
+                kb=InlineKeyboardBuilder()
+                for place,(coins,gems) in defaults.items():
+                    cfg=await s.get(TournamentPrizeConfig,place)
+                    coins,gems=(cfg.coins,cfg.gems) if cfg else (coins,gems)
+                    lines.append(f'{place} место — {coins} 🪙 + {gems} 💎')
+                    kb.button(text=f'✏️ Изменить {place} место',callback_data=f'adm:tournament_prize:{place}')
+            kb.button(text='⬅️ К турнирам',callback_data='adm:tournaments'); kb.adjust(1)
+            await c.message.answer('\n'.join(lines)+'\n\nВыберите место для изменения награды:',reply_markup=kb.as_markup())
+        elif action[1]=='tournament_prize':
+            place=int(action[2])
+            if place<1 or place>5:
+                await c.answer('Можно настроить места с 1-го по 5-е.',show_alert=True); return
+            admin_steps[c.from_user.id]={'kind':'tournament_prize','step':'amounts','place':place}
+            await c.message.answer(f'Введите награду за {place} место в формате: МОНЕТЫ АЛМАЗЫ. Например: 12000 25. Отмена: /canceladmin')
         elif action[1]=='tournament_date':
             admin_steps[c.from_user.id]={'kind':'tournament','step':'date'}
             await c.message.answer('🏆 Введите дату существующего или нового ежедневного турнира в формате ГГГГ-ММ-ДД.\\nШаг 1 из 2. Затем выберете: начать или завершить. Отмена: /canceladmin')
@@ -1780,15 +1803,31 @@ async def main():
                 if not t:
                     await c.answer('Турнир не найден.',show_alert=True); return
                 t.status=mode
+                notices=[]
                 if mode=='open':
                     users=(await s.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
                     existing=set((await s.scalars(select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==tid))).all())
                     for uid in users:
                         if uid not in existing: s.add(TournamentEntry(tournament_id=tid,user_id=uid))
+                elif mode=='closed' and not t.rewarded_at:
+                    rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(5))).all()
+                    defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
+                    for place,entry in enumerate(rows,1):
+                        cfg=await s.get(TournamentPrizeConfig,place)
+                        coins,gems=(cfg.coins,cfg.gems) if cfg else defaults[place]
+                        user=await s.get(User,entry.user_id)
+                        if user and not user.is_banned:
+                            user.coins+=coins; user.gems+=gems
+                            notices.append((user.id,place,coins,gems))
+                    t.rewarded_at=now()
                 await audit(s,c.from_user.id,'tournament_status',tid,mode)
                 await s.commit()
             admin_steps.pop(c.from_user.id,None)
-            await c.message.answer(f"✅ Турнир {t.tournament_date} {'открыт' if mode=='open' else 'завершён'}.",reply_markup=admin_back_keyboard())
+            for uid,place,coins,gems in notices:
+                try:
+                    await c.bot.send_message(uid,f'🏁 Турнир {t.tournament_date} завершён!\n\n🎉 Вы заняли {place} место!\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎\nНаграды уже начислены на баланс.')
+                except Exception: pass
+            await c.message.answer(f"✅ Турнир {t.tournament_date} {'открыт' if mode=='open' else 'завершён'}. Награды начислены: {len(notices)} игрокам.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
@@ -1954,6 +1993,22 @@ async def main():
         if not state or not admin(m.from_user.id) or not m.text: return
         kind=state['kind']; step=state['step']
         try:
+            if kind=='tournament_prize' and step=='amounts':
+                parts=m.text.replace(',',' ').split()
+                if len(parts)!=2:
+                    await m.answer('Формат: МОНЕТЫ АЛМАЗЫ, например 12000 25.'); return
+                coins,gems=map(int,parts)
+                if coins<0 or gems<0 or coins>100000000 or gems>1000000: raise ValueError()
+                place=state['place']
+                async with Session() as s:
+                    cfg=await s.get(TournamentPrizeConfig,place)
+                    if cfg: cfg.coins=coins; cfg.gems=gems
+                    else: s.add(TournamentPrizeConfig(place=place,coins=coins,gems=gems))
+                    await audit(s,m.from_user.id,'tournament_prize_update',place,f'{coins}:{gems}')
+                    await s.commit()
+                admin_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Награда за {place} место обновлена: {coins} 🪙 + {gems} 💎',reply_markup=admin_keyboard())
+                return
             if kind=='tournament' and step=='date':
                 raw=m.text.strip()
                 try:
