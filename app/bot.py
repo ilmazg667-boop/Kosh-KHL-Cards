@@ -1302,7 +1302,7 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             if len(parts)==3 and parts[1]=='claim':
                 try:
-                    coins,gems=await claim_quest(s,m.from_user.id,parts[2]); await m.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎.')
+                    coins,gems,xp=await claim_quest(s,m.from_user.id,parts[2]); await m.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎 · {xp} XP Battle Pass.')
                 except ValueError as e: await m.answer(str(e))
                 return
             today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
@@ -1312,7 +1312,7 @@ async def main():
                 ('🗓 ЕЖЕМЕСЯЧНЫЕ',[( 'play60month',month,60,'Сыграть 60 матчей за месяц'),('win20month',month,20,'Выиграть 20 матчей за месяц')]),
                 ('🏆 СЕЗОННЫЕ',[( 'play100',season,100,'Сыграть 100 матчей'),('win50',season,50,'Одержать 50 побед'),('reach_khl',season,1,'Достичь КХЛ'),('open50packs',season,50,'Открыть 50 паков')])
             ]
-            rewards={'play3':(300,0),'win1':(500,0),'score5goals':(500,1),'play20':(1500,2),'win10':(2000,3),'play60month':(3500,4),'win20month':(4500,5),'play100':(5000,5),'win50':(7000,8),'reach_khl':(2500,3),'open50packs':(5000,5)}
+            rewards={'play3':(300,0,50),'win1':(500,0,50),'score5goals':(500,1,50),'play20':(1500,2,50),'win10':(2000,3,50),'play60month':(3500,4,50),'win20month':(4500,5,50),'play100':(5000,5,50),'win50':(7000,8,50),'reach_khl':(2500,3,50),'open50packs':(5000,5,50)}
             lines=['📋 ЗАДАНИЯ']
             kb=InlineKeyboardBuilder()
             for heading,items in groups:
@@ -1320,8 +1320,8 @@ async def main():
                 for key,period,need,title in items:
                     q=await s.scalar(select(QuestProgress).where(QuestProgress.user_id==m.from_user.id,QuestProgress.quest_key==key,QuestProgress.period_key==period))
                     value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
-                    coins,gems=rewards[key]
-                    lines.append(f'• {title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎'+(f' · {status}' if status else ''))
+                    coins,gems,xp=rewards[key]
+                    lines.append(f'• {title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎 + {xp} XP'+(f' · {status}' if status else ''))
                     if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
@@ -1331,8 +1331,8 @@ async def main():
         key=c.data.split(':',1)[1]
         async with Session() as s:
             try:
-                await active_user(s,c.from_user); coins,gems=await claim_quest(s,c.from_user.id,key)
-                await c.message.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎.')
+                await active_user(s,c.from_user); coins,gems,xp=await claim_quest(s,c.from_user.id,key)
+                await c.message.answer(f'✅ Награда: {coins} 🪙 · {gems} 💎 · {xp} XP Battle Pass.')
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -1374,7 +1374,7 @@ async def main():
     admin_auction_steps={}
     def admin_keyboard():
         kb=InlineKeyboardBuilder()
-        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('🏒 История матчей','adm:match_history'),('🔁 История обменов','adm:trade_history'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
+        for label,data in [('👥 Игроки','adm:players:0'),('📊 Статистика','adm:stats'),('🏒 История матчей','adm:match_history'),('🔁 История обменов','adm:trade_history'),('💰 Выдать монеты','adm:wiz:givecoins'),('💎 Выдать алмазы','adm:wiz:givegems'),('🃏 Выдать карточку','adm:wiz:givecard'),('🎟 Выдать Premium Pass','adm:wiz:givepremium'),('⭐ Выдать уровни Pass','adm:wiz:givebpxp'),('🚫 Блокировка','adm:wiz:ban'),('🔨 Аукционы','adm:auctions'),('🛠 Карточки и паки','adm:cards'),('🎟 Промокоды','adm:promos'),('📩 Сообщения игроков','adm:messages'),('📖 Все команды','adm:help')]:
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
         return kb.as_markup()
@@ -1439,7 +1439,7 @@ async def main():
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
-            prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
+            prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','givepremium':'🎟 Введите Telegram ID игрока, которому нужно выдать Premium Pass.','givebpxp':'⭐ Введите Telegram ID игрока, которому нужно начислить уровни Battle Pass.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
             await c.message.answer(prompt+'\\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
@@ -1532,6 +1532,65 @@ async def main():
             await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
         elif action[1]=='home':
             await c.message.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\nВыберите нужный раздел:',reply_markup=admin_keyboard())
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('admcard:'))
+    async def admin_card_picker(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('Нет доступа.',show_alert=True); return
+        state=admin_steps.get(c.from_user.id)
+        if not state or state.get('kind')!='givecard':
+            await c.answer('Начните выдачу карточки заново из админ-меню.',show_alert=True); return
+        parts=c.data.split(':')
+        action=parts[1] if len(parts)>1 else ''
+        if action=='cancel':
+            admin_steps.pop(c.from_user.id,None); await c.message.answer('Выдача карточки отменена.',reply_markup=admin_keyboard()); await c.answer(); return
+        league_map={'KHL':'КХЛ','NHL':'НХЛ'}
+        if action=='league':
+            code=parts[2] if len(parts)>2 else ''
+            if code not in league_map: await c.answer('Лига не найдена.',show_alert=True); return
+            league=league_map[code]
+            async with Session() as s:
+                clubs=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.source!='demo',Card.league==league,Card.club!='—').distinct().order_by(Card.club))).all()
+            if not clubs: await c.answer(f'В каталоге пока нет активных карточек лиги {league}.',show_alert=True); return
+            state.update(step='team',league=league,club='')
+            kb=InlineKeyboardBuilder()
+            for idx,club in enumerate(clubs): kb.button(text=club,callback_data=f'admcard:team:{code}:{idx}')
+            kb.button(text='⬅️ К выбору лиги',callback_data='admcard:back:league'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            await c.message.answer(f'Шаг 3 из 4. Лига: {league}. Выберите команду:',reply_markup=kb.as_markup())
+        elif action=='back' and len(parts)>2 and parts[2]=='league':
+            state['step']='league'
+            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            await c.message.answer('Выберите лигу карточки:',reply_markup=kb.as_markup())
+        elif action=='team':
+            code=parts[2] if len(parts)>2 else ''; idx=int(parts[3]) if len(parts)>3 else -1
+            if code not in league_map or state.get('league')!=league_map[code]: await c.answer('Сначала выберите лигу.',show_alert=True); return
+            async with Session() as s:
+                clubs=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.source!='demo',Card.league==state['league'],Card.club!='—').distinct().order_by(Card.club))).all()
+                if idx<0 or idx>=len(clubs): await c.answer('Команда не найдена.',show_alert=True); return
+                club=clubs[idx]
+                cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league==state['league'],Card.club==club).order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
+            state.update(step='player',club=club)
+            kb=InlineKeyboardBuilder()
+            for card in cards:
+                kb.button(text=f'{card.player_name} · {card.position} · {card.ovr} OVR',callback_data=f'admcard:player:{card.id}')
+            kb.button(text='⬅️ К командам',callback_data=f'admcard:league:{code}'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            await c.message.answer(f'Шаг 4 из 4. {state["league"]} · {club}. Выберите игрока:',reply_markup=kb.as_markup())
+        elif action=='player':
+            try: cid=int(parts[2])
+            except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
+            async with Session() as s:
+                target=await s.get(User,state.get('uid'))
+                card=await s.get(Card,cid)
+                if not target or not card or not card.active or card.source=='demo' or card.league!=state.get('league') or card.club!=state.get('club'):
+                    await c.answer('Игрок или карточка больше недоступны.',show_alert=True); return
+                s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
+                await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
+                target_id=target.id; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+            admin_steps.pop(c.from_user.id,None)
+            try: await c.bot.send_message(target_id,f'🃏 Вам выдана карточка: {player_name} · {ovr} OVR.')
+            except Exception: pass
+            await c.message.answer(f'✅ Карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         await c.answer()
 
     @dp.message(Command('canceladmin'))
@@ -1629,8 +1688,21 @@ async def main():
                     state['step']='amount'
                     await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
-                    state['step']='card'
-                    await m.answer('Шаг 2 из 2. Введите ID шаблона карточки, которую нужно выдать игроку.')
+                    state['step']='league'
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    await m.answer('Шаг 2 из 4. Выберите лигу карточки:',reply_markup=kb.as_markup())
+                elif kind=='givepremium':
+                    async with Session() as s:
+                        bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==uid,BattlePassProgress.season==season_key()).with_for_update())
+                        if not bp: bp=BattlePassProgress(user_id=uid,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
+                        bp.premium=True; await audit(s,m.from_user.id,'givepremium',uid,'admin grant'); await s.commit()
+                    admin_steps.pop(m.from_user.id,None)
+                    try: await m.bot.send_message(uid,'🎟 Администрация выдала вам Premium Battle Pass!')
+                    except Exception: pass
+                    await m.answer(f'✅ Premium Pass выдан игроку {uid}.',reply_markup=admin_keyboard())
+                elif kind=='givebpxp':
+                    state['step']='amount'
+                    await m.answer('Шаг 2 из 2. Сколько уровней Battle Pass начислить? 1 уровень = 100 XP.')
                 elif kind=='ban':
                     async with Session() as s:
                         target=await s.get(User,uid); target.is_banned=True
@@ -1640,6 +1712,18 @@ async def main():
             elif step=='amount':
                 amount=int(m.text.strip())
                 if amount==0: raise ValueError()
+                if kind=='givebpxp':
+                    if amount<0 or amount>100: raise ValueError()
+                    async with Session() as s:
+                        bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==state['uid'],BattlePassProgress.season==season_key()).with_for_update())
+                        if not bp: bp=BattlePassProgress(user_id=state['uid'],season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
+                        xp=amount*100; bp.xp=min(10000,bp.xp+xp)
+                        await audit(s,m.from_user.id,'bpgrant',state['uid'],f'{amount} levels / {xp} XP'); await s.commit()
+                    admin_steps.pop(m.from_user.id,None)
+                    try: await m.bot.send_message(state['uid'],f'⭐ Администрация начислила вам {amount} уровней Battle Pass ({xp} XP).')
+                    except Exception: pass
+                    await m.answer(f'✅ Начислено {amount} уровней Battle Pass ({xp} XP) игроку {state["uid"]}.',reply_markup=admin_keyboard())
+                    return
                 async with Session() as s:
                     target=await s.get(User,state['uid']); field='coins' if kind=='givecoins' else 'gems'
                     if getattr(target,field)+amount<0: await m.answer('Недостаточно средств для списания. Введите другую сумму.'); return
