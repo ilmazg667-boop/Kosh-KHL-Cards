@@ -361,7 +361,6 @@ async def main():
         await c.answer('Готово!')
 
     @dp.message(Command('play'))
-    @dp.message(Command('pve'))
     @dp.message(F.text=='🎮 Играть')
     async def play(m):
         async with Session() as s:
@@ -433,14 +432,9 @@ async def main():
         await c.answer()
 
     @dp.callback_query(F.data.startswith('pve:'))
-    async def pve(c:CallbackQuery):
-        league=c.data.split(':',1)[1]
-        async with Session() as s:
-            try:
-                u=await active_user(s,c.from_user); match=await start_pve_match(s,u,league)
-                await c.message.answer(f'🏒 Матч #{match.id} поставлен в очередь.\n60 минут · автоматическая трансляция.\nМатч продолжится, даже если вы закроете Telegram.\nСтатус: /match')
-            except ValueError as e: await c.answer(str(e),show_alert=True); return
-        await c.answer()
+    async def legacy_pve_redirect(c:CallbackQuery):
+        await c.answer('PvE-режим убран. Запускается обычный матч с рейтингом и турниром.')
+        await queue_from_menu(c)
 
     @dp.message(Command('pvp'))
     async def pvp(m):
@@ -1860,8 +1854,9 @@ async def main():
             if not match: await c.answer('Матч уже удалён.',show_alert=True); return
             if match.status in ('queued','searching','running','challenge'):
                 await c.answer('Нельзя удалять активный матч.',show_alert=True); return
-            await s.delete(match); await s.commit()
+            await s.delete(match)
             await audit(s,c.from_user.id,'admin_match_delete',mid,'Удалена запись матча и события')
+            await s.commit()
         await c.message.answer(f'🗑 Данные матча #{mid} удалены.')
         await c.answer('Удалено.')
 
