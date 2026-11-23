@@ -47,11 +47,46 @@ def format_msk(value, naive_is_utc=True):
 
 def admin(uid): return uid in ADMIN_IDS
 
+TELEGRAM_POST_URL='https://t.me/bullet_kings_forms/40'
+_TELEGRAM_POST_PHOTO=None
+
+async def telegram_post_photo():
+    global _TELEGRAM_POST_PHOTO
+    if _TELEGRAM_POST_PHOTO:
+        return _TELEGRAM_POST_PHOTO
+    import aiohttp, re
+    page_url='https://t.me/s/bullet_kings_forms/40?single'
+    timeout=aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout,headers={'User-Agent':'Mozilla/5.0'}) as session:
+        async with session.get(page_url) as response:
+            response.raise_for_status()
+            page=await response.text()
+    # Telegram's public channel preview stores post photos in the CSS background.
+    patterns=[
+        r'tgme_widget_message_photo_wrap[^>]*style="[^"]*?background-image\\s*:\\s*url\\([\\'"]?(https?://[^\\'")]+)',
+        r'<img[^>]+src="(https?://[^"]+)"[^>]+class="[^"]*tgme_widget_message_photo',
+        r'background-image\\s*:\\s*url\\([\\'"]?(https?://[^\\'")]+)'
+    ]
+    for pattern in patterns:
+        match=re.search(pattern,page,re.I)
+        if match:
+            _TELEGRAM_POST_PHOTO=match.group(1).replace('&amp;','&')
+            return _TELEGRAM_POST_PHOTO
+    raise RuntimeError('В публикации Telegram не найдено изображение')
+
+async def send_main_menu(m, caption, reply_markup):
+    try:
+        photo=await telegram_post_photo()
+        await m.answer_photo(photo=photo,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+    except Exception as e:
+        # Keep the bot usable if Telegram's public preview is temporarily unavailable.
+        print(f'Не удалось получить фото главного меню из Telegram: {e}')
+        await m.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
+
 async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None):
-    # Photos are temporarily disabled: render every section as a clean text menu.
     await m.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
-PHOTO_ARENA='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
+PHOTO_ARENA=TELEGRAM_POST_URL
 PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
 PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
@@ -138,7 +173,7 @@ async def main():
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await send_section_photo(m,PHOTO_ARENA,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
+            await send_main_menu(m,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
 
 
     support_steps={}
@@ -2666,11 +2701,15 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                await proxy_answer(
-                    '🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!',
-                    reply_markup=keyboard(),
-                    parse_mode='HTML'
-                )
+                caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
+                try:
+                    photo=await telegram_post_photo()
+                    try: await c.message.delete()
+                    except Exception: pass
+                    await c.bot.send_photo(c.from_user.id,photo,caption=caption,reply_markup=keyboard(),parse_mode='HTML')
+                except Exception as e:
+                    print(f'Не удалось показать фото главного меню: {e}')
+                    await proxy_answer(caption,reply_markup=keyboard(),parse_mode='HTML')
             else:
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
