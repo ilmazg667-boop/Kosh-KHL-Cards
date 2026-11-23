@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from .models import (User, Card, OwnedCard, MarketListing, TradeOffer, Auction, AuctionBid,
     DailyTournament, TournamentEntry, Clan, ClanMember, BattlePassProgress, QuestProgress,
     Season, AuditLog, Match, PackConfig, ClanInvite, EconomyLedger)
-from .game import POSITIONS, PACKS, RARITIES, RARITY_RANGES, rarity_pick, league_for_rating
+from .game import POSITIONS, PACKS, RARITIES, RARITY_RANGES, rarity_pick, adjust_pack_odds, league_for_rating
 from .seed import read_csv_cards
 from .economy import available_bid_balance, auction_payout_and_fee
 
@@ -100,7 +100,8 @@ async def open_pack(session,user,pack_name):
     data={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else PACKS[pack_name]
     currency=data['currency']; price=data['price']
     if getattr(user,currency)<price: raise ValueError('Недостаточно валюты.')
-    rarity=rarity_pick(data['odds'])
+    adjusted_odds=adjust_pack_odds(pack_name, data['odds'])
+    rarity=rarity_pick(adjusted_odds)
     excluded=pack_card_exclusion()
     cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo',excluded))).all()
     if not cards:
@@ -509,7 +510,7 @@ async def claim_bp_reward(session,user_id,level,premium=False):
         reward_text=f'🎴 Бонусная карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}'
     elif (premium and level%5==0) or (not premium and level%10==0):
         pack_name='Премиум' if premium else 'Обычный'
-        odds=PACKS[pack_name]['odds']; rarity=rarity_pick(odds)
+        odds=adjust_pack_odds(pack_name, PACKS[pack_name]['odds']); rarity=rarity_pick(odds)
         cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
         if not cards:
             cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
