@@ -127,15 +127,41 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             shootout=True
             events.append({'minute':65,'type':'overtime','text':'⏱ Овертайм завершён без гола.'})
             events.append({'minute':65,'type':'shootout','text':'🎯 Начинается серия буллитов!'})
-            home_hits=sum(random.random()<min(.65,max(.2,.42+(home_power-away_goalie)*.008)) for _ in range(3))
-            away_hits=sum(random.random()<min(.65,max(.2,.42+(away_power-home_goalie)*.008)) for _ in range(3))
+            home_hits=away_hits=0
+            # Shootout shots are logged one at a time, alternating sides.
+            home_chance=min(.65,max(.2,.42+(home_power-away_goalie)*.008))
+            away_chance=min(.65,max(.2,.42+(away_power-home_goalie)*.008))
+            shot_no=0
+            while shot_no<10:
+                side='home' if shot_no%2==0 else 'away'
+                chance=home_chance if side=='home' else away_chance
+                scored=random.random()<chance
+                if scored:
+                    if side=='home': home_hits+=1
+                    else: away_hits+=1
+                team_name=home_team_name if side=='home' else away_team_name
+                events.append({'minute':65,'type':'shootout_shot','side':side,'scored':scored,
+                    'shootout_home':home_hits,'shootout_away':away_hits,
+                    'text':f"🎯 Буллит {shot_no//2+1} — {team_name}: {'🥅 ГОЛ!' if scored else '❌ Не забил.'}"})
+                shot_no+=1
+                if shot_no>=6 and home_hits!=away_hits and abs(home_hits-away_hits)>((10-shot_no+1)//2):
+                    break
+            # Sudden-death pairs until a winner.
             while home_hits==away_hits:
-                home_hits+=int(random.random()<.42); away_hits+=int(random.random()<.42)
-            if home_hits>away_hits:
-                home+=1
-            else:
-                away+=1
-            events.append({'minute':65,'type':'shootout','text':f'🎯 Буллиты: {home_hits} — {away_hits}.'})
+                for side in ('home','away'):
+                    chance=home_chance if side=='home' else away_chance
+                    scored=random.random()<chance
+                    if scored:
+                        if side=='home': home_hits+=1
+                        else: away_hits+=1
+                    team_name=home_team_name if side=='home' else away_team_name
+                    events.append({'minute':65,'type':'shootout_shot','side':side,'scored':scored,
+                        'shootout_home':home_hits,'shootout_away':away_hits,
+                        'text':f"🎯 Буллит (внезапная смерть) — {team_name}: {'🥅 ГОЛ!' if scored else '❌ Не забил.'}"})
+                    if home_hits!=away_hits: break
+            if home_hits>away_hits: home+=1
+            else: away+=1
+            events.append({'minute':65,'type':'shootout','text':f'🏁 Серия буллитов завершена: {home_hits} — {away_hits}.'})
         else:
             names=home_names if ot_side=='home' else away_names
             names=names or [f'Игрок {i}' for i in range(1,7)]
