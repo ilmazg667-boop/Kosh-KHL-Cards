@@ -82,8 +82,8 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
     for side, count, rate in [('home',home,home_rate),('away',away,away_rate)]:
         used=set()
         for _ in range(count):
-            minute=random.randint(1,60)
-            while minute in used and len(used)<60: minute=random.randint(1,60)
+            minute=random.choices(range(1,61),weights=[2.5 if powerplay_at(side,m) else 1.0 for m in range(1,61)],k=1)[0]
+            while minute in used and len(used)<60: minute=random.choices(range(1,61),weights=[2.5 if powerplay_at(side,m) else 1.0 for m in range(1,61)],k=1)[0]
             used.add(minute)
             names=home_names if side=='home' else away_names
             names=names or [f'Игрок {i}' for i in range(1,7)]
