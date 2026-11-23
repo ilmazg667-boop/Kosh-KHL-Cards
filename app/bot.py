@@ -404,7 +404,7 @@ async def main():
         await c.answer('Теперь все обычные матчи учитываются в рейтинге и турнире.')
         await queue_from_menu(c)
 
-@dp.callback_query(F.data=='clan_start')
+    @dp.callback_query(F.data=='clan_start')
     async def clan_queue_from_menu(c:CallbackQuery):
         async with Session() as s:
             try:
