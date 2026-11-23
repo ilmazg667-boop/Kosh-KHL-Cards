@@ -1835,30 +1835,68 @@ async def main():
                 gems=await s.scalar(select(func.coalesce(func.sum(User.gems),0))) or 0
             await c.message.answer(f'📊 СТАТИСТИКА БОТА\n👥 Игроков: {total}\n🚫 Заблокировано: {banned}\n🃏 Шаблонов карточек: {cards}\n🏒 Всего матчей: {matches}\n🔥 Активных матчей: {active}\n🏪 Активных лотов: {listings}\n🪙 Монет в экономике: {coins}\n💎 Алмазов в экономике: {gems}',reply_markup=admin_back_keyboard())
         elif action[1]=='players':
-            page=int(action[2]) if len(action)>2 else 0
-            async with Session() as s:
-                rows=(await s.scalars(select(User).order_by(desc(User.rating),desc(User.games)).offset(page*15).limit(15))).all()
-                total=await s.scalar(select(func.count(User.id))) or 0
-            lines=[f'👥 СПИСОК ИГРОКОВ · страница {page+1} · всего {total}', 'Средний уровень команды — средний рейтинг экипированных карточек.']
+            page=max(0,int(action[2])) if len(action)>2 else 0
+            page_size=20
+            async with Session() as session:
+                total=await session.scalar(select(func.count(User.id))) or 0
+                pages=max(1,(total+page_size-1)//page_size)
+                page=min(page,pages-1)
+                rows=(await session.scalars(
+                    select(User).order_by(desc(User.rating),desc(User.games),User.id)
+                    .offset(page*page_size).limit(page_size)
+                )).all()
+                user_ids=[u.id for u in rows]
+                avg_rows={}
+                last_rows={}
+                if user_ids:
+                    averages=(await session.execute(
+                        select(OwnedCard.user_id,func.avg(Card.ovr))
+                        .join(Card,Card.id==OwnedCard.card_id)
+                        .where(OwnedCard.user_id.in_(user_ids),OwnedCard.slot!='')
+                        .group_by(OwnedCard.user_id)
+                    )).all()
+                    avg_rows={uid:avg for uid,avg in averages}
+                    matches=(await session.scalars(
+                        select(Match).where(
+                            Match.status=='completed',
+                            or_(Match.home_user_id.in_(user_ids),Match.away_user_id.in_(user_ids))
+                        ).order_by(Match.id.desc())
+                    )).all()
+                    for match in matches:
+                        for uid in (match.home_user_id,match.away_user_id):
+                            if uid in user_ids and uid not in last_rows:
+                                last_rows[uid]=match
+            lines=[f'👥 СПИСОК ИГРОКОВ · страница {page+1}/{pages} · всего {total}',
+                   'Сортировка: рейтинг и количество матчей. По 20 игроков на странице.']
+            from html import escape
             for u in rows:
-                async with Session() as team_session:
-                    avg_team=await team_session.scalar(select(func.avg(Card.ovr)).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==u.id,OwnedCard.slot!=''))
-                    last=await team_session.scalar(select(Match).where(or_(Match.home_user_id==u.id,Match.away_user_id==u.id),Match.status=='completed').order_by(Match.id.desc()).limit(1))
+                avg_team=avg_rows.get(u.id)
                 avg_text=f'{float(avg_team):.1f} OVR' if avg_team is not None else 'состав не собран'
-                display_name=u.first_name or (f'@{u.username}' if u.username else 'Без имени')
-                from html import escape
-                display_name=escape(display_name)
+                display_name=escape(u.first_name or (f'@{u.username}' if u.username else 'Без имени'))
+                last=last_rows.get(u.id)
                 if last:
                     own=last.home_score if last.home_user_id==u.id else last.away_score
                     opp=last.away_score if last.home_user_id==u.id else last.home_score
                     last_text=f'#{last.id} · {own}:{opp}'
-                else: last_text='ещё не играл'
-                lines.append(f'\n👤 {display_name}\n🆔 ID: <code>{u.id}</code>\n⭐ {u.rating} · {league_for_rating(u.rating)}\n🏒 Состав: {avg_text}\nПоследний матч: {last_text}'+(' · 🚫 Бан' if u.is_banned else ''))
+                else:
+                    last_text='ещё не играл'
+                lines.append(f'\\n👤 {display_name}'+(f' · @{escape(u.username)}' if u.username else '')+
+                    f'\\n🆔 ID: <code>{u.id}</code>\\n⭐ {u.rating} · {league_for_rating(u.rating)}'
+                    f'\\n🏒 Состав: {avg_text}\\nПоследний матч: {last_text}'+(' · 🚫 Бан' if u.is_banned else ''))
+            if not rows:
+                lines.append('Игроков пока нет.')
             kb=InlineKeyboardBuilder()
-            if page>0: kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
-            if (page+1)*15<total: kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
-            kb.button(text='⬅️ В админ-меню',callback_data='adm:home'); kb.adjust(2)
-            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
+            if page>0:
+                kb.button(text='⬅️ Назад',callback_data=f'adm:players:{page-1}')
+            if page+1<pages:
+                kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
+            kb.button(text='⬅️ В админ-меню',callback_data='adm:home')
+            kb.adjust(2)
+            text='\\n'.join(lines)
+            try:
+                await c.message.edit_text(text,reply_markup=kb.as_markup(),parse_mode='HTML')
+            except Exception:
+                await c.message.answer(text,reply_markup=kb.as_markup(),parse_mode='HTML')
         elif action[1]=='match_history':
             await c.message.answer('🏒 История матчей администратора\nВведите /matchinfo НОМЕР_МАТЧА, например /matchinfo 3.',reply_markup=admin_back_keyboard())
         elif action[1]=='trade_history':
