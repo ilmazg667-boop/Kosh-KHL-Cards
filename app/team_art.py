@@ -1,9 +1,8 @@
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-import math
 
-WIDTH, HEIGHT = 1280, 900
-BG = (18, 10, 15)
+WIDTH, HEIGHT = 1280, 800
+BG = (13, 9, 14)
 ORANGE = (255, 133, 37)
 CREAM = (255, 243, 230)
 
@@ -24,87 +23,82 @@ def _fit(draw, text, max_width, start, bold=False):
     return _font(12, bold)
 
 def render_team_art_image(rows, strength, chemistry, team_name='Моя команда'):
+    # Layout follows the user's supplied 1280x800 half-rink reference.
     image = Image.new('RGB', (WIDTH, HEIGHT), BG)
-    pixels = image.load()
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            glow = max(0, 1 - math.sqrt(((x-900)/760)**2 + ((y-420)/600)**2))
-            pixels[x, y] = (min(255, int(16 + glow*38)), min(255, int(9 + glow*13)), min(255, int(14 + glow*8)))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((20, 20, WIDTH-20, HEIGHT-20), radius=28, outline=(104, 56, 35), width=2)
 
-    # Team information panel on the left
-    draw.rounded_rectangle((42, 48, 355, 850), radius=24, fill=(29, 19, 22), outline=(130, 70, 42), width=3)
-    draw.text((68, 78), 'KOSH KHL CARDS', font=_font(24, True), fill=ORANGE)
-    draw.text((68, 132), 'КОМАНДА', font=_font(30, True), fill=CREAM)
+    # Dark arena background and left information panel.
+    draw.rounded_rectangle((40, 40, 360, 760), radius=24, fill=(14, 10, 15), outline=(112, 61, 34), width=2)
     name = str(team_name or 'Моя команда')
-    draw.multiline_text((68, 190), name, font=_fit(draw, name, 245, 29, True), fill=ORANGE, spacing=8)
-    draw.line((68, 290, 328, 290), fill=(110, 65, 48), width=2)
-    draw.text((68, 326), 'СИЛА СОСТАВА', font=_font(17, True), fill=(194, 145, 119))
-    draw.text((68, 360), f'{strength} OVR', font=_font(42, True), fill=CREAM)
-    draw.text((68, 440), 'СЫГРАННОСТЬ', font=_font(17, True), fill=(194, 145, 119))
-    draw.text((68, 474), f'{chemistry}/40', font=_font(36, True), fill=CREAM)
+    draw.text((64, 70), 'KOSH KHL CARDS', font=_font(22, True), fill=ORANGE)
+    draw.multiline_text((64, 132), name, font=_fit(draw, name, 270, 30, True), fill=CREAM, spacing=7)
+    draw.line((64, 235, 330, 235), fill=(100, 61, 44), width=2)
+    draw.text((64, 275), 'СИЛА СОСТАВА', font=_font(17, True), fill=(194, 145, 119))
+    draw.text((64, 310), f'{strength} OVR', font=_font(42, True), fill=CREAM)
+    draw.text((64, 395), 'СЫГРАННОСТЬ', font=_font(17, True), fill=(194, 145, 119))
+    draw.text((64, 430), f'{chemistry}/40', font=_font(36, True), fill=CREAM)
+    draw.rounded_rectangle((64, 490, 330, 506), radius=8, fill=(69, 48, 42))
     filled = max(0, min(40, int(chemistry)))
-    draw.rounded_rectangle((68, 532, 328, 548), radius=8, fill=(69, 48, 42))
     if filled:
-        draw.rounded_rectangle((68, 532, 68+int(260*filled/40), 548), radius=8, fill=ORANGE)
-    draw.line((68, 590, 328, 590), fill=(110, 65, 48), width=2)
-    draw.text((68, 628), 'СХЕМА', font=_font(16, True), fill=(194, 145, 119))
-    draw.text((68, 660), '1–2–2 + ВРАТАРЬ', font=_font(19, True), fill=CREAM)
-    draw.multiline_text((68, 730), 'Состав обновляется\nпосле каждой замены', font=_font(15), fill=(177, 135, 116), spacing=7)
+        draw.rounded_rectangle((64, 490, 64 + int(266 * filled / 40), 506), radius=8, fill=ORANGE)
+    draw.line((64, 550, 330, 550), fill=(100, 61, 44), width=2)
+    draw.text((64, 585), 'СХЕМА', font=_font(16, True), fill=(194, 145, 119))
+    draw.text((64, 620), '1–2–2 + ВРАТАРЬ', font=_font(18, True), fill=CREAM)
+    draw.multiline_text((64, 690), 'Состав меняется\nпосле каждой замены', font=_font(14), fill=(177, 135, 116), spacing=5)
 
-    # Right half of the ice rink
-    rink = (390, 48, 1238, 850)
-    draw.rounded_rectangle(rink, radius=34, fill=(220, 237, 239), outline=(255, 255, 255), width=5)
+    # User's dark-blue half rink, with orange perimeter and original markings.
+    rink = (400, 40, 1240, 760)
+    draw.rounded_rectangle(rink, radius=36, fill=(24, 34, 57), outline=ORANGE, width=4)
     left, top, right, bottom = rink
-    midx = (left+right)//2
-    midy = (top+bottom)//2
-    blue = (74, 145, 190)
-    red = (194, 65, 65)
-    pale = (173, 203, 211)
-    # Ice markings and half-rink boundary
-    draw.line((midx, top+8, midx, bottom-8), fill=red, width=5)
-    draw.arc((midx-175, midy-175, midx+175, midy+175), 90, 270, fill=blue, width=5)
-    draw.line((left+18, top+18, right-18, top+18), fill=pale, width=3)
-    draw.line((left+18, bottom-18, right-18, bottom-18), fill=pale, width=3)
-    # Faceoff circles on the defensive side
-    circle_r = 118
-    circle_centers = [(midx+185, top+235), (midx+185, bottom-235)]
-    for cx,cy in circle_centers:
-        draw.ellipse((cx-circle_r,cy-circle_r,cx+circle_r,cy+circle_r), outline=blue, width=5)
-        draw.ellipse((cx-8,cy-8,cx+8,cy+8), fill=red)
-    # Goal and crease at the far end
-    gx = right-52
-    gy = midy
-    draw.arc((gx-72,gy-105,gx+35,gy+105), 90, 270, fill=blue, width=6)
-    draw.rounded_rectangle((right-68,gy-42,right-18,gy+42), radius=8, outline=red, width=5)
-    # Player tokens
-    by_position = {card.position: card for _,card in rows}
-    placements = {
-        'LW': (midx-125, midy-190), 'C': (midx-5, midy),
-        'RW': (midx-125, midy+190),
-        'LD': (midx+185, top+235), 'RD': (midx+185, bottom-235),
-        'G': (right-76, midy)
+    # Subtle vertical ice texture.
+    for x in range(left + 12, right - 8, 40):
+        draw.line((x, top + 5, x, bottom - 5), fill=(31, 43, 67), width=1)
+    draw.line((608, top + 3, 608, bottom - 3), fill=(48, 103, 214), width=13)
+    draw.arc((285, 278, 530, 530), 270, 90, fill=(58, 111, 231), width=4)
+    draw.line((1152, 78, 1152, 722), fill=(196, 51, 56), width=3)
+    draw.ellipse((858, 92, 1110, 344), outline=(198, 54, 57), width=4)
+    draw.ellipse((858, 464, 1110, 716), outline=(198, 54, 57), width=4)
+    for cx, cy in ((984, 218), (984, 590)):
+        draw.ellipse((cx - 10, cy - 10, cx + 10, cy + 10), fill=(219, 74, 73))
+    draw.ellipse((1060, 315, 1230, 493), outline=(63, 128, 245), width=3)
+    draw.rounded_rectangle((1150, 367, 1212, 441), radius=10, outline=(224, 230, 245), width=4)
+
+    # Six dashed position bays exactly follow the reference image.
+    bays = {
+        'LW': (630, 65, 778, 262),
+        'LD': (910, 119, 1058, 317),
+        'C':  (730, 305, 878, 503),
+        'G':  (1074, 305, 1222, 503),
+        'RD': (910, 491, 1058, 689),
+        'RW': (630, 545, 778, 743),
     }
-    labels = {'LW':'ЛКН','C':'ЦЕНТР','RW':'ПКН','LD':'ЛЗ','RD':'ПЗ','G':'ВР'}
-    for pos,(cx,cy) in placements.items():
+    bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
+    by_position = {card.position: card for _, card in rows}
+
+    for pos, (x1, y1, x2, y2) in bays.items():
+        # Dashed orange slot border.
+        dash, gap = 8, 5
+        for x in range(x1, x2, dash + gap):
+            draw.line((x, y1, min(x + dash, x2), y1), fill=(255, 158, 82), width=3)
+            draw.line((x, y2, min(x + dash, x2), y2), fill=(255, 158, 82), width=3)
+        for y in range(y1, y2, dash + gap):
+            draw.line((x1, y, x1, min(y + dash, y2)), fill=(255, 158, 82), width=3)
+            draw.line((x2, y, x2, min(y + dash, y2)), fill=(255, 158, 82), width=3)
+
         card = by_position.get(pos)
-        radius = 66 if pos != 'G' else 58
-        fill = (39, 29, 31) if card else (202, 220, 222)
-        outline = ORANGE if card else (113, 151, 160)
-        draw.ellipse((cx-radius,cy-radius,cx+radius,cy+radius), fill=fill, outline=outline, width=5)
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
         if card:
-            initials = ''.join(part[0] for part in str(card.player_name).split()[:2]).upper() or '★'
-            draw.text((cx,cy-12), initials[:3], font=_fit(draw,initials[:3],radius*1.55,34,True), fill=CREAM, anchor='mm')
-            draw.text((cx,cy+29), f'{card.ovr}', font=_font(20,True), fill=ORANGE, anchor='mm')
-            name_label = str(card.player_name)
-            draw.rounded_rectangle((cx-95,cy+radius+8,cx+95,cy+radius+43), radius=10, fill=(29,19,22))
-            draw.text((cx,cy+radius+25), name_label, font=_fit(draw,name_label,178,14,True), fill=CREAM, anchor='mm')
+            # Dark inset keeps player information legible while preserving the rink markings.
+            draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66))
+            player_name = str(card.player_name)
+            initials = ''.join(part[0] for part in player_name.split()[:2]).upper() or '★'
+            draw.ellipse((cx - 29, cy - 48, cx + 29, cy + 10), fill=(47, 64, 95), outline=ORANGE, width=3)
+            draw.text((cx, cy - 19), initials[:2], font=_fit(draw, initials[:2], 48, 25, True), fill=CREAM, anchor='mm')
+            draw.text((cx, cy + 38), player_name, font=_fit(draw, player_name, x2 - x1 - 20, 18, True), fill=CREAM, anchor='mm')
+            draw.text((cx, cy + 70), f'{card.ovr} OVR', font=_font(17, True), fill=ORANGE, anchor='mm')
         else:
-            draw.text((cx,cy-8), '+', font=_font(46,False), fill=(113,151,160), anchor='mm')
-            draw.text((cx,cy+25), labels[pos], font=_font(15,True), fill=(67,103,112), anchor='mm')
-    draw.text((left+28,top+28), 'АТАКА', font=_font(17,True), fill=(60,112,143))
-    draw.text((right-120,bottom-52), 'ВОРОТА', font=_font(15,True), fill=(60,112,143))
+            draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
+
     output = BytesIO()
     image.save(output, format='PNG', optimize=True)
     return output.getvalue()
