@@ -152,9 +152,9 @@ async def prepare_match(match_id,bot=None):
                         continue
                     try:
                         artwork=render_team_art_image([(None,card) for card in roster],power_value,chem_value,team_name)
-                        caption=(f'{label}\\n'
-                                 f'🏒 <b>{html.escape(team_name)}</b> · {power_value} OVR\\n'
-                                 f'🤝 Сыгранность: {chem_value}/40\\n'
+                        caption=(f'{label}\n'
+                                 f'🏒 <b>{html.escape(team_name)}</b> · {power_value} OVR\n'
+                                 f'🤝 Сыгранность: {chem_value}/40\n'
                                  f'Матч #{m.id} — стартовый состав')
                         await bot.send_photo(
                             chat_id,
