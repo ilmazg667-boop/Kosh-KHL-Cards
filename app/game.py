@@ -76,8 +76,8 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
     home_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='home')
     away_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='away')
     # Power play increases scoring rate during the advantage and adds a modest extra chance.
-    home_rate=max(0.7, 2.75 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (home_goalie-away_goalie)*0.010 + home_pp_minutes*0.075)
-    away_rate=max(0.7, 2.75 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (away_goalie-home_goalie)*0.010 + away_pp_minutes*0.075)
+    home_rate=max(0.7, 3.4 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (80-away_goalie)*0.018 + home_pp_minutes*0.075)
+    away_rate=max(0.7, 3.4 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (80-home_goalie)*0.018 + away_pp_minutes*0.075)
     home, away=poisson(home_rate), poisson(away_rate)
     for side, count, rate in [('home',home,home_rate),('away',away,away_rate)]:
         used=set()
