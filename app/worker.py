@@ -121,8 +121,32 @@ async def prepare_match(match_id,bot=None):
             +roster_text(f'🔴 {m.home_name} · {m.home_power} OVR',home,'Состав не найден')
             +'\n\n'
             +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
+        # Send the readable lineup text first, then a visual half-rink card for
+        # each human participant. The photo uses the same layout as /team.
+        participants=[(m.home_user_id,home,home_chem,m.home_power,m.home_name or 'Моя команда')]
+        if m.away_user_id and away:
+            participants.append((m.away_user_id,away,away_chem,m.away_power,m.away_name or 'Команда соперника'))
         for chat_id in [m.home_user_id]+([m.away_user_id] if m.away_user_id else []):
             await send(bot,chat_id,lineup_message)
+        if bot:
+            from aiogram.types import BufferedInputFile
+            from .team_art import render_team_art_image
+            for chat_id,roster,chem_value,power_value,default_name in participants:
+                try:
+                    participant=await s.get(User,chat_id)
+                    team_name=(getattr(participant,'team_name',None) or default_name)
+                    artwork=render_team_art_image([(None,card) for card in roster],power_value,chem_value,team_name)
+                    caption=(f'🏒 <b>{html.escape(team_name)}</b> · {power_value} OVR\\n'
+                             f'🤝 Сыгранность: {chem_value}/40\\n'
+                             f'Матч #{m.id} — стартовый состав')
+                    await bot.send_photo(
+                        chat_id,
+                        BufferedInputFile(artwork,filename=f'match-{m.id}-lineup.png'),
+                        caption=caption,
+                        parse_mode='HTML'
+                    )
+                except Exception:
+                    logger.exception('Could not send match lineup artwork: match=%s chat_id=%s',m.id,chat_id)
 
 async def finish_match(match_id,bot):
     async with Session() as s:
