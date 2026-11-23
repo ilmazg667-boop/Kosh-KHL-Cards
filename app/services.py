@@ -133,7 +133,7 @@ async def start_pvp_queue(session,user,ranked=False,mode=None):
     if already: raise ValueError('У вас уже есть активный поиск или вызов.')
     from .game import team_power
     p=team_power(cards); g=next(c.ovr for c in cards if c.position=='G')
-    match_mode=mode or ('ranked' if ranked else 'pvp')
+    match_mode='clan' if mode=='clan' else 'pvp'
     if match_mode not in ('pvp','ranked','clan'): raise ValueError('Неизвестный PvP-режим.')
     # Join the oldest compatible waiting player immediately instead of relying
     # only on the background worker's polling interval.
