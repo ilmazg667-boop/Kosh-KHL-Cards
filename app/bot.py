@@ -1208,7 +1208,7 @@ async def main():
     @dp.message(Command('tournament'))
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
-        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nРегистрируйтесь, играйте PvP и набирайте очки. Победа — 2 очка, поражение в OT/буллитах — 1.',reply_markup=tournament_keyboard())
+        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nИграйте рейтинговые матчи — они автоматически идут в личный турнир и в недельную битву вашего клана. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
@@ -1221,13 +1221,15 @@ async def main():
                 await c.message.answer(f'✅ Вы зарегистрированы в турнире на {t.tournament_date}. Ваши очки: {e.points}.',reply_markup=tournament_keyboard())
             elif action=='table':
                 t=await ensure_daily_tournament(s)
-                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins)).limit(10))).all()
-                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}']
+                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
+                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}','']
+                prizes={1:'10 000 🪙 + 20 💎 + карточка 80–90 OVR',2:'7 000 🪙 + 15 💎',3:'5 000 🪙 + 10 💎',4:'3 000 🪙 + 7 💎',5:'2 000 🪙 + 5 💎'}
                 for i,row in enumerate(rows,1):
                     user=await s.get(User,row.user_id)
                     lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед')
-                if len(lines)==1: lines.append('Пока нет участников.')
-                lines.append('\nНаграда топ-1: карточка 80–90 OVR.')
+                if len(rows)==0: lines.append('Пока нет участников.')
+                lines.extend(['','🎁 ПРИЗЫ ТОП-5:'])
+                for place,reward in prizes.items(): lines.append(f'{place}. {reward}')
                 await c.message.answer('\n'.join(lines),reply_markup=tournament_keyboard())
         await c.answer()
 
