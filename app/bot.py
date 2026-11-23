@@ -14,7 +14,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
-from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
+from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating, adjust_pack_odds
 from .worker import run_worker, prepare_match
 from .team_art import render_team_art_image
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
@@ -543,7 +543,8 @@ async def main():
             d={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else base
             balance=f'🪙 Монеты: <b>{user.coins}</b> · 💎 Алмазы: <b>{user.gems}</b>' if user else ''
         currency='🪙' if d['currency']=='coins' else '💎'
-        odds='\n'.join(f'  {rarity_label(r)} — <b>{p}%</b>' for r,p in d['odds'])
+        shown_odds=adjust_pack_odds(name, d['odds'])
+        odds='\n'.join(f'  {rarity_label(r)} — <b>{p}%</b>' for r,p in shown_odds)
         caption=(
             f'📦 <b>{name.upper()} ПАК</b>\n'
             f'━━━━━━━━━━━━━━\n'
