@@ -63,9 +63,9 @@ async def telegram_post_photo():
             page=await response.text()
     # Telegram's public channel preview stores post photos in the CSS background.
     patterns=[
-        r'tgme_widget_message_photo_wrap[^>]*style="[^"]*?background-image\\s*:\\s*url\\([\\'"]?(https?://[^\\'")]+)',
-        r'<img[^>]+src="(https?://[^"]+)"[^>]+class="[^"]*tgme_widget_message_photo',
-        r'background-image\\s*:\\s*url\\([\\'"]?(https?://[^\\'")]+)'
+        r"""tgme_widget_message_photo_wrap[^>]*style="[^"]*?background-image\s*:\s*url\(['"]?(https?://[^'")]+)""",
+        r"""<img[^>]+src="(https?://[^"]+)"[^>]+class="[^"]*tgme_widget_message_photo""",
+        r"""background-image\s*:\s*url\(['"]?(https?://[^'")]+)"""
     ]
     for pattern in patterns:
         match=re.search(pattern,page,re.I)
