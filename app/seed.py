@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from sqlalchemy import select, delete
+from sqlalchemy import select, update
 from .models import Card
 from .game import POSITIONS, RARITY_RANGES
 
@@ -21,7 +21,8 @@ def read_csv_cards(path):
 
 async def seed_cards(session):
     """Import the real player catalogue and remove all artificial demo cards."""
-    await session.execute(delete(Card).where(Card.source=='demo'))
+    # Keep old demo rows for existing collection references, but make them inactive.
+    await session.execute(update(Card).where(Card.source=='demo').values(active=False))
     legacy_path = Path(__file__).resolve().parent.parent / 'data' / 'legacy_players.csv'
     if legacy_path.exists():
         legacy_cards = read_csv_cards(legacy_path)
