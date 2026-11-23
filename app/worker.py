@@ -149,7 +149,7 @@ async def finish_match(match_id,bot):
         else:
             if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
             if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
-            if m.mode=='ranked' and home and away:
+            if m.mode in ('ranked','pvp') and home and away:
                 diff=away.rating-home.rating
                 raw=16 + max(-6,min(6,int(diff/250))) + min(6,abs(m.home_score-m.away_score))
                 delta=max(5,min(28,raw))
@@ -181,10 +181,12 @@ async def finish_match(match_id,bot):
                 for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
                     if not uid: continue
                     entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
-                    if entry:
-                        if win: entry.points+=2; entry.wins+=1
-                        elif m.shootout: entry.points+=1
-                        entry.goals+=score
+                    if not entry:
+                        entry=TournamentEntry(tournament_id=t.id,user_id=uid)
+                        s.add(entry)
+                    if win: entry.points+=2; entry.wins+=1
+                    elif m.shootout: entry.points+=1
+                    entry.goals+=score
         await s.commit()
         await send_photo(bot,m.home_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
         await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
@@ -209,8 +211,13 @@ def format_result(m,home_user,away_user,for_home=True):
         if goal.get('assist'): assists_by_player[goal['assist']]+=1
         if goal.get('assist2'): assists_by_player[goal['assist2']]+=1
     point_players=set(goals_by_player)|set(assists_by_player)
+    player_team={}
+    for goal in (m.home_goals or [])+(m.away_goals or []):
+        team=goal.get('team','')
+        for name in (goal.get('scorer'),goal.get('assist'),goal.get('assist2')):
+            if name: player_team[name]=team
     point_lines='\n'.join(
-        f"• <b>{name}</b> — <b>{goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)</b>"
+        f"• <b>{name}</b> · <b>{player_team.get(name,'—')}</b> — <b>{goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)</b>"
         for name in sorted(point_players,key=lambda n:(-(goals_by_player[n]+assists_by_player[n]),n))
     ) or '—'
     title+=f"\n\n⭐ <b>Очки игроков (гол+пас):</b>\n{point_lines}"
