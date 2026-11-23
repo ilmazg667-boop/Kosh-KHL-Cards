@@ -1,4 +1,4 @@
-import asyncio, csv, os, random, shlex
+import asyncio, csv, os, random, shlex, html
 from datetime import date, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -289,7 +289,7 @@ async def main():
                 if not card: continue
                 lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
                 if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
-            for index,name in enumerate(RARITIES): kb.button(text=name,callback_data=f'collection:r:{index}:0')
+            for index,name in enumerate(RARITIES): kb.button(text=rarity_label(name),callback_data=f'collection:r:{index}:0')
             kb.button(text='Все редкости',callback_data='collection:all:0')
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page-1}')
             if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:{("r:"+str(RARITIES.index(rarity))) if rarity in RARITIES else "all"}:{page+1}')
@@ -375,8 +375,8 @@ async def main():
 
     @dp.message(F.text=='📦 Паки')
     async def packs(m):
-        await render_pack_carousel(m,0)
         await send_section_photo(m,PHOTO_TRAINING,'Листайте паки кнопками и открывайте понравившийся.')
+        await render_pack_carousel(m,0)
 
     @dp.callback_query(F.data.startswith('packview:'))
     async def pack_view(c:CallbackQuery):
@@ -397,7 +397,7 @@ async def main():
         ]
         lines=['🎁 <b>ОТКРЫТИЕ ПАКА</b>','━━━━━━━━━━━━━━']
         for i,(label,value) in enumerate(fields):
-            lines.append(f'{label}: <b>{value}</b>' if i<=stage else f'{label}: <tg-spoiler>Скрыто</tg-spoiler>')
+            lines.append(f'{label}: <b>{html.escape(str(value))}</b>' if i<=stage else f'{label}: <tg-spoiler>Скрыто</tg-spoiler>')
         lines.append(f'\nШаг {min(stage+1,len(fields))} из {len(fields)}')
         if stage>=len(fields)-1:
             lines.append(f'\n🆔 Карточка #{oc.id} добавлена в коллекцию!')
@@ -420,9 +420,9 @@ async def main():
                 u=await active_user(s,c.from_user)
                 oc,card=await open_pack(s,u,name)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
-            await s.commit()
             oc_id=oc.id
-        await c.message.answer(pack_reveal_text(card,oc,0),reply_markup=reveal_keyboard(oc_id,0),parse_mode='HTML')
+            reveal=pack_reveal_text(card,oc,0)
+            await c.message.answer(reveal,reply_markup=reveal_keyboard(oc_id,0),parse_mode='HTML')
         await c.answer('Пак открыт!')
 
     @dp.callback_query(F.data.startswith('reveal:'))
@@ -436,7 +436,8 @@ async def main():
                 await c.answer('Эта карточка вам не принадлежит.',show_alert=True); return
             card=await s.get(Card,oc.card_id)
             if not card: await c.answer('Карточка не найдена.',show_alert=True); return
-        await c.message.edit_text(pack_reveal_text(card,oc,stage),reply_markup=reveal_keyboard(oc_id,stage),parse_mode='HTML')
+            reveal=pack_reveal_text(card,oc,stage)
+        await c.message.edit_text(reveal,reply_markup=reveal_keyboard(oc_id,stage),parse_mode='HTML')
         await c.answer()
 
     @dp.message(Command('play'))
