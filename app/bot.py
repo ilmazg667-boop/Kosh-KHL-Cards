@@ -367,7 +367,6 @@ async def main():
         if index<len(names)-1: nav.append(InlineKeyboardButton(text='Следующий ➡️',callback_data=f'packview:{index+1}'))
         if nav: kb.row(*nav)
         kb.button(text='⬅️ Главное меню',callback_data='player:home')
-        kb.adjust(1)
         if edit:
             await target.edit_text(caption,reply_markup=kb.as_markup(),parse_mode='HTML')
         else:
