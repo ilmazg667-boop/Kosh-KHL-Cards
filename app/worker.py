@@ -33,6 +33,10 @@ MATCH_END_PHOTOS=[
 # A regulation match lasts 60 simulation minutes; cap misconfigured Railway values.
 TICK=min(5.0,max(0.2,float(os.getenv('MATCH_SECOND_PER_MINUTE','1.0'))))
 
+def _counter(value):
+    """Treat legacy NULL counters as zero before incrementing them."""
+    return int(value or 0)
+
 def goalie(cards): return next((c.ovr for c in cards if c.position=='G'),70)
 
 async def current_lineup(session,user_id):
@@ -201,7 +205,10 @@ async def finish_match(match_id,bot):
                     for uid, pts in [(home.id if home else 0,3 if winner==(home.id if home else -1) else 0),(away.id if away else 0,3 if winner==(away.id if away else -1) else 0)]:
                         member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid)) if uid else None
                         if member:
-                            clan=await s.get(Clan,member.clan_id); clan.points+=pts; clan.rating=max(0,clan.rating+(10 if pts else -2))
+                            clan=await s.get(Clan,member.clan_id)
+                            if clan:
+                                clan.points=_counter(clan.points)+pts
+                                clan.rating=max(0,_counter(clan.rating)+(10 if pts else -2))
                 if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
                 if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
                 tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
@@ -216,9 +223,12 @@ async def finish_match(match_id,bot):
                         if not entry:
                             entry=TournamentEntry(tournament_id=t.id,user_id=uid)
                             s.add(entry)
+                        entry.points=_counter(entry.points)
+                        entry.wins=_counter(entry.wins)
+                        entry.goals=_counter(entry.goals)
                         if win: entry.points+=2; entry.wins+=1
                         elif m.shootout: entry.points+=1
-                        entry.goals+=score
+                        entry.goals+=_counter(score)
                 # Clan standings aggregate each member's completed PvP result.
                 if m.mode not in ('pve','tournament') and t:
                     for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
@@ -229,9 +239,12 @@ async def finish_match(match_id,bot):
                         if not entry:
                             entry=ClanTournamentEntry(tournament_id=t.id,clan_id=member.clan_id)
                             s.add(entry)
+                        entry.points=_counter(entry.points)
+                        entry.wins=_counter(entry.wins)
+                        entry.goals=_counter(entry.goals)
                         if win: entry.points+=2; entry.wins+=1
                         elif m.shootout or m.overtime: entry.points+=1
-                        entry.goals+=score
+                        entry.goals+=_counter(score)
             await s.commit()
         # Send results separately from settlement; failures are retried by the worker without re-awarding.
         home_ok = await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
