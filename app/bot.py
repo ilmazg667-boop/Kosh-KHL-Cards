@@ -199,6 +199,10 @@ async def main():
         await c.message.answer('✅ Сообщение отправлено администрации. Спасибо!')
         await c.answer('Отправлено!')
 
+    @dp.message(Command('id'))
+    async def show_player_id(m:Message):
+        await m.answer(f'🆔 Ваш Telegram ID: {m.from_user.id}')
+
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
     async def help_cmd(m):
