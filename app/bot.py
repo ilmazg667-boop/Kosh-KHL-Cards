@@ -1439,7 +1439,7 @@ async def main():
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
-            prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','givepremium':'🎟 Введите Telegram ID игрока, которому нужно выдать Premium Pass.','givebpxp':'⭐ Введите Telegram ID игрока, которому нужно начислить уровни Battle Pass.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
+            prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите числовой Telegram ID игрока, которому нужно выдать карточку.','givepremium':'🎟 Введите Telegram ID игрока, которому нужно выдать Premium Pass.','givebpxp':'⭐ Введите Telegram ID игрока, которому нужно начислить уровни Battle Pass.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
             await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 4.' if kind=='givecard' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
@@ -1666,23 +1666,13 @@ async def main():
                     await m.answer(f'✅ Промокод {data["code"]} создан!\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎 · {data["xp"]} XP · Premium: {"да" if data["premium"] else "нет"}\nЛимит: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
                 return
             if step=='user':
-                if kind=='givecard':
-                    query=' '.join(m.text.strip().split())
-                    async with Session() as s:
-                        matches=(await s.scalars(select(User).where(
-                            func.lower(func.trim(User.first_name + ' ' + User.last_name))==query.lower()
-                        ).limit(10))).all()
-                        if not matches:
-                            await m.answer('Игрок с таким именем и фамилией не найден. Проверьте написание или отправьте /canceladmin.'); return
-                        if len(matches)>1:
-                            choices='\\n'.join(f'• {x.first_name} {x.last_name} (@{x.username or "без username"}) — ID {x.id}' for x in matches)
-                            await m.answer('Найдено несколько игроков с таким именем. Уточните через поддержку:\\n'+choices); return
-                        uid=matches[0].id
-                else:
+                try:
                     uid=int(m.text.strip())
-                    async with Session() as s:
-                        if not await s.get(User,uid):
-                            await m.answer('Игрок с таким Telegram ID не найден.'); return
+                except ValueError:
+                    await m.answer('Введите числовой Telegram ID без имени и фамилии.'); return
+                async with Session() as s:
+                    if not await s.get(User,uid):
+                        await m.answer('Игрок с таким Telegram ID не найден.'); return
                 state['uid']=uid
                 if kind in ('givecoins','givegems'):
                     state['step']='amount'
