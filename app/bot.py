@@ -1880,9 +1880,9 @@ async def main():
                     last_text=f'#{last.id} · {own}:{opp}'
                 else:
                     last_text='ещё не играл'
-                lines.append(f'\\n👤 {display_name}'+(f' · @{escape(u.username)}' if u.username else '')+
-                    f'\\n🆔 ID: <code>{u.id}</code>\\n⭐ {u.rating} · {league_for_rating(u.rating)}'
-                    f'\\n🏒 Состав: {avg_text}\\nПоследний матч: {last_text}'+(' · 🚫 Бан' if u.is_banned else ''))
+                lines.append(f'\n👤 {display_name}'+(f' · @{escape(u.username)}' if u.username else '')+
+                    f'\n🆔 ID: <code>{u.id}</code>\n⭐ {u.rating} · {league_for_rating(u.rating)}'
+                    f'\n🏒 Состав: {avg_text}\nПоследний матч: {last_text}'+(' · 🚫 Бан' if u.is_banned else ''))
             if not rows:
                 lines.append('Игроков пока нет.')
             kb=InlineKeyboardBuilder()
@@ -1892,7 +1892,7 @@ async def main():
                 kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
             kb.button(text='⬅️ В админ-меню',callback_data='adm:home')
             kb.adjust(2)
-            text='\\n'.join(lines)
+            text='\n'.join(lines)
             try:
                 await c.message.edit_text(text,reply_markup=kb.as_markup(),parse_mode='HTML')
             except Exception:
