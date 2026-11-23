@@ -93,7 +93,19 @@ async def send_main_menu(m, caption, reply_markup):
         await m.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
 
 async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None):
-    await m.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
+    # Use the same verified Telegram post artwork for direct commands too.
+    try:
+        from aiogram.types import BufferedInputFile
+        photo_bytes=await telegram_post_photo()
+        photo=BufferedInputFile(photo_bytes,filename='main-menu.jpg')
+        if len(str(caption))<=1024:
+            await m.answer_photo(photo=photo,caption=caption,reply_markup=reply_markup,parse_mode=parse_mode)
+        else:
+            await m.answer_photo(photo=photo,caption='🏒 KOSH KHL CARDS')
+            await m.answer(caption,reply_markup=reply_markup,parse_mode=parse_mode)
+    except Exception as e:
+        print(f'Не удалось показать фото раздела: {e}')
+        await m.answer(caption,reply_markup=reply_markup,parse_mode=parse_mode)
 
 PHOTO_ARENA=TELEGRAM_POST_URL
 PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
