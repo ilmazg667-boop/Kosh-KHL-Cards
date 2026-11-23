@@ -24,6 +24,25 @@ def league_for_rating(rating):
         if low <= rating <= high: return name
     return 'НХЛ'
 
+def adjust_pack_odds(pack_name, odds):
+    """Reduce high-rarity odds consistently for pack openings and displayed rates."""
+    factors = {
+        'Обычный': 1.25, 'Редкий': 1.15, 'Элитный': 1.05,
+        'Сверхредкий': 0.90, 'Эпический': 0.70, 'Мифический': 0.50,
+        'Легендарный': 0.35, 'Хроматический': 0.25, 'Легенда': 0.15,
+        'Икона': 0.10,
+    }
+    weighted = [(rarity, float(weight) * factors.get(rarity, 1.0)) for rarity, weight in odds]
+    total = sum(weight for _, weight in weighted)
+    if total <= 0:
+        return odds
+    adjusted = [(rarity, round(weight * 100 / total, 2)) for rarity, weight in weighted]
+    if adjusted:
+        rarity, weight = adjusted[-1]
+        adjusted[-1] = (rarity, round(weight + 100 - sum(p for _, p in adjusted), 2))
+    return adjusted
+
+
 def rarity_pick(odds):
     return random.choices([r for r,w in odds],[w for r,w in odds],k=1)[0]
 
