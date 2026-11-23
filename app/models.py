@@ -12,6 +12,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Telegram ID
     username: Mapped[str] = mapped_column(String(64), default='')
     first_name: Mapped[str] = mapped_column(String(128), default='')
+    last_name: Mapped[str] = mapped_column(String(128), default='')
     coins: Mapped[int] = mapped_column(Integer, default=5000)
     gems: Mapped[int] = mapped_column(Integer, default=20)
     rating: Mapped[int] = mapped_column(Integer, default=0)  # current season rating
