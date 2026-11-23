@@ -60,7 +60,7 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
         pp_side='away' if penalized_side=='home' else 'home'
         pp_team=away_team_name if penalized_side=='home' else home_team_name
         names=home_names if penalized_side=='home' else away_names
-        for _ in range(random.choices([1,2,3],[65,30,5],k=1)[0]):
+        for _ in range(random.choices([2,3,4],[45,40,15],k=1)[0]):
             minute=random.randint(1,58)
             label,duration=random.choices([(x[0],x[2]) for x in penalty_types],[x[1] for x in penalty_types],k=1)[0]
             player=random.choice(names) if names else 'Игрок команды'
