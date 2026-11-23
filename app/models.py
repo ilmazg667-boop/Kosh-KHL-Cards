@@ -176,6 +176,24 @@ class ClanTournamentEntry(Base):
     goals: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (UniqueConstraint('tournament_id','clan_id'),)
 
+class WeeklyClanTournament(Base):
+    __tablename__ = 'weekly_clan_tournaments'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_key: Mapped[str] = mapped_column(String(10), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default='open')
+    rewarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class WeeklyClanTournamentEntry(Base):
+    __tablename__ = 'weekly_clan_tournament_entries'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey('weekly_clan_tournaments.id'), index=True)
+    clan_id: Mapped[int] = mapped_column(ForeignKey('clans.id'), index=True)
+    points: Mapped[int] = mapped_column(Integer, default=0)
+    wins: Mapped[int] = mapped_column(Integer, default=0)
+    goals: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (UniqueConstraint('tournament_id','clan_id'),)
+
 class BattlePassProgress(Base):
     __tablename__ = 'battlepass_progress'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
