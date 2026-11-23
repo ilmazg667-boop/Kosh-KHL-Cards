@@ -59,9 +59,9 @@ PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
 
 RARITY_EMOJI = {
-    'Обычный':'⚪', 'Редкий':'🟢', 'Элитный':'🔵', 'Эпический':'🟣',
-    'Легендарный':'🟠', 'Икона':'🌟', 'Сверхредкий':'💠',
-    'Мифический':'🟪', 'Хроматический':'🌈', 'Легенда':'👑'
+    'Обычный':'⚪', 'Редкий':'🟢', 'Элитный':'🔵', 'Сверхредкий':'🟣',
+    'Эпический':'🟡', 'Мифический':'🟠', 'Легендарный':'🔴',
+    'Хроматический':'🟤', 'Легенда':'⚫', 'Икона':'🌈'
 }
 def rarity_label(value):
     return f"{RARITY_EMOJI.get(value, '💎')} {value}"
@@ -366,7 +366,6 @@ async def main():
         if index>0: nav.append(InlineKeyboardButton(text='⬅️ Предыдущий',callback_data=f'packview:{index-1}'))
         if index<len(names)-1: nav.append(InlineKeyboardButton(text='Следующий ➡️',callback_data=f'packview:{index+1}'))
         if nav: kb.row(*nav)
-        kb.button(text='⬅️ Главное меню',callback_data='player:home')
         if edit:
             await target.edit_text(caption,reply_markup=kb.as_markup(),parse_mode='HTML')
         else:
@@ -374,7 +373,6 @@ async def main():
 
     @dp.message(F.text=='📦 Паки')
     async def packs(m):
-        await send_section_photo(m,PHOTO_TRAINING,'Листайте паки кнопками и открывайте понравившийся.')
         await render_pack_carousel(m,0)
 
     @dp.callback_query(F.data.startswith('packview:'))
