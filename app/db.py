@@ -23,6 +23,7 @@ async def init_db():
         # Lightweight additive migrations for existing databases.
         if DATABASE_URL.startswith('sqlite'):
             for table, columns in {
+                'users': {'last_name': "VARCHAR(128) NOT NULL DEFAULT ''"},
                 'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
             }.items():
@@ -33,6 +34,7 @@ async def init_db():
                         await conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
         else:
             for statement in (
+                'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(128) NOT NULL DEFAULT \'\'',
                 'ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_xp INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_premium BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS xp_awarded INTEGER NOT NULL DEFAULT 0',
