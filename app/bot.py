@@ -356,7 +356,23 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user); oc,card=await open_pack(s,u,name)
-                await c.message.answer(f'🎉 ПАК ОТКРЫТ!\n{card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}')
+                details=(
+                    f'🎉 <b>ПАК ОТКРЫТ!</b>\\n'
+                    f'🏒 <b>{card.player_name}</b>\\n'
+                    f'⭐ Рейтинг: <b>{card.ovr} OVR</b>\\n'
+                    f'💎 Редкость: <b>{card.rarity}</b>\\n'
+                    f'📍 Позиция: <b>{card.position}</b>\\n'
+                    f'🌍 Страна: {card.country or "—"}\\n'
+                    f'🏆 Клуб: {card.club or "—"}\\n'
+                    f'🌐 Лига: {card.league or "—"}\\n'
+                    f'📅 Сезон: {card.season or "—"}\\n'
+                    f'🆔 Номер карточки: #{oc.id}'
+                )
+                if card.image_url and card.image_url.startswith(('https://','http://')):
+                    try: await c.message.answer_photo(card.image_url,caption=details,parse_mode='HTML')
+                    except Exception: await c.message.answer(details,parse_mode='HTML')
+                else:
+                    await c.message.answer(details,parse_mode='HTML')
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Готово!')
 
