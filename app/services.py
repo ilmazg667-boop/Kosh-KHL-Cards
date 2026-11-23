@@ -436,7 +436,8 @@ async def claim_quest(session,user_id,key):
     u.coins+=reward_coins; u.gems+=reward_gems; q.claimed=True
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
     if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[]); session.add(bp)
-    bp.xp+=50; await session.commit(); return (reward_coins,reward_gems)
+    quest_xp=50
+    bp.xp=min(10000,bp.xp+quest_xp); await session.commit(); return (reward_coins,reward_gems,quest_xp)
 
 async def claim_bp_reward(session,user_id,level,premium=False):
     if not 1<=level<=100: raise ValueError('Уровень должен быть от 1 до 100.')
