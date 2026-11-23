@@ -1836,7 +1836,7 @@ async def main():
             await c.message.answer(f'📊 СТАТИСТИКА БОТА\n👥 Игроков: {total}\n🚫 Заблокировано: {banned}\n🃏 Шаблонов карточек: {cards}\n🏒 Всего матчей: {matches}\n🔥 Активных матчей: {active}\n🏪 Активных лотов: {listings}\n🪙 Монет в экономике: {coins}\n💎 Алмазов в экономике: {gems}',reply_markup=admin_back_keyboard())
         elif action[1]=='players':
             page=max(0,int(action[2])) if len(action)>2 else 0
-            page_size=20
+            page_size=5
             async with Session() as session:
                 total=await session.scalar(select(func.count(User.id))) or 0
                 pages=max(1,(total+page_size-1)//page_size)
@@ -1866,7 +1866,7 @@ async def main():
                         if last:
                             last_rows[uid]=last
             lines=[f'👥 СПИСОК ИГРОКОВ · страница {page+1}/{pages} · всего {total}',
-                   'Сортировка: рейтинг и количество матчей. По 20 игроков на странице.']
+                   'Сортировка: рейтинг и количество матчей. По 5 игроков на странице.']
             from html import escape
             for u in rows:
                 avg_team=avg_rows.get(u.id)
