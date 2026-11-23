@@ -50,10 +50,35 @@ def poisson(lam):
 
 def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away_chem=0, home_names=None, away_names=None, home_goalie_name='Вратарь', away_goalie_name='Вратарь', home_team_name='Команда 1', away_team_name='Команда 2'):
     """Returns score + goal/event log; small edges matter, randomness remains significant."""
-    home_rate=max(0.7, 2.75 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (home_goalie-away_goalie)*0.010)
-    away_rate=max(0.7, 2.75 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (away_goalie-home_goalie)*0.010)
-    home, away=poisson(home_rate), poisson(away_rate)
     events=[]; home_goals=[]; away_goals=[]
+    penalties=[]
+    # Frequent minor penalties; major and misconduct penalties are rare.
+    penalty_types=[('2 минуты',82,2),('4 минуты',10,4),('5 минут',6,5),('5+20 минут',2,5)]
+    reasons=['за задержку игры','за подножку','за игру высоко поднятой клюшкой','за задержку соперника','за грубость','за удар клюшкой']
+    for penalized_side in ('home','away'):
+        penalized_team=home_team_name if penalized_side=='home' else away_team_name
+        pp_side='away' if penalized_side=='home' else 'home'
+        pp_team=away_team_name if penalized_side=='home' else home_team_name
+        names=home_names if penalized_side=='home' else away_names
+        for _ in range(random.choices([1,2,3],[65,30,5],k=1)[0]):
+            minute=random.randint(1,58)
+            label,duration=random.choices([(x[0],x[2]) for x in penalty_types],[x[1] for x in penalty_types],k=1)[0]
+            player=random.choice(names) if names else 'Игрок команды'
+            reason=random.choice(reasons)
+            end_minute=min(60,minute+duration)
+            penalties.append({'side':penalized_side,'pp_side':pp_side,'minute':minute,'end':end_minute,'duration':duration,'label':label,'player':player,'reason':reason,'team':penalized_team,'pp_team':pp_team})
+            events.append({'minute':minute,'type':'penalty','side':penalized_side,'duration':duration,
+                'text':f'⚠️ <b>{player}</b> ({penalized_team}) удалён на {label} {reason}. 🔵 Большинство: {pp_team}.'})
+            events.append({'minute':minute,'type':'powerplay','side':pp_side,'duration':duration,
+                'text':f'🔵 {pp_team} получает большинство на {duration} игровых минут.'})
+    def powerplay_at(side,minute):
+        return any(p['pp_side']==side and p['minute']<=minute<p['end'] for p in penalties)
+    home_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='home')
+    away_pp_minutes=sum(max(0,p['end']-p['minute']) for p in penalties if p['pp_side']=='away')
+    # Power play increases scoring rate during the advantage and adds a modest extra chance.
+    home_rate=max(0.7, 2.75 + (home_power-away_power)*0.055 + (home_chem-away_chem)*0.006 + (home_goalie-away_goalie)*0.010 + home_pp_minutes*0.075)
+    away_rate=max(0.7, 2.75 + (away_power-home_power)*0.055 + (away_chem-home_chem)*0.006 + (away_goalie-home_goalie)*0.010 + away_pp_minutes*0.075)
+    home, away=poisson(home_rate), poisson(away_rate)
     for side, count, rate in [('home',home,home_rate),('away',away,away_rate)]:
         used=set()
         for _ in range(count):
@@ -67,10 +92,11 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
             team_name=home_team_name if side=='home' else away_team_name
-            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2,'team':team_name}
+            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2,'team':team_name,'powerplay':powerplay_at(side,minute)}
             (home_goals if side=='home' else away_goals).append(goal)
-            assist_text=f"; ассисты: {assist} и {assist2}" if assist2 else f"; ассист: {assist}"
-            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! {scorer} ({team_name}){assist_text}"})
+            assist_text=f"; ассисты: <b>{assist}</b> и <b>{assist2}</b>" if assist2 else f"; ассист: <b>{assist}</b>"
+            pp_label=' 🔵 <b>РЕАЛИЗОВАННОЕ БОЛЬШИНСТВО!</b>' if goal['powerplay'] else ''
+            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! <b>{scorer}</b> ({team_name}){assist_text}{pp_label}"})
     # Hockey teams typically produce dozens of shots, not just a handful.
     # Every non-goal shot is counted as a goalie save in the final box score.
     for side in ('home','away'):
@@ -80,19 +106,7 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             minute=random.randint(1,60)
             events.append({'minute':minute,'type':'shot','side':side,
                 'text':f"🎯 Бросок команды {team_name}! 🧤 {goalie_name} отражает шайбу."})
-    # Generate penalties and matching power-play opportunities (opposite team).
-    for penalized_side in ('home','away'):
-        penalized_team=home_team_name if penalized_side=='home' else away_team_name
-        pp_side='away' if penalized_side=='home' else 'home'
-        pp_team=away_team_name if penalized_side=='home' else home_team_name
-        names=home_names if penalized_side=='home' else away_names
-        for _ in range(random.randint(1,3)):
-            minute=random.randint(1,60)
-            player=random.choice(names) if names else 'Игрок команды'
-            events.append({'minute':minute,'type':'penalty','side':penalized_side,
-                'text':f"⚠️ {player} ({penalized_team}) удалён на 2 минуты."})
-            events.append({'minute':minute,'type':'powerplay','side':pp_side,
-                'text':f"🔵 Большинство у команды {pp_team}."})
+    # Penalty events and power-play opportunities were created before goal simulation.
     # Add non-shot play-by-play only; shot events remain in stats but aren't sent individually.
     for _ in range(random.randint(8,14)):
         minute=random.randint(1,60)
@@ -130,13 +144,13 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
             ot_team_name=home_team_name if ot_side=='home' else away_team_name
-            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2,'team':ot_team_name}
+            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2,'team':ot_team_name,'powerplay':False}
             if ot_side=='home':
                 home+=1; home_goals.append(goal)
             else:
                 away+=1; away_goals.append(goal)
-            assist_text=f"; ассисты: {assist} и {assist2}" if assist2 else f"; ассист: {assist}"
-            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! {scorer} ({ot_team_name}){assist_text}'})
+            assist_text=f"; ассисты: <b>{assist}</b> и <b>{assist2}</b>" if assist2 else f"; ассист: <b>{assist}</b>"
+            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! <b>{scorer}</b> ({ot_team_name}){assist_text}'})
             events.append({'minute':65,'type':'overtime','text':'🏒 Овертайм завершён. Победитель определён.'})
     events.sort(key=lambda e:e['minute'])
     events.insert(0,{'minute':0,'type':'start','text':'🏒 Команды на точке вбрасывания. Судья готов — первое вбрасывание! Матч начался, 60 минут игрового времени.'})
