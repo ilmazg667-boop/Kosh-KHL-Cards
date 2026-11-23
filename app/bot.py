@@ -1813,14 +1813,16 @@ async def main():
                     for uid in users:
                         if uid not in existing: s.add(TournamentEntry(tournament_id=tid,user_id=uid))
                 elif mode=='closed' and not t.rewarded_at:
-                    rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(5))).all()
+                    rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id))).all()
                     defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                     for place,entry in enumerate(rows,1):
-                        cfg=await s.get(TournamentPrizeConfig,place)
-                        coins,gems=(cfg.coins,cfg.gems) if cfg else defaults[place]
                         user=await s.get(User,entry.user_id)
                         if user and not user.is_banned:
-                            user.coins+=coins; user.gems+=gems
+                            coins,gems=(0,0)
+                            if place<=5:
+                                cfg=await s.get(TournamentPrizeConfig,place)
+                                coins,gems=(cfg.coins,cfg.gems) if cfg else defaults[place]
+                                user.coins+=coins; user.gems+=gems
                             notices.append((user.id,place,coins,gems))
                     t.rewarded_at=now()
                 await audit(s,c.from_user.id,'tournament_status',tid,mode)
@@ -1828,7 +1830,7 @@ async def main():
             admin_steps.pop(c.from_user.id,None)
             for uid,place,coins,gems in notices:
                 try:
-                    await c.bot.send_message(uid,f'🏁 Турнир {t.tournament_date} завершён!\n\n🎉 Вы заняли {place} место!\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎\nНаграды уже начислены на баланс.')
+                    await c.bot.send_message(uid,f'🏁 Турнир {t.tournament_date} завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
                 except Exception: pass
             await c.message.answer(f"✅ Турнир {t.tournament_date} {'открыт' if mode=='open' else 'завершён'}. Награды начислены: {len(notices)} игрокам.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
