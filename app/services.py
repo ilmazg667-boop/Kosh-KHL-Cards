@@ -456,6 +456,19 @@ async def claim_bp_reward(session,user_id,level,premium=False):
             raise ValueError('Карточка Семёна Кошелева 99 OVR ещё не загружена. Администратору нужно импортировать проверенную карточку до выдачи награды.')
         session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text='Карточка Семён Кошелев · 99 OVR'
+    elif premium and level%10==0:
+        milestone_rarities={10:'Эпический',20:'Мифический',30:'Мифический',40:'Легендарный',50:'Легендарный',60:'Хроматический',70:'Хроматический',80:'Легенда',90:'Легенда',100:'Икона'}
+        target_rarity=milestone_rarities.get(level,'Эпический')
+        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,Card.source!='demo'))).all()
+        if not cards:
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity))).all()
+        if not cards:
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo'))).all()
+        if not cards:
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True)))).all()
+        if not cards: raise ValueError('Бонусная карточка пока недоступна: в базе нет активных карточек.')
+        card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
+        reward_text=f'🎴 Бонусная карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}'
     elif (premium and level%5==0) or (not premium and level%10==0):
         pack_name='Премиум' if premium else 'Обычный'
         odds=PACKS[pack_name]['odds']; rarity=rarity_pick(odds)
