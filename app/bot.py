@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
-    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, ClanTournamentEntry, BattlePassProgress,
+    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating
@@ -73,9 +73,8 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='🏆 Рейтинговые',callback_data='pvp_start')
-    kb.button(text='🛡 Клановые',callback_data='clan_start')
-    kb.button(text='🤝 Товарищеские по ID',callback_data='friendly_id_start')
+    kb.button(text='🏆 Рейтинговый матч',callback_data='pvp_start')
+    kb.button(text='🤝 Матч по ID',callback_data='friendly_id_start')
     kb.adjust(1); return kb.as_markup()
 
 async def active_user(session,tg):
@@ -626,33 +625,6 @@ async def main():
     async def ranked_queue_from_menu(c:CallbackQuery):
         await c.answer('Теперь все обычные матчи учитываются в рейтинге и турнире.')
         await queue_from_menu(c)
-
-    @dp.callback_query(F.data=='clan_start')
-    async def clan_queue_from_menu(c:CallbackQuery):
-        async with Session() as s:
-            try:
-                u=await active_user(s,c.from_user)
-                member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
-                if not member: await c.answer('Сначала вступите в клан через /clan.',show_alert=True); return
-                match=await start_pvp_queue(s,u,False,mode='clan')
-                if match.status=='queued' and match.away_user_id==u.id:
-                    await c.bot.send_message(match.home_user_id,
-                        f'✅ Найден соперник из другого клана! Матч #{match.id} начинается.')
-                    await c.message.answer(f'✅ Соперник найден! Клановый матч #{match.id} начинается.')
-                else:
-                    kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
-                    status_msg=await c.message.answer(f'🛡 Поиск соперника: 30 сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
-                    async def countdown():
-                        for left in (25,20,15,10,5,0):
-                            await asyncio.sleep(5)
-                            async with Session() as check:
-                                current=await check.get(Match,match.id)
-                                if not current or current.status!='searching': return
-                            try: await status_msg.edit_text(f'🛡 Поиск соперника: {left} сек.\nМатч #{match.id}',reply_markup=kb.as_markup())
-                            except Exception: pass
-                    asyncio.create_task(countdown())
-            except ValueError as e: await c.answer(str(e),show_alert=True); return
-        await c.answer()
 
     @dp.callback_query(F.data.startswith('pve:'))
     async def legacy_pve_redirect(c:CallbackQuery):
@@ -1263,7 +1235,7 @@ async def main():
     def clan_keyboard(is_member=False):
         kb=InlineKeyboardBuilder()
         if is_member:
-            kb.button(text='⚔️ Клановая битва',callback_data='clanmenu:battle')
+            kb.button(text='⚔️ Недельная битва',callback_data='clanmenu:battle')
             kb.button(text='👥 Участники клана',callback_data='clanmenu:members')
             kb.button(text='🏆 Рейтинг кланов',callback_data='clanmenu:top')
             kb.button(text='👥 Пригласить игрока',callback_data='clanmenu:invite')
@@ -1330,6 +1302,28 @@ async def main():
                 top=(await s.scalars(select(Clan).order_by(desc(Clan.points)).limit(10))).all()
                 await m.answer('🛡 КЛАНЫ\nСоздайте свой клан или выберите существующий в списке.',reply_markup=clan_keyboard(False))
 
+    async def weekly_clan_battle_text(session):
+        today=now().date()
+        iso=today.isocalendar()
+        week_key=f'{iso.year}-W{iso.week:02d}'
+        tournament=await session.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==week_key))
+        if not tournament:
+            tournament=WeeklyClanTournament(week_key=week_key,status='open')
+            session.add(tournament); await session.commit(); await session.refresh(tournament)
+        week_start=date.fromisocalendar(iso.year,iso.week,1)
+        week_end=date.fromisocalendar(iso.year,iso.week,7)
+        rows=(await session.scalars(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==tournament.id).order_by(desc(WeeklyClanTournamentEntry.points),desc(WeeklyClanTournamentEntry.wins),desc(WeeklyClanTournamentEntry.goals),WeeklyClanTournamentEntry.clan_id).limit(10))).all()
+        prizes={1:'30 000 🪙 + 60 💎 каждому',2:'20 000 🪙 + 40 💎 каждому',3:'15 000 🪙 + 30 💎 каждому',4:'10 000 🪙 + 20 💎 каждому',5:'5 000 🪙 + 10 💎 каждому'}
+        lines=[f'⚔️ НЕДЕЛЬНАЯ КЛАНОВАЯ БИТВА · {week_key}',f'Период: {week_start.strftime("%d.%m")} — {week_end.strftime("%d.%m")}', 'В зачёт идут только рейтинговые матчи. Каждый рейтинговый матч учитывается и в личном турнире, и в недельной битве клана.', '', '🏆 ПРИЗЫ ТОП-5 (каждому участнику клана на момент завершения):']
+        for place,reward in prizes.items(): lines.append(f'{place}. {reward}')
+        lines.append('')
+        lines.append('📊 ТЕКУЩИЙ РЕЙТИНГ')
+        for place,row in enumerate(rows,1):
+            clan=await session.get(Clan,row.clan_id)
+            if clan: lines.append(f'{place}. 🛡 {clan.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
+        if not rows: lines.append('Пока нет результатов. Играйте рейтинговые матчи — очки автоматически пойдут в зачёт вашего клана.')
+        return '\\n'.join(lines)
+
     @dp.callback_query(F.data.startswith('clanmenu:'))
     async def clan_menu_action(c:CallbackQuery):
         action=c.data.split(':',1)[1]
@@ -1374,15 +1368,7 @@ async def main():
                 await c.message.answer('\n'.join(lines))
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
-                t=await ensure_daily_tournament(s)
-                rows=(await s.scalars(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id).order_by(desc(ClanTournamentEntry.points),desc(ClanTournamentEntry.wins),desc(ClanTournamentEntry.goals)).limit(20))).all()
-                lines=[f'⚔️ КЛАНОВАЯ ВОЙНА · {t.tournament_date}','Очки всех участников суммируются в общий результат клана. Победа — 2 очка, поражение в овертайме/по буллитам — 1.']
-                for i,row in enumerate(rows,1):
-                    cl=await s.get(Clan,row.clan_id)
-                    if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
-                if len(lines)==2: lines.append('Пока нет набранных очков. Играйте матчи, чтобы вывести клан в лидеры!')
-                kb=InlineKeyboardBuilder(); kb.button(text='🏒 Играть за свой клан',callback_data='clan_start'); kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
-                await c.message.answer('\n\n'.join(lines),reply_markup=kb.as_markup())
+                await c.message.answer(await weekly_clan_battle_text(s),reply_markup=clan_keyboard(True))
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
@@ -1448,18 +1434,12 @@ async def main():
     @dp.message(Command('clanbattle'))
     async def clanbattle(m):
         async with Session() as s:
-            try: u=await active_user(s,m.from_user)
-            except ValueError as e: await m.answer(str(e)); return
-            member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
-            if not member: await m.answer('Сначала вступите в клан.'); return
-            t=await ensure_daily_tournament(s)
-            rows=(await s.scalars(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id).order_by(desc(ClanTournamentEntry.points),desc(ClanTournamentEntry.wins),desc(ClanTournamentEntry.goals)).limit(20))).all()
-            lines=[f'⚔️ КЛАНОВАЯ ВОЙНА · {t.tournament_date}','Очки участников суммируются в результат клана. Победа — 2 очка, поражение в овертайме/по буллитам — 1.']
-            for i,row in enumerate(rows,1):
-                cl=await s.get(Clan,row.clan_id)
-                if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
-            if len(lines)==2: lines.append('Пока нет результатов. Играйте матчи, чтобы набрать очки для клана!')
-            await m.answer('\n\n'.join(lines))
+            try:
+                u=await active_user(s,m.from_user)
+                member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
+                if not member: await m.answer('Сначала вступите в клан.'); return
+                await m.answer(await weekly_clan_battle_text(s),reply_markup=clan_keyboard(True))
+            except ValueError as e: await m.answer(str(e))
 
     @dp.message(Command('bp'))
     @dp.message(F.text=='🎟 Battle Pass')
