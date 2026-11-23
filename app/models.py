@@ -84,6 +84,7 @@ class Match(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class MarketListing(Base):
     __tablename__ = 'market_listings'
