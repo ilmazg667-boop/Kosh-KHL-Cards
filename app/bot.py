@@ -309,11 +309,11 @@ async def main():
             positions=list((await s.scalars(select(Card.position).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.position))).all())
             rarities=list((await s.scalars(select(Card.rarity).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid).distinct().order_by(Card.rarity))).all())
             kb=InlineKeyboardBuilder()
-            kb.button(text='🏒 Лиги',callback_data='collection:group:l')
+            # League filter options
             for i,value in enumerate(leagues): kb.button(text=value,callback_data=f'collection:pick:l:{i}')
-            kb.button(text='📍 Позиции',callback_data='collection:group:p')
+            # Position filter options
             for i,value in enumerate(positions): kb.button(text=value,callback_data=f'collection:pick:p:{i}')
-            kb.button(text='💎 Редкости',callback_data='collection:group:r')
+            # Rarity filter options
             for i,value in enumerate(rarities): kb.button(text=rarity_label(value),callback_data=f'collection:pick:r:{i}')
             kb.button(text='♻️ Сбросить фильтры',callback_data='collection:clear')
             kb.button(text='⬅️ К карточкам',callback_data='collection:page:0')
