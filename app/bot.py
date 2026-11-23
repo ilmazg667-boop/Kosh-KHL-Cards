@@ -464,10 +464,12 @@ async def main():
         await c.message.answer('Введите Telegram ID соперника для товарищеского матча. Для отмены отправьте /cancelchallenge.')
         await c.answer()
 
-    @dp.message(lambda m: m.from_user.id in friendly_steps and (m.text or '').strip().isdigit())
+    @dp.message(lambda m: m.from_user.id in friendly_steps and not (m.text or '').startswith('/'))
     async def friendly_id_submit(m:Message):
+        raw_id=(m.text or '').strip()
+        if not raw_id.isdigit(): await m.answer('ID должен состоять только из цифр. Попробуйте ещё раз или отправьте /cancelchallenge.'); return
         friendly_steps.discard(m.from_user.id)
-        target=int((m.text or '').strip())
+        target=int(raw_id)
         async with Session() as s:
             try:
                 u=await active_user(s,m.from_user); target_user=await s.get(User,target)
@@ -488,11 +490,6 @@ async def main():
                     match.status='delivery_failed'; await s.commit(); await m.answer('Не удалось доставить вызов. Убедитесь, что соперник запускал бота.'); return
                 await m.answer(f'Вызов отправлен игроку {target}. Ожидаем подтверждения.')
             except ValueError as e: await m.answer(str(e))
-
-    @dp.message(Command('cancelchallenge'))
-    async def cancel_friendly_prompt(m:Message):
-        if m.from_user.id in friendly_steps:
-            friendly_steps.discard(m.from_user.id); await m.answer('Ввод ID отменён.')
 
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
@@ -642,6 +639,8 @@ async def main():
 
     @dp.message(Command('cancelchallenge'))
     async def cancel_challenge(m):
+        if m.from_user.id in friendly_steps:
+            friendly_steps.discard(m.from_user.id); await m.answer('Ввод ID отменён.'); return
         async with Session() as s:
             row=await s.scalar(select(Match).where(Match.home_user_id==m.from_user.id,Match.status=='challenge').order_by(Match.id.desc()).with_for_update())
             if not row: await m.answer('Активного исходящего вызова нет.'); return
