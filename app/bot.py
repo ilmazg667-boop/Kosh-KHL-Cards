@@ -1827,6 +1827,42 @@ async def main():
             u.is_banned=True; await audit(s,m.from_user.id,'ban',uid); await s.commit()
         await m.answer('Игрок заблокирован.')
 
+    @dp.message(Command('banned'))
+    async def banned_list(m):
+        if not admin(m.from_user.id): return
+        async with Session() as s:
+            users=(await s.scalars(select(User).where(User.is_banned.is_(True)).order_by(User.id))).all()
+        if not users:
+            await m.answer('🚫 Заблокированных игроков нет.')
+            return
+        kb=InlineKeyboardBuilder()
+        lines=['🚫 ЗАБЛОКИРОВАННЫЕ ИГРОКИ:']
+        for u in users:
+            name=' '.join(x for x in (u.first_name,u.last_name) if x).strip() or u.username or 'Игрок'
+            lines.append(f'{name} · ID {u.id}')
+            kb.button(text=f'🔓 Разбанить {name} · {u.id}',callback_data=f'admin_unban:{u.id}')
+        kb.adjust(1)
+        await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
+
+    @dp.callback_query(F.data.startswith('admin_unban:'))
+    async def admin_unban_button(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('Нет доступа.',show_alert=True); return
+        try: uid=int(c.data.split(':',1)[1])
+        except ValueError:
+            await c.answer('Некорректный ID.',show_alert=True); return
+        async with Session() as s:
+            u=await s.get(User,uid)
+            if not u:
+                await c.answer('Игрок не найден.',show_alert=True); return
+            if not u.is_banned:
+                await c.answer('Игрок уже разблокирован.',show_alert=True); return
+            u.is_banned=False
+            await audit(s,c.from_user.id,'unban',uid)
+            await s.commit()
+        await c.message.answer(f'🔓 Игрок {uid} разблокирован.')
+        await c.answer('Разбан выполнен.')
+
     @dp.message(Command('unban'))
     async def unban(m):
         if not admin(m.from_user.id): return
