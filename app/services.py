@@ -344,6 +344,8 @@ async def create_clan_invite(session,inviter_id,invitee_id):
     target=await session.get(User,invitee_id)
     if not target or target.is_banned: raise ValueError('Игрок не найден или заблокирован.')
     if await session.scalar(select(ClanMember.id).where(ClanMember.user_id==invitee_id)): raise ValueError('Игрок уже состоит в клане.')
+    clan_size=await session.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==member.clan_id))
+    if clan_size>=25: raise ValueError('В клане максимум 25 участников.')
     existing=await session.scalar(select(ClanInvite).where(ClanInvite.invitee_id==invitee_id,ClanInvite.status=='pending'))
     if existing: raise ValueError('У игрока уже есть ожидающее приглашение.')
     invite=ClanInvite(clan_id=member.clan_id,inviter_id=inviter_id,invitee_id=invitee_id)
@@ -354,6 +356,8 @@ async def resolve_clan_invite(session,invite_id,invitee_id,accept):
     if not inv or inv.invitee_id!=invitee_id or inv.status!='pending': raise ValueError('Приглашение недоступно.')
     if accept:
         if await session.scalar(select(ClanMember.id).where(ClanMember.user_id==invitee_id)): raise ValueError('Вы уже состоите в клане.')
+        clan_size=await session.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==inv.clan_id))
+        if clan_size>=25: raise ValueError('В клане уже 25 участников. Приглашение нельзя принять.')
         session.add(ClanMember(clan_id=inv.clan_id,user_id=invitee_id,role='member')); inv.status='accepted'
     else: inv.status='declined'
     await session.commit(); return inv
@@ -381,6 +385,20 @@ async def set_clan_role(session,actor_id,target_id,role):
     if target.role=='owner': raise ValueError('Нельзя изменить роль владельца этой командой.')
     target.role=role; await session.commit()
 
+async def kick_clan_member(session,actor_id,target_id):
+    actor=await session.scalar(select(ClanMember).where(ClanMember.user_id==actor_id))
+    target=await session.scalar(select(ClanMember).where(ClanMember.user_id==target_id))
+    if not actor or not target or actor.clan_id!=target.clan_id:
+        raise ValueError('Игрок не состоит в вашем клане.')
+    if target.role=='owner' or actor.role not in ('owner','admin'):
+        raise ValueError('Недостаточно прав для исключения участника.')
+    if actor.role=='admin' and target.role!='member':
+        raise ValueError('Администратор может исключать только обычных участников.')
+    if actor_id==target_id:
+        raise ValueError('Используйте команду выхода из клана.')
+    await session.delete(target)
+    await session.commit()
+
 async def create_clan(session,user_id,name):
     name=name.strip()
     if len(name)<3 or len(name)>30: raise ValueError('Название клана: от 3 до 30 символов.')
@@ -397,6 +415,8 @@ async def join_clan(session,user_id,clan_id):
     clan=await session.get(Clan,clan_id)
     if old: raise ValueError('Сначала выйдите из текущего клана.')
     if not clan: raise ValueError('Клан не найден.')
+    count=await session.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==clan.id))
+    if count>=25: raise ValueError('В клане уже 25 участников.')
     session.add(ClanMember(clan_id=clan.id,user_id=user_id,role='member')); await session.commit(); return clan
 
 async def _increment_quest(session,user_id,key,period,amount=1,cap=None):
