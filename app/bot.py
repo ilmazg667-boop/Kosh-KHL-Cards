@@ -152,9 +152,13 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
     caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\\nСостав обновляется автоматически после каждой замены карточки.'
     if bot is not None:
-        if replace_message:
-            try: await target.delete()
-            except Exception: pass
+        if getattr(target, 'photo', None):
+            try:
+                from aiogram.types import InputMediaPhoto
+                media=InputMediaPhoto(media=photo,caption=caption,parse_mode='HTML')
+                return await bot.edit_message_media(chat_id=uid,message_id=target.message_id,media=media,reply_markup=team_keyboard())
+            except Exception as e:
+                print(f'Не удалось обновить фото состава на месте, отправляю новое: {e}')
         return await bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
     return await target.answer_photo(photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
 
@@ -366,9 +370,14 @@ async def main():
                     if card and card.position==pos:
                         kb.button(text=f'{card.player_name} · {card.ovr} OVR'+(f' · сейчас {oc.slot}' if oc.slot else ''),callback_data=f'teamequip:{oc.id}:{pos}'); count+=1
                 kb.button(text='⬅️ Назад к команде',callback_data='player:team'); kb.adjust(1)
-                try: await c.message.delete()
-                except Exception: pass
-                await c.message.answer(f'Выберите карточку на позицию {pos}:' if count else f'Нет доступных карточек на позицию {pos}. Откройте паки или снимите блокировку с карточки.',reply_markup=kb.as_markup())
+                prompt=f'Выберите карточку на позицию {pos}:' if count else f'Нет доступных карточек на позицию {pos}. Откройте паки или снимите блокировку с карточки.'
+                try:
+                    if c.message.photo:
+                        await c.message.edit_caption(caption=prompt,reply_markup=kb.as_markup())
+                    else:
+                        await c.message.edit_text(prompt,reply_markup=kb.as_markup())
+                except Exception:
+                    await c.message.answer(prompt,reply_markup=kb.as_markup())
         await c.answer()
 
     @dp.callback_query(F.data.startswith('teamequip:'))
@@ -2755,28 +2764,27 @@ async def main():
                 kwargs['reply_markup']=InlineKeyboardMarkup(inline_keyboard=rows)
                 return kwargs
             async def remove_menu_photo():
-                photo_id=_MENU_PHOTO_MESSAGES.pop(c.from_user.id,None)
-                if photo_id:
-                    try: await c.bot.delete_message(c.from_user.id,photo_id)
-                    except Exception: pass
+                # Compatibility no-op: menu navigation never deletes messages.
+                return None
 
             async def update_menu_text(text_value, reply_markup=None, parse_mode=None):
-                await remove_menu_photo()
                 try:
                     if c.message and c.message.photo:
-                        try: await c.message.delete()
-                        except Exception: pass
-                    elif c.message and c.message.text is not None:
+                        return await c.message.edit_caption(
+                            caption=str(text_value or ''),
+                            reply_markup=reply_markup,
+                            parse_mode=parse_mode
+                        )
+                    if c.message and c.message.text is not None:
                         return await c.message.edit_text(
                             str(text_value or ''),
                             reply_markup=reply_markup,
                             parse_mode=parse_mode
                         )
                 except Exception as e:
-                    # Telegram may reject an edit if the content is unchanged;
-                    # in that case keep the existing message and keyboard.
                     if 'message is not modified' in str(e).lower():
                         return c.message
+                    print(f'Не удалось изменить сообщение меню, отправляю новое: {e}')
                 return await c.bot.send_message(
                     c.from_user.id,str(text_value or ''),
                     reply_markup=reply_markup,parse_mode=parse_mode
@@ -2791,12 +2799,22 @@ async def main():
                 return await update_menu_text(text_value,reply_markup,parse_mode)
 
             async def proxy_answer_photo(*args,**kwargs):
-                # Section navigation removes the artwork and keeps the text
-                # message in place; section handlers still render their text.
+                from aiogram.types import InputMediaPhoto
+                photo=kwargs.pop('photo',args[0] if args else None)
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
                 kwargs=add_player_back(kwargs)
-                return await proxy_answer(caption or '',**kwargs)
+                markup=kwargs.get('reply_markup')
+                if c.message and c.message.photo and photo is not None:
+                    try:
+                        return await c.message.edit_media(
+                            media=InputMediaPhoto(media=photo,caption=caption or '',parse_mode=kwargs.get('parse_mode')),
+                            reply_markup=markup
+                        )
+                    except Exception as e:
+                        if 'message is not modified' in str(e).lower(): return c.message
+                        print(f'Не удалось заменить фото раздела, отправляю новое: {e}')
+                return await c.bot.send_photo(c.from_user.id,photo=photo,caption=caption or '',reply_markup=markup,parse_mode=kwargs.get('parse_mode'))
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
