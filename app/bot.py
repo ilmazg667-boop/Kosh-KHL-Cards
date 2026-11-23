@@ -1326,6 +1326,13 @@ async def main():
         if not rows: lines.append('Пока нет результатов. Играйте рейтинговые матчи — очки автоматически пойдут в зачёт вашего клана.')
         return '\n'.join(lines)
 
+    def clan_battle_keyboard():
+        kb=InlineKeyboardBuilder()
+        kb.button(text='🏆 Найти рейтинговый матч',callback_data='pvp_start')
+        kb.button(text='⬅️ Назад к клану',callback_data='player:clans')
+        kb.adjust(1)
+        return kb.as_markup()
+
     @dp.callback_query(F.data.startswith('clanmenu:'))
     async def clan_menu_action(c:CallbackQuery):
         action=c.data.split(':',1)[1]
@@ -1370,7 +1377,7 @@ async def main():
                 await c.message.answer('\n'.join(lines))
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
-                await c.message.answer(await weekly_clan_battle_text(s),reply_markup=clan_keyboard(True))
+                await c.message.answer(await weekly_clan_battle_text(s),reply_markup=clan_battle_keyboard())
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
@@ -1440,7 +1447,7 @@ async def main():
                 u=await active_user(s,m.from_user)
                 member=await s.scalar(select(ClanMember).where(ClanMember.user_id==u.id))
                 if not member: await m.answer('Сначала вступите в клан.'); return
-                await m.answer(await weekly_clan_battle_text(s),reply_markup=clan_keyboard(True))
+                await m.answer(await weekly_clan_battle_text(s),reply_markup=clan_battle_keyboard())
             except ValueError as e: await m.answer(str(e))
 
     @dp.message(Command('bp'))
