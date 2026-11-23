@@ -510,7 +510,7 @@ async def main():
         async with Session() as s:
             try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            caption='🏒 МАТЧИ\\n\\nВыберите режим:'
+            caption='🏒 МАТЧИ\n\nВыберите режим:'
         await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
 
     friendly_steps=set()
@@ -1353,7 +1353,7 @@ async def main():
                     if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
                 if len(lines)==2: lines.append('Пока нет набранных очков. Играйте матчи, чтобы вывести клан в лидеры!')
                 kb=InlineKeyboardBuilder(); kb.button(text='🏒 Играть за свой клан',callback_data='clan_start'); kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
-                await c.message.answer('\\n\\n'.join(lines),reply_markup=kb.as_markup())
+                await c.message.answer('\n\n'.join(lines),reply_markup=kb.as_markup())
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
@@ -1430,7 +1430,7 @@ async def main():
                 cl=await s.get(Clan,row.clan_id)
                 if cl: lines.append(f'{i}. {cl.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
             if len(lines)==2: lines.append('Пока нет результатов. Играйте матчи, чтобы набрать очки для клана!')
-            await m.answer('\\n\\n'.join(lines))
+            await m.answer('\n\n'.join(lines))
 
     @dp.message(Command('bp'))
     @dp.message(F.text=='🎟 Battle Pass')
