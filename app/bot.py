@@ -357,15 +357,15 @@ async def main():
             try:
                 u=await active_user(s,c.from_user); oc,card=await open_pack(s,u,name)
                 details=(
-                    f'🎉 <b>ПАК ОТКРЫТ!</b>\\n'
-                    f'🏒 <b>{card.player_name}</b>\\n'
-                    f'⭐ Рейтинг: <b>{card.ovr} OVR</b>\\n'
-                    f'💎 Редкость: <b>{card.rarity}</b>\\n'
-                    f'📍 Позиция: <b>{card.position}</b>\\n'
-                    f'🌍 Страна: {card.country or "—"}\\n'
-                    f'🏆 Клуб: {card.club or "—"}\\n'
-                    f'🌐 Лига: {card.league or "—"}\\n'
-                    f'📅 Сезон: {card.season or "—"}\\n'
+                    f'🎉 <b>ПАК ОТКРЫТ!</b>\n'
+                    f'🏒 <b>{card.player_name}</b>\n'
+                    f'⭐ Рейтинг: <b>{card.ovr} OVR</b>\n'
+                    f'💎 Редкость: <b>{card.rarity}</b>\n'
+                    f'📍 Позиция: <b>{card.position}</b>\n'
+                    f'🌍 Страна: {card.country or "—"}\n'
+                    f'🏆 Клуб: {card.club or "—"}\n'
+                    f'🌐 Лига: {card.league or "—"}\n'
+                    f'📅 Сезон: {card.season or "—"}\n'
                     f'🆔 Номер карточки: #{oc.id}'
                 )
                 if card.image_url and card.image_url.startswith(('https://','http://')):
@@ -791,7 +791,7 @@ async def main():
         kb.button(text='📨 Мои входящие предложения',callback_data='trade:incoming')
         kb.button(text='📤 Мои исходящие предложения',callback_data='trade:outgoing')
         kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-        await m.answer('🔁 ОБМЕНЫ КАРТОЧКАМИ\\nВыбирайте игроков и карточки кнопками. Перед подтверждением обе карточки блокируются.',reply_markup=kb.as_markup())
+        await m.answer('🔁 ОБМЕНЫ КАРТОЧКАМИ\nВыбирайте игроков и карточки кнопками. Перед подтверждением обе карточки блокируются.',reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('trade:'))
     async def trade_menu_action(c:CallbackQuery):
@@ -829,7 +829,7 @@ async def main():
                 try:
                     offer=await create_trade(s,c.from_user.id,target,give,receive)
                     a=await s.get(OwnedCard,give); b=await s.get(OwnedCard,receive)
-                    message=f'🔁 Предложение обмена #{offer.id}\\nВам предлагают: {await owned_card_text(s,a)}\\nВзамен вы отдаёте: {await owned_card_text(s,b)}'
+                    message=f'🔁 Предложение обмена #{offer.id}\nВам предлагают: {await owned_card_text(s,a)}\nВзамен вы отдаёте: {await owned_card_text(s,b)}'
                     await c.bot.send_message(target,message,reply_markup=trade_keyboard(offer.id))
                     await c.message.answer(f'Предложение #{offer.id} отправлено. Обе карточки заблокированы до ответа.')
                 except Exception as e:
@@ -859,7 +859,7 @@ async def main():
                     if offer.status=='pending' and action=='outgoing':
                         kb.button(text=f'Отменить #{offer.id}',callback_data=f'trade:cancel:{offer.id}')
                 kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
-                await c.message.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         await c.answer()
 
     @dp.message(Command('auction_submit'))
@@ -1531,7 +1531,7 @@ async def main():
         elif action[1]=='help':
             await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
         elif action[1]=='home':
-            await c.message.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\\nВыберите нужный раздел:',reply_markup=admin_keyboard())
+            await c.message.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\nВыберите нужный раздел:',reply_markup=admin_keyboard())
         await c.answer()
 
     @dp.message(Command('canceladmin'))
@@ -1604,7 +1604,7 @@ async def main():
                         await audit(s,m.from_user.id,'promo_create',0,f'{data["code"]}:{data["coins"]}:{data["gems"]}:{data["xp"]}:{data["premium"]}:{limit}')
                         await s.commit()
                     admin_steps.pop(m.from_user.id,None)
-                    await m.answer(f'✅ Промокод {data["code"]} создан!\\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎 · {data["xp"]} XP · Premium: {"да" if data["premium"] else "нет"}\\nЛимит: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
+                    await m.answer(f'✅ Промокод {data["code"]} создан!\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎 · {data["xp"]} XP · Premium: {"да" if data["premium"] else "нет"}\nЛимит: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
                 return
             if step=='user':
                 uid=int(m.text.strip())
@@ -1675,7 +1675,7 @@ async def main():
             s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems,
                 xp_awarded=promo.reward_xp,premium_awarded=promo.reward_premium))
             await s.commit()
-        await m.answer(f'🎉 Промокод {code} активирован!\\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎 · {promo.reward_xp} XP · Premium: {"да" if promo.reward_premium else "нет"}')
+        await m.answer(f'🎉 Промокод {code} активирован!\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎 · {promo.reward_xp} XP · Premium: {"да" if promo.reward_premium else "нет"}')
 
     @dp.message(Command('givecoins'))
     async def givecoins(m):
