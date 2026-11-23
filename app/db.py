@@ -33,6 +33,8 @@ async def init_db():
                 for name, definition in columns.items():
                     if name not in existing:
                         await conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
+                        if table == 'matches' and name == 'result_sent':
+                            await conn.exec_driver_sql("UPDATE matches SET result_sent=1 WHERE status='completed' AND finished_at < datetime('now','-1 hour')")
         else:
             for statement in (
                 'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(128) NOT NULL DEFAULT \'\'',
@@ -41,5 +43,6 @@ async def init_db():
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS xp_awarded INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS premium_awarded BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
+                "UPDATE matches SET result_sent=TRUE WHERE status='completed' AND finished_at < NOW() - INTERVAL '1 hour'"
             ):
                 await conn.exec_driver_sql(statement)
