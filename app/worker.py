@@ -1,5 +1,5 @@
 """Persistent match/auction worker. Run separately: python -m app.worker"""
-import asyncio, os, random, logging
+import asyncio, os, random, logging, html
 from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, func
@@ -200,7 +200,7 @@ def format_result(m,home_user,away_user,for_home=True):
     opp_goals=m.away_goals if for_home else m.home_goals
     home_name=m.home_name or (home_user.first_name if home_user else None) or f'Игрок {m.home_user_id}'
     away_name=m.away_name or (away_user.first_name if away_user else None) or ('KHL Bot' if not m.away_user_id else f'Игрок {m.away_user_id}')
-    title=f"🏒 Матч #{m.id} завершён\n<b>{home_name}</b> <b>{m.home_score}:{m.away_score}</b> <b>{away_name}</b>"
+    title=f"🏒 Матч #{m.id} завершён\n<b>{html.escape(str(home_name))}</b> <b>{m.home_score}:{m.away_score}</b> <b>{html.escape(str(away_name))}</b>"
     if m.mode=='ranked':
         change=m.rating_change or 0
         title+=f"\n⭐ Изменение рейтинга: <b>{change if for_home else -change:+d}</b>"
@@ -217,7 +217,7 @@ def format_result(m,home_user,away_user,for_home=True):
         for name in (goal.get('scorer'),goal.get('assist'),goal.get('assist2')):
             if name: player_team[name]=team
     point_lines='\n'.join(
-        f"• <b>{name}</b> · <b>{player_team.get(name,'—')}</b> — <b>{goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)</b>"
+        f"• <b>{html.escape(str(name))}</b> · <b>{html.escape(str(player_team.get(name,'—')))}</b> — <b>{goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)</b>"
         for name in sorted(point_players,key=lambda n:(-(goals_by_player[n]+assists_by_player[n]),n))
     ) or '—'
     title+=f"\n\n⭐ <b>Очки игроков (гол+пас):</b>\n{point_lines}"
@@ -238,7 +238,7 @@ def format_result(m,home_user,away_user,for_home=True):
     scorers=[g.get('scorer') for g in (own_goals or []) if g.get('scorer')]
     if scorers:
         top=Counter(scorers).most_common(1)[0][0]
-        title+=f"\n⭐ Лучший игрок: <b>{top}</b>"
+        title+=f"\n⭐ Лучший игрок: <b>{html.escape(str(top))}</b>"
     title+="\n🪙 Награда начислена автоматически.\n\nПосмотреть трансляцию: /match"
     return title
 
