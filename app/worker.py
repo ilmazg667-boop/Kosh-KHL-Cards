@@ -193,6 +193,9 @@ async def finish_match(match_id,bot):
                 if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
                 tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
                 t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
+                if not t:
+                    t=DailyTournament(tournament_date=tournament_day)
+                    s.add(t); await s.flush()
                 if t:
                     for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
                         if not uid: continue
