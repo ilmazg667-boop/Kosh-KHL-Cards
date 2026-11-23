@@ -1324,7 +1324,7 @@ async def main():
             clan=await session.get(Clan,row.clan_id)
             if clan: lines.append(f'{place}. 🛡 {clan.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
         if not rows: lines.append('Пока нет результатов. Играйте рейтинговые матчи — очки автоматически пойдут в зачёт вашего клана.')
-        return '\\n'.join(lines)
+        return '\n'.join(lines)
 
     @dp.callback_query(F.data.startswith('clanmenu:'))
     async def clan_menu_action(c:CallbackQuery):
