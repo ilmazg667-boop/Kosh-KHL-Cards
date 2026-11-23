@@ -202,14 +202,15 @@ def format_result(m,home_user,away_user,for_home=True):
     if m.mode=='ranked':
         change=m.rating_change or 0
         title+=f"\\n⭐ Изменение рейтинга: {change if for_home else -change:+d}"
-    def goal_lines(goals):
-        if not goals: return '—'
-        return '\\n'.join(
-            f"• {g.get('minute','?')}' — {g.get('scorer','Неизвестный')} ({g.get('team') or 'команда'}) (ассисты: {g.get('assist') or '—'} и {g.get('assist2') or '—'})"
-            for g in sorted(goals,key=lambda x:x.get('minute',0))
-        )
-    title+=f"\\n\\n🥅 Голы вашей команды ({len(own_goals or [])}):\\n{goal_lines(own_goals)}"
-    title+=f"\\n\\n🥅 Голы соперника ({len(opp_goals or [])}):\\n{goal_lines(opp_goals)}"
+    # Summarize all scoring contributions, not individual goal descriptions.
+    from collections import Counter
+    points=Counter()
+    for goal in (m.home_goals or [])+(m.away_goals or []):
+        if goal.get('scorer'): points[goal['scorer']]+=1
+        if goal.get('assist'): points[goal['assist']]+=1
+        if goal.get('assist2'): points[goal['assist2']]+=1
+    point_lines='\\n'.join(f"• {name} — {points[name]//1} оч." for name in sorted(points,key=lambda n:(-points[n],n))) or '—'
+    title+=f"\\n\\n⭐ Очки игроков (гол+пас):\\n{point_lines}"
     home_events=m.events or []
     def stat(kind,side):
         return sum(1 for e in home_events if e.get('type')==kind and e.get('side')==side)
@@ -245,7 +246,7 @@ async def process_match(match_id,bot):
             next_min=min(65 if any(e.get('minute')==65 for e in m.events) else 60,m.minute+1)
             available=[e for e in m.events if e['minute']<=next_min]
             previous_index=m.event_index
-            to_send=available[previous_index:]
+            to_send=[e for e in available[previous_index:] if e.get('type')!='shot']
             m.minute=next_min; m.event_index=len(available); m.updated_at=now()
             done=m.minute>= (65 if any(e.get('minute')==65 for e in m.events) else 60)
             await s.commit()
