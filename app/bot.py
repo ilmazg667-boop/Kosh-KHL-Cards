@@ -1223,11 +1223,14 @@ async def main():
                 t=await ensure_daily_tournament(s)
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
                 lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}','']
-                prizes={1:'10 000 🪙 + 20 💎 + карточка 80–90 OVR',2:'7 000 🪙 + 15 💎',3:'5 000 🪙 + 10 💎',4:'3 000 🪙 + 7 💎',5:'2 000 🪙 + 5 💎'}
+                prizes={1:'10 000 🪙 + 20 💎 + элитный пак',2:'7 000 🪙 + 15 💎',3:'5 000 🪙 + 10 💎',4:'3 000 🪙 + 7 💎',5:'2 000 🪙 + 5 💎'}
                 for i,row in enumerate(rows,1):
                     user=await s.get(User,row.user_id)
-                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед')
+                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
                 if len(rows)==0: lines.append('Пока нет участников.')
+                elif rows:
+                    lead=rows[0]
+                    lines.append(f'\n🥇 Первое место: {lead.points} очков, {lead.wins} побед и {lead.goals} голов. Сначала сравниваются очки, затем победы, затем голы.')
                 lines.extend(['','🎁 ПРИЗЫ ТОП-5:'])
                 for place,reward in prizes.items(): lines.append(f'{place}. {reward}')
                 await c.message.answer('\n'.join(lines),reply_markup=tournament_keyboard())
@@ -1315,7 +1318,7 @@ async def main():
         week_start=date.fromisocalendar(iso.year,iso.week,1)
         week_end=date.fromisocalendar(iso.year,iso.week,7)
         rows=(await session.scalars(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==tournament.id).order_by(desc(WeeklyClanTournamentEntry.points),desc(WeeklyClanTournamentEntry.wins),desc(WeeklyClanTournamentEntry.goals),WeeklyClanTournamentEntry.clan_id).limit(10))).all()
-        prizes={1:'30 000 🪙 + 60 💎 каждому',2:'20 000 🪙 + 40 💎 каждому',3:'15 000 🪙 + 30 💎 каждому',4:'10 000 🪙 + 20 💎 каждому',5:'5 000 🪙 + 10 💎 каждому'}
+        prizes={1:'30 000 🪙 + 60 💎 + премиум-пак каждому участнику',2:'20 000 🪙 + 40 💎 каждому',3:'15 000 🪙 + 30 💎 каждому',4:'10 000 🪙 + 20 💎 каждому',5:'5 000 🪙 + 10 💎 каждому'}
         lines=[f'⚔️ НЕДЕЛЬНАЯ КЛАНОВАЯ БИТВА · {week_key}',f'Период: {week_start.strftime("%d.%m")} — {week_end.strftime("%d.%m")}', 'В зачёт идут только рейтинговые матчи. Каждый рейтинговый матч учитывается и в личном турнире, и в недельной битве клана.', '', '🏆 ПРИЗЫ ТОП-5 (каждому участнику клана на момент завершения):']
         for place,reward in prizes.items(): lines.append(f'{place}. {reward}')
         lines.append('')
@@ -1323,6 +1326,9 @@ async def main():
         for place,row in enumerate(rows,1):
             clan=await session.get(Clan,row.clan_id)
             if clan: lines.append(f'{place}. 🛡 {clan.name} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
+        if rows:
+            lead=rows[0]
+            lines.append(f'\n🥇 Лидер недели: {lead.points} очков, {lead.wins} побед и {lead.goals} голов. При равенстве очков учитываются победы, затем голы.')
         if not rows: lines.append('Пока нет результатов. Играйте рейтинговые матчи — очки автоматически пойдут в зачёт вашего клана.')
         return '\n'.join(lines)
 
