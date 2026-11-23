@@ -1,15 +1,8 @@
 import csv
 from pathlib import Path
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from .models import Card
 from .game import POSITIONS, RARITY_RANGES
-
-# This development-only catalogue is intentionally labelled DEMO. Import verified
-# players through /importcards or data/cards.csv before public launch.
-SEED = [
- ('DEMO Forward LW','LW',70,'Обычный'),('DEMO Forward C','C',70,'Обычный'),('DEMO Forward RW','RW',70,'Обычный'),
- ('DEMO Defender LD','LD',70,'Обычный'),('DEMO Defender RD','RD',70,'Обычный'),('DEMO Goalie','G',70,'Обычный'),
-]
 
 def read_csv_cards(path):
     rows=[]
@@ -27,43 +20,28 @@ def read_csv_cards(path):
     return rows
 
 async def seed_cards(session):
-    """Idempotently ensure demo starter cards and a clearly labelled test pack pool."""
-    existing=(await session.scalars(select(Card).where(Card.source=='demo'))).all()
-    known={(c.player_name,c.position,c.rarity) for c in existing}
-    for name,pos,ovr,rarity in SEED:
-        key=(name,pos,rarity)
-        if key not in known:
-            session.add(Card(player_name=name, player_key='', position=pos, ovr=ovr, rarity=rarity,
-                country='—', club='DEMO', league='DEMO', source='demo'))
-            known.add(key)
-    # A clearly artificial pool keeps a fresh test install playable. Real cards
-    # are preferred by open_pack whenever a real card of that rarity is present.
-    for rarity,(low,high) in RARITY_RANGES.items():
-        for pos in POSITIONS:
-            if rarity=='Обычный':
-                continue  # the six starter cards above cover this rarity
-            key=(f'DEMO {rarity} {pos}',pos,rarity)
-            if key not in known:
-                n=low + ((len(pos)+len(rarity)) % (high-low+1))
-                session.add(Card(player_name=key[0], player_key='', position=pos, ovr=n, rarity=rarity,
-                    country='—', club='DEMO', league='DEMO', source='demo'))
-                known.add(key)
-    # Import the 116 legacy catalogue cards idempotently on every startup.
+    """Import the real player catalogue and remove all artificial demo cards."""
+    await session.execute(delete(Card).where(Card.source=='demo'))
     legacy_path = Path(__file__).resolve().parent.parent / 'data' / 'legacy_players.csv'
     if legacy_path.exists():
         legacy_cards = read_csv_cards(legacy_path)
-        existing_legacy = set((await session.scalars(
-            select(Card.player_key).where(Card.source=='legacy116')
-        )).all())
-        existing_legacy_cards = (await session.scalars(
+        existing_cards = (await session.scalars(
             select(Card).where(Card.source=='legacy116')
         )).all()
-        existing_by_key = {card.player_key: card for card in existing_legacy_cards}
+        existing_by_key = {card.player_key: card for card in existing_cards}
         for card in legacy_cards:
             current = existing_by_key.get(card.player_key)
             if current is None:
                 session.add(card)
             else:
+                current.player_name = card.player_name
+                current.position = card.position
+                current.ovr = card.ovr
+                current.rarity = card.rarity
+                current.country = card.country
                 current.club = card.club
                 current.league = card.league
+                current.season = card.season
+                current.image_url = card.image_url
+                current.active = card.active
     await session.commit()
