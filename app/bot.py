@@ -295,13 +295,13 @@ async def main():
             for oc in cards:
                 card=await s.get(Card,oc.card_id)
                 if not card: continue
-                lines.append(f'\\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
+                lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
                 if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
             kb.button(text='🔎 Фильтр',callback_data='collection:filter')
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:page:{page-1}')
             if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:page:{page+1}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await target.answer('\\n'.join(lines),reply_markup=kb.as_markup())
+            await target.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
     async def render_collection_filters(target, uid, group=None):
         async with Session() as s:
@@ -310,7 +310,7 @@ async def main():
                 kb.button(text='🏒 Лиги',callback_data='collection:group:l')
                 kb.button(text='📍 Позиции',callback_data='collection:group:p')
                 kb.button(text='💎 Редкости',callback_data='collection:group:r')
-                title='🔎 ФИЛЬТР КАРТОЧЕК\\nВыбери тип фильтра:'
+                title='🔎 ФИЛЬТР КАРТОЧЕК\nВыбери тип фильтра:'
             elif group=='l':
                 values=list((await s.scalars(select(Card.league).join(OwnedCard,OwnedCard.card_id==Card.id).where(OwnedCard.user_id==uid,Card.league!='').distinct().order_by(Card.league))).all())
                 for i,value in enumerate(values): kb.button(text=value,callback_data=f'collection:pick:l:{i}')
