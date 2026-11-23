@@ -385,7 +385,7 @@ async def main():
             if not oc.locked:
                 kb.button(text=f'🏒 Поставить на {card.position}',callback_data=f'teamequip:{oc.id}:{card.position}')
                 if oc.slot: kb.button(text='➖ Снять из состава',callback_data=f'team:remove:{oc.slot}')
-                kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
+                if not oc.slot: kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
             kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
             await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
