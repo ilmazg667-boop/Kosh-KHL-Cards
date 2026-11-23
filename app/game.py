@@ -80,21 +80,27 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             minute=random.randint(1,60)
             events.append({'minute':minute,'type':'shot','side':side,
                 'text':f"🎯 Бросок команды {team_name}! 🧤 {goalie_name} отражает шайбу."})
+    # Generate penalties and matching power-play opportunities (opposite team).
+    for penalized_side in ('home','away'):
+        penalized_team=home_team_name if penalized_side=='home' else away_team_name
+        pp_side='away' if penalized_side=='home' else 'home'
+        pp_team=away_team_name if penalized_side=='home' else home_team_name
+        names=home_names if penalized_side=='home' else away_names
+        for _ in range(random.randint(1,3)):
+            minute=random.randint(1,60)
+            player=random.choice(names) if names else 'Игрок команды'
+            events.append({'minute':minute,'type':'penalty','side':penalized_side,
+                'text':f"⚠️ {player} ({penalized_team}) удалён на 2 минуты."})
+            events.append({'minute':minute,'type':'powerplay','side':pp_side,
+                'text':f"🔵 Большинство у команды {pp_team}."})
+    # Add non-shot play-by-play only; shot events remain in stats but aren't sent individually.
     for _ in range(random.randint(8,14)):
         minute=random.randint(1,60)
         side=random.choice(['home','away'])
         team_name=home_team_name if side=='home' else away_team_name
-        kind=random.choice(['attack','danger','penalty','powerplay'])
-        if kind=='attack':
-            text=f"🏒 {team_name} выходит из зоны и начинает атаку."
-        elif kind=='danger':
-            text=f"🔥 Опасный момент у ворот команды {team_name}!"
-        elif kind=='penalty':
-            names=home_names if side=='home' else away_names
-            penalized=random.choice(names) if names else 'Игрок команды'
-            text=f"⚠️ {penalized} ({team_name}) удалён на 2 минуты."
-        else:
-            text=f"🔵 Большинство у команды {team_name}."
+        kind=random.choice(['attack','danger'])
+        text=(f"🏒 {team_name} выходит из зоны и начинает атаку." if kind=='attack'
+              else f"🔥 Опасный момент у ворот команды {team_name}!")
         events.append({'minute':minute,'type':kind,'side':side,'text':text})
     events.sort(key=lambda e:e['minute'])
     ot=False; shootout=False
