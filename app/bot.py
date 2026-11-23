@@ -141,16 +141,16 @@ async def owned_card_text(session,oc):
     c=await session.get(Card,oc.card_id)
     return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
 
-async def send_team_art(target, session, uid, bot=None, replace_message=False):
+async def send_team_art(target, session, uid, bot=None, replace_message=False, team_name='Моя команда'):
     from aiogram.types import BufferedInputFile
     from .game import chemistry
     rows=await lineup(session,uid)
     cards=[card for _,card in rows]
     strength=team_power(cards)
     ch=await chemistry(session,cards)
-    image_bytes=render_team_art_image(rows,strength,ch)
+    image_bytes=render_team_art_image(rows,strength,ch,team_name)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
-    caption='🏒 <b>МОЯ КОМАНДА</b>\\nСостав обновляется автоматически после каждой замены карточки.'
+    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\\nСостав обновляется автоматически после каждой замены карточки.'
     if bot is not None:
         if replace_message:
             try: await target.delete()
@@ -173,6 +173,7 @@ async def render_team(session,uid):
 
 def team_keyboard():
     kb=InlineKeyboardBuilder()
+    kb.button(text='✏️ Изменить название команды',callback_data='teamrename:start')
     for pos in POSITIONS:
         kb.button(text=f'➕ Поставить {pos}',callback_data=f'team:choose:{pos}')
         kb.button(text=f'➖ Убрать {pos}',callback_data=f'team:remove:{pos}')
@@ -218,6 +219,39 @@ async def main():
 
 
     support_steps={}
+    team_name_steps=set()
+    @dp.callback_query(F.data=='teamrename:start')
+    async def team_rename_start(c:CallbackQuery):
+        team_name_steps.add(c.from_user.id)
+        await c.message.answer('✏️ Отправьте новое название команды (от 2 до 40 символов). Для отмены отправьте /cancelname.')
+        await c.answer()
+
+    @dp.message(Command('cancelname'))
+    async def team_rename_cancel(m:Message):
+        team_name_steps.discard(m.from_user.id)
+        await m.answer('Изменение названия отменено.')
+
+    @dp.message(lambda m: m.from_user.id in team_name_steps)
+    async def team_rename_save(m:Message):
+        name=(m.text or '').strip()
+        if not 2 <= len(name) <= 40:
+            await m.answer('Название должно содержать от 2 до 40 символов. Отправьте другое название или /cancelname.')
+            return
+        if name.startswith('/'):
+            await m.answer('Название не должно начинаться с команды. Отправьте название или /cancelname.')
+            return
+        async with Session() as s:
+            try:
+                u=await active_user(s,m.from_user)
+                u.team_name=name
+                await s.commit()
+                team_name_steps.discard(m.from_user.id)
+                await m.answer(f'✅ Название команды изменено на «{html.escape(name)}».')
+                await send_team_art(m,s,m.from_user.id,team_name=name)
+            except ValueError as e:
+                team_name_steps.discard(m.from_user.id)
+                await m.answer(str(e))
+
     @dp.message(F.text=='✉️ Написать админу')
     async def support_start(m:Message):
         kb=InlineKeyboardBuilder()
@@ -307,23 +341,23 @@ async def main():
     @dp.message(F.text=='🏒 Моя команда')
     async def team(m):
         async with Session() as s:
-            try: await active_user(s,m.from_user)
+            try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            await send_team_art(m,s,m.from_user.id)
+            await send_team_art(m,s,m.from_user.id,team_name=u.team_name)
 
     @dp.callback_query(F.data.startswith('team:'))
     async def team_action(c:CallbackQuery):
         _,action,pos=c.data.split(':',2)
         if pos not in POSITIONS: await c.answer('Позиция не найдена.',show_alert=True); return
         async with Session() as s:
-            try: await active_user(s,c.from_user)
+            try: u=await active_user(s,c.from_user)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
             if action=='remove':
                 oc=await s.scalar(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot==pos).with_for_update())
                 if not oc: await c.answer('На этой позиции уже нет карточки.',show_alert=True); return
                 if oc.locked: await c.answer('Карточка заблокирована торговой операцией.',show_alert=True); return
                 oc.slot=''; await s.commit()
-                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True)
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True,team_name=u.team_name)
             elif action=='choose':
                 cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
                 kb=InlineKeyboardBuilder(); count=0
@@ -343,8 +377,8 @@ async def main():
         except ValueError: await c.answer('Карточка не найдена.',show_alert=True); return
         async with Session() as s:
             try:
-                await active_user(s,c.from_user); card=await equip_card(s,c.from_user.id,oid,pos)
-                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True)
+                u=await active_user(s,c.from_user); card=await equip_card(s,c.from_user.id,oid,pos)
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True,team_name=u.team_name)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Состав обновлён.')
 
