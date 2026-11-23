@@ -73,7 +73,6 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='🤖 Игра против бота',callback_data='pve_start')
     kb.button(text='🏆 Рейтинговые',callback_data='pvp_start')
     kb.button(text='🛡 Клановые',callback_data='clan_start')
     kb.button(text='🤝 Товарищеские по ID',callback_data='friendly_id_start')
@@ -562,6 +561,31 @@ async def main():
                 await c.answer(str(e),show_alert=True); return
         await c.answer()
 
+    @dp.callback_query(F.data.startswith('pve_after_timeout:'))
+    async def pve_after_timeout(c:CallbackQuery):
+        try: mid=int(c.data.split(':',1)[1])
+        except ValueError:
+            await c.answer('Некорректный номер поиска.',show_alert=True); return
+        async with Session() as s:
+            mt=await s.scalar(select(Match).where(Match.id==mid,Match.home_user_id==c.from_user.id,Match.status=='searching').with_for_update())
+            if not mt:
+                await c.answer('Поиск уже завершён или отменён — соперник мог найтись.',show_alert=True); return
+            mt.status='cancelled'
+            await s.commit()
+            try:
+                u=await active_user(s,c.from_user)
+                league=league_for_rating(u.rating)
+                match=await start_pve_match(s,u,league)
+            except ValueError as e:
+                await c.answer(str(e),show_alert=True); return
+        await c.message.edit_text('🔎 Поиск соперника отменён.')
+        await c.message.answer(
+            f'🤖 Матч против бота запущен! Соперник: {league}. '
+            f'Награда за победу — {match.reward} 🪙, за поражение — половина. '
+            f'ID матча #{match.id}. /match'
+        )
+        await c.answer('Поиск отменён, запускаю матч с ботом.')
+
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
         ranked=True
@@ -584,6 +608,13 @@ async def main():
                                 if not current or current.status!='searching': return
                             try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
                             except Exception: pass
+                        async with Session() as check:
+                            current=await check.get(Match,match.id)
+                            if not current or current.status!='searching': return
+                        bot_kb=InlineKeyboardBuilder()
+                        bot_kb.button(text='🤖 Играть с ботом',callback_data=f'pve_after_timeout:{match.id}')
+                        try: await c.bot.send_message(c.from_user.id,'Не удалось найти соперника за 30 секунд. Можете продолжить поиск или сыграть с ботом:',reply_markup=bot_kb.as_markup())
+                        except Exception: pass
                     asyncio.create_task(countdown())
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
