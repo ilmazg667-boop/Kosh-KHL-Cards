@@ -1528,8 +1528,10 @@ async def main():
             if page<10: kb.button(text='➡️ Страница '+str(page+1),callback_data=f'bp:page:{page+1}')
             kb.button(text='📋 Задания',callback_data='bp:quests')
             if not bp.premium: kb.button(text=f'💎 Активировать Premium · {BATTLEPASS_PREMIUM_PRICE}',callback_data='bp:premium')
-            if level>0: kb.button(text='🎁 Забрать все Free-награды',callback_data='bp:claim:free')
-            if level>0 and bp.premium: kb.button(text='💎 Забрать все Premium-награды',callback_data='bp:claim:premium')
+            free_ready_count=sum(1 for tier in range(1,level+1) if tier not in claimed_free)
+            premium_ready_count=sum(1 for tier in range(1,level+1) if tier not in claimed_premium)
+            if free_ready_count>2: kb.button(text='🎁 Забрать все Free-награды',callback_data='bp:claim:free')
+            if bp.premium and premium_ready_count>2: kb.button(text='💎 Забрать все Premium-награды',callback_data='bp:claim:premium')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await m.answer('\n'.join(lines)+'\n\nЗа матч начисляется 100 XP, за выполненное задание — 50 XP.',reply_markup=kb.as_markup())
 
