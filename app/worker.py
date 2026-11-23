@@ -231,7 +231,9 @@ async def finish_match(match_id,bot):
                         entry.goals+=_counter(score)
                 # Ranked matches also contribute to the weekly clan championship.
                 if m.mode=='ranked':
-                    iso=now().date().isocalendar()
+                    match_dt=m.created_at or now()
+                    if match_dt.tzinfo is None: match_dt=match_dt.replace(tzinfo=timezone.utc)
+                    iso=match_dt.astimezone(MOSCOW).date().isocalendar()
                     week_key=f'{iso.year}-W{iso.week:02d}'
                     weekly=await s.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==week_key))
                     if not weekly:
