@@ -139,6 +139,7 @@ class DailyTournament(Base):
     title: Mapped[str] = mapped_column(String(100), default='')
     status: Mapped[str] = mapped_column(String(20), default='open')
     rewarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class TournamentPrizeConfig(Base):
