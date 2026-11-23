@@ -2729,7 +2729,10 @@ async def main():
             async def update_menu_text(text_value, reply_markup=None, parse_mode=None):
                 await remove_menu_photo()
                 try:
-                    if c.message and not c.message.photo and c.message.text is not None:
+                    if c.message and c.message.photo:
+                        try: await c.message.delete()
+                        except Exception: pass
+                    elif c.message and c.message.text is not None:
                         return await c.message.edit_text(
                             str(text_value or ''),
                             reply_markup=reply_markup,
