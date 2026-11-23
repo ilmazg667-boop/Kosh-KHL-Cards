@@ -47,11 +47,11 @@ def format_msk(value, naive_is_utc=True):
 
 def admin(uid): return uid in ADMIN_IDS
 
-async def send_section_photo(m, url, caption, reply_markup=None):
+async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None):
     try:
-        await m.answer_photo(url, caption=caption, reply_markup=reply_markup)
+        await m.answer_photo(url, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
-        await m.answer(caption, reply_markup=reply_markup)
+        await m.answer(caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
 PHOTO_ARENA='https://images.pexels.com/photos/20584514/pexels-photo-20584514.jpeg'
 PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
@@ -2450,7 +2450,20 @@ async def main():
                         )
                         return await c.message.edit_media(media,reply_markup=kwargs.get('reply_markup'))
                     except Exception:
-                        pass
+                        # If Telegram cannot replace the image, keep the existing
+                        # photo and update its caption rather than sending a second message.
+                        try:
+                            return await c.message.edit_caption(
+                                caption=kwargs.get('caption') or '',
+                                reply_markup=kwargs.get('reply_markup'),
+                                parse_mode=kwargs.get('parse_mode')
+                            )
+                        except Exception:
+                            return await c.message.answer(
+                                kwargs.get('caption') or '',
+                                reply_markup=kwargs.get('reply_markup'),
+                                parse_mode=kwargs.get('parse_mode')
+                            )
                 return await c.message.answer_photo(*args,**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
