@@ -13,23 +13,6 @@ from .services import now, ensure_season, ensure_daily_tournament, progress_afte
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
 logger=logging.getLogger('kosh.match_worker')
 MOSCOW=ZoneInfo('Europe/Moscow')
-MATCH_START_PHOTOS=[
-    'https://images.pexels.com/photos/19330475/pexels-photo-19330475.jpeg',
-    'https://images.pexels.com/photos/35643108/pexels-photo-35643108.jpeg',
-    'https://images.pexels.com/photos/14923986/pexels-photo-14923986.jpeg',
-    'https://images.pexels.com/photos/6468739/pexels-photo-6468739.jpeg',
-    'https://images.pexels.com/photos/20584516/pexels-photo-20584516.jpeg',
-    'https://images.pexels.com/photos/40553766/pexels-photo-40553766.jpeg',
-]
-MATCH_END_PHOTOS=[
-    'https://images.pexels.com/photos/40553767/pexels-photo-40553767.jpeg',
-    'https://images.pexels.com/photos/34383782/pexels-photo-34383782.jpeg',
-    'https://images.pexels.com/photos/40553770/pexels-photo-40553770.jpeg',
-    'https://images.pexels.com/photos/6469030/pexels-photo-6469030.jpeg',
-    'https://images.pexels.com/photos/6469031/pexels-photo-6469031.jpeg',
-    'https://images.pexels.com/photos/40553765/pexels-photo-40553765.jpeg',
-]
-
 # A regulation match lasts 60 simulation minutes; cap misconfigured Railway values.
 TICK=min(5.0,max(0.2,float(os.getenv('MATCH_SECOND_PER_MINUTE','1.0'))))
 
@@ -63,11 +46,6 @@ async def choose_ai_roster(session,desired_power):
     pool=candidates[:min(5,len(candidates))]
     chosen=random.choice(pool)
     return chosen[1],chosen[2]
-
-async def send_photo(bot, chat_id, photo, caption):
-    if chat_id and bot:
-        try: await bot.send_photo(chat_id,photo,caption=caption)
-        except Exception: logger.exception('Telegram photo send failed: chat_id=%s',chat_id)
 
 async def send(bot, chat_id, text, parse_mode=None):
     if not chat_id or not bot:
@@ -144,7 +122,6 @@ async def prepare_match(match_id,bot=None):
             +'\n\n'
             +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
         for chat_id in [m.home_user_id]+([m.away_user_id] if m.away_user_id else []):
-            await send_photo(bot,chat_id,random.choice(MATCH_START_PHOTOS),f'🏒 Матч #{m.id} · стартовое вбрасывание!')
             await send(bot,chat_id,lineup_message)
 
 async def finish_match(match_id,bot):
