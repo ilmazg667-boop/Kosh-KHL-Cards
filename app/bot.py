@@ -58,10 +58,18 @@ PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg
 PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
 
+RARITY_EMOJI = {
+    'Обычный':'⚪', 'Редкий':'🟢', 'Элитный':'🔵', 'Эпический':'🟣',
+    'Легендарный':'🟠', 'Икона':'🌟', 'Сверхредкий':'💠',
+    'Мифический':'🟪', 'Хроматический':'🌈', 'Легенда':'👑'
+}
+def rarity_label(value):
+    return f"{RARITY_EMOJI.get(value, '💎')} {value}"
+
 def pack_keyboard():
     kb=InlineKeyboardBuilder()
-    for name,d in PACKS.items(): kb.button(text=f"{name} · {d['price']} {'🪙' if d['currency']=='coins' else '💎'}",callback_data=f'pack:{name}')
-    kb.adjust(2); return kb.as_markup()
+    for name,d in PACKS.items(): kb.button(text=f"{name} · {d['price']} {'🪙' if d['currency']=='coins' else '💎'}",callback_data=f'packview:{list(PACKS).index(name)}')
+    kb.adjust(1); return kb.as_markup()
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
@@ -76,7 +84,7 @@ async def active_user(session,tg):
 
 async def owned_card_text(session,oc):
     c=await session.get(Card,oc.card_id)
-    return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {c.rarity}'
+    return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
 
 async def render_team(session,uid):
     rows=await lineup(session,uid); mapping={c.position:(o,c) for o,c in rows}
@@ -279,7 +287,7 @@ async def main():
             for oc in cards:
                 card=await s.get(Card,oc.card_id)
                 if not card: continue
-                lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {card.rarity}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
+                lines.append(f'\n{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}'+(f' · Состав: {oc.slot}' if oc.slot else '')+(' · 🔒 занята' if oc.locked else ''))
                 if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
             for index,name in enumerate(RARITIES): kb.button(text=name,callback_data=f'collection:r:{index}:0')
             kb.button(text='Все редкости',callback_data='collection:all:0')
@@ -318,7 +326,7 @@ async def main():
                 kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
             kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
-            await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {card.rarity}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
+            await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
         await c.answer()
 
     @dp.message(Command('card'))
@@ -335,46 +343,101 @@ async def main():
                 except Exception: await m.answer(caption+'\n(Фото недоступно по указанной ссылке.)')
             else: await m.answer(caption)
 
+    async def render_pack_carousel(target, index, edit=False):
+        from .models import PackConfig
+        names=list(PACKS)
+        index=max(0,min(index,len(names)-1))
+        name=names[index]; base=PACKS[name]
+        async with Session() as s:
+            cfg=await s.get(PackConfig,name)
+            d={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else base
+        currency='🪙' if d['currency']=='coins' else '💎'
+        odds='\n'.join(f'  {rarity_label(r)} — <b>{p}%</b>' for r,p in d['odds'])
+        caption=(
+            f'📦 <b>{name.upper()} ПАК</b>\n'
+            f'━━━━━━━━━━━━━━\n'
+            f'💰 Цена: <b>{d["price"]} {currency}</b>\n\n'
+            f'🎲 <b>Шансы выпадения</b>\n{odds}\n\n'
+            f'Пак {index+1} из {len(names)}'
+        )
+        kb=InlineKeyboardBuilder()
+        kb.button(text=f'🎁 Открыть за {d["price"]} {currency}',callback_data=f'packbuy:{name}')
+        nav=[]
+        if index>0: nav.append(InlineKeyboardButton(text='⬅️ Предыдущий',callback_data=f'packview:{index-1}'))
+        if index<len(names)-1: nav.append(InlineKeyboardButton(text='Следующий ➡️',callback_data=f'packview:{index+1}'))
+        if nav: kb.row(*nav)
+        kb.button(text='⬅️ Главное меню',callback_data='player:home')
+        kb.adjust(1)
+        if edit:
+            await target.edit_text(caption,reply_markup=kb.as_markup(),parse_mode='HTML')
+        else:
+            await target.answer(caption,reply_markup=kb.as_markup(),parse_mode='HTML')
+
     @dp.message(F.text=='📦 Паки')
     async def packs(m):
-        from .models import PackConfig
-        lines=['📦 ПАКИ · шансы выпадения']
-        kb=InlineKeyboardBuilder()
-        async with Session() as s:
-            for name,base in PACKS.items():
-                cfg=await s.get(PackConfig,name)
-                d={'price':cfg.price,'currency':cfg.currency,'odds':cfg.odds} if cfg else base
-                lines.append(f'\n{name} — {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}\n' + ' · '.join(f'{r}: {p}%' for r,p in d['odds']))
-                kb.button(text=f'{name} · {d["price"]} {"🪙" if d["currency"]=="coins" else "💎"}',callback_data=f'pack:{name}')
-        kb.adjust(2)
-        await send_section_photo(m,PHOTO_TRAINING,'📦 Выберите пак и посмотрите шансы выпадения.')
-        await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
+        await render_pack_carousel(m,0)
+        await send_section_photo(m,PHOTO_TRAINING,'Листайте паки кнопками и открывайте понравившийся.')
 
-    @dp.callback_query(F.data.startswith('pack:'))
+    @dp.callback_query(F.data.startswith('packview:'))
+    async def pack_view(c:CallbackQuery):
+        try: index=int(c.data.split(':',1)[1])
+        except ValueError: await c.answer('Пак не найден.',show_alert=True); return
+        await render_pack_carousel(c.message,index,edit=True)
+        await c.answer()
+
+    def pack_reveal_text(card, oc, stage):
+        fields=[
+            ('🌍 Страна',card.country or '—'),
+            ('🏆 Лига',card.league or '—'),
+            ('🏒 Команда',card.club or '—'),
+            ('📍 Позиция',card.position),
+            ('⭐ Рейтинг',f'{card.ovr} OVR'),
+            ('💎 Редкость',rarity_label(card.rarity)),
+            ('🎉 Игрок',f'<b>{card.player_name}</b>')
+        ]
+        lines=['🎁 <b>ОТКРЫТИЕ ПАКА</b>','━━━━━━━━━━━━━━']
+        for i,(label,value) in enumerate(fields):
+            lines.append(f'{label}: <b>{value}</b>' if i<=stage else f'{label}: <tg-spoiler>Скрыто</tg-spoiler>')
+        lines.append(f'\nШаг {min(stage+1,len(fields))} из {len(fields)}')
+        if stage>=len(fields)-1:
+            lines.append(f'\n🆔 Карточка #{oc.id} добавлена в коллекцию!')
+        else:
+            lines.append('\nОткрывайте характеристики по одной.')
+        return '\n'.join(lines)
+
+    def reveal_keyboard(oc_id, stage):
+        kb=InlineKeyboardBuilder()
+        if stage<6: kb.button(text='✨ Открыть дальше',callback_data=f'reveal:{oc_id}:{stage+1}')
+        else: kb.button(text='🃏 Перейти в коллекцию',callback_data='player:cards')
+        kb.adjust(1)
+        return kb.as_markup()
+
+    @dp.callback_query(F.data.startswith('packbuy:'))
     async def buy_pack(c:CallbackQuery):
         name=c.data.split(':',1)[1]
         async with Session() as s:
             try:
-                u=await active_user(s,c.from_user); oc,card=await open_pack(s,u,name)
-                details=(
-                    f'🎉 <b>ПАК ОТКРЫТ!</b>\n'
-                    f'🏒 <b>{card.player_name}</b>\n'
-                    f'⭐ Рейтинг: <b>{card.ovr} OVR</b>\n'
-                    f'💎 Редкость: <b>{card.rarity}</b>\n'
-                    f'📍 Позиция: <b>{card.position}</b>\n'
-                    f'🌍 Страна: {card.country or "—"}\n'
-                    f'🏆 Клуб: {card.club or "—"}\n'
-                    f'🌐 Лига: {card.league or "—"}\n'
-                    f'📅 Сезон: {card.season or "—"}\n'
-                    f'🆔 Номер карточки: #{oc.id}'
-                )
-                if card.image_url and card.image_url.startswith(('https://','http://')):
-                    try: await c.message.answer_photo(card.image_url,caption=details,parse_mode='HTML')
-                    except Exception: await c.message.answer(details,parse_mode='HTML')
-                else:
-                    await c.message.answer(details,parse_mode='HTML')
+                u=await active_user(s,c.from_user)
+                oc,card=await open_pack(s,u,name)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
-        await c.answer('Готово!')
+            await s.commit()
+            oc_id=oc.id
+        await c.message.answer(pack_reveal_text(card,oc,0),reply_markup=reveal_keyboard(oc_id,0),parse_mode='HTML')
+        await c.answer('Пак открыт!')
+
+    @dp.callback_query(F.data.startswith('reveal:'))
+    async def reveal_next(c:CallbackQuery):
+        try: _,raw_id,raw_stage=c.data.split(':',2); oc_id=int(raw_id); stage=int(raw_stage)
+        except ValueError: await c.answer('Этап открытия не найден.',show_alert=True); return
+        if not 1<=stage<=6: await c.answer('Все характеристики уже открыты.'); return
+        async with Session() as s:
+            oc=await s.get(OwnedCard,oc_id)
+            if not oc or oc.user_id!=c.from_user.id:
+                await c.answer('Эта карточка вам не принадлежит.',show_alert=True); return
+            card=await s.get(Card,oc.card_id)
+            if not card: await c.answer('Карточка не найдена.',show_alert=True); return
+        await c.message.edit_text(pack_reveal_text(card,oc,stage),reply_markup=reveal_keyboard(oc_id,stage),parse_mode='HTML')
+        await c.answer()
 
     @dp.message(Command('play'))
     @dp.message(F.text=='🎮 Играть')
@@ -669,7 +732,7 @@ async def main():
                     oc=await s.get(OwnedCard,listing.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     seller=await s.get(User,listing.seller_id)
                     if card:
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR · {card.rarity}\nПродавец: {seller.first_name or seller.id if seller else "игрок"}\nЦена: {listing.price} 🪙')
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR · {rarity_label(card.rarity)}\nПродавец: {seller.first_name or seller.id if seller else "игрок"}\nЦена: {listing.price} 🪙')
                         kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
                 if not count: lines.append('\nПока нет активных лотов.')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
@@ -812,7 +875,7 @@ async def main():
                 kb=InlineKeyboardBuilder(); count=0
                 for oc in cards:
                     card=await s.get(Card,oc.card_id)
-                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {card.rarity}',callback_data=f'trade:give:{target}:{oc.id}'); count+=1
+                    if card: kb.button(text=f'{card.player_name} · {card.ovr} · {rarity_label(card.rarity)}',callback_data=f'trade:give:{target}:{oc.id}'); count+=1
                 kb.button(text='⬅️ Назад',callback_data='trade:players'); kb.adjust(1)
                 await c.message.answer('Выберите карточку, которую отдаёте:' if count else 'Нет свободных карточек для обмена.',reply_markup=kb.as_markup())
             elif action=='give':
