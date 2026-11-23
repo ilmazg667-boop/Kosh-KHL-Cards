@@ -1363,7 +1363,7 @@ async def main():
                     lines.append(f'{idx}. {role_names.get(mem.role,"Игрок")} · {display} · ⭐ {user.rating or 0}')
                 lines.append('')
                 lines.append('Управление: /clan role ID admin|member (только владелец); /clan kick ID (владелец или администратор).')
-                await c.message.answer('\\n'.join(lines))
+                await c.message.answer('\n'.join(lines))
             elif action=='top':
                 clans=(await s.scalars(select(Clan).order_by(desc(Clan.points),desc(Clan.rating),Clan.created_at).limit(15))).all()
                 lines=['🏆 РЕЙТИНГ КЛАНОВ','Сортировка по суммарным очкам клановых матчей и рейтингу.','']
