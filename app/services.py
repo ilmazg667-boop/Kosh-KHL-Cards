@@ -87,6 +87,12 @@ async def claim_daily(session, user):
     await session.commit()
     return coins,gems,bonus
 
+def pack_card_exclusion():
+    # Exclusive Semён Koshelev variants are granted only through their
+    # dedicated Battle Pass reward, never as random pack drops.
+    return ~((Card.player_name=='Семён Кошелев') & Card.ovr.in_([95,99]))
+
+
 async def open_pack(session,user,pack_name):
     if pack_name not in PACKS: raise ValueError('Неизвестный тип пака.')
     user=await session.scalar(select(User).where(User.id==user.id).with_for_update())
@@ -95,21 +101,22 @@ async def open_pack(session,user,pack_name):
     currency=data['currency']; price=data['price']
     if getattr(user,currency)<price: raise ValueError('Недостаточно валюты.')
     rarity=rarity_pick(data['odds'])
-    cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
+    excluded=pack_card_exclusion()
+    cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo',excluded))).all()
     if not cards:
         # Never issue artificial DEMO cards: use the nearest real rarity available.
         available=(await session.scalars(select(Card.rarity).where(
-            Card.active.is_(True), Card.source!='demo'
+            Card.active.is_(True), Card.source!='demo', excluded
         ).distinct())).all()
         if not available:
-            raise ValueError('В базе пока нет настоящих карточек. Импортируйте игроков через CSV или админ-панель.')
+            raise ValueError('В базе пока нет подходящих карточек для паков. Эксклюзивные карточки выдаются отдельно.')
         target=RARITY_RANGES[rarity]
         target_mid=(target[0]+target[1])/2
         nearest=min(available, key=lambda value: abs(
             (RARITY_RANGES.get(value, target)[0]+RARITY_RANGES.get(value, target)[1])/2-target_mid
         ))
         cards=(await session.scalars(select(Card).where(
-            Card.active.is_(True), Card.rarity==nearest, Card.source!='demo'
+            Card.active.is_(True), Card.rarity==nearest, Card.source!='demo', excluded
         ))).all()
     card=random.choice(cards)
     setattr(user,currency,getattr(user,currency)-price)
@@ -489,13 +496,14 @@ async def claim_bp_reward(session,user_id,level,premium=False):
     elif premium and level%10==0:
         milestone_rarities={10:'Эпический',20:'Мифический',30:'Мифический',40:'Легендарный',50:'Легендарный',60:'Хроматический',70:'Хроматический',80:'Легенда',90:'Легенда',100:'Икона'}
         target_rarity=milestone_rarities.get(level,'Эпический')
-        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,Card.source!='demo'))).all()
+        excluded=pack_card_exclusion()
+        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,Card.source!='demo',excluded))).all()
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity))).all()
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,excluded))).all()
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo'))).all()
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',excluded))).all()
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True)))).all()
+            cards=(await session.scalars(select(Card).where(Card.active.is_(True),excluded))).all()
         if not cards: raise ValueError('Бонусная карточка пока недоступна: в базе нет активных карточек.')
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Бонусная карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}'
