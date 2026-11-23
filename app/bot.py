@@ -73,6 +73,7 @@ def pack_keyboard():
 
 def pve_keyboard():
     kb=InlineKeyboardBuilder()
+    kb.button(text='🤖 Игра против бота',callback_data='pve_start')
     kb.button(text='🏆 Рейтинговые',callback_data='pvp_start')
     kb.button(text='🛡 Клановые',callback_data='clan_start')
     kb.button(text='🤝 Товарищеские по ID',callback_data='friendly_id_start')
@@ -547,6 +548,22 @@ async def main():
                     match.status='delivery_failed'; await s.commit(); await m.answer('Не удалось доставить вызов. Убедитесь, что соперник запускал бота.'); return
                 await m.answer(f'Вызов отправлен игроку {target}. Ожидаем подтверждения.')
             except ValueError as e: await m.answer(str(e))
+
+    @dp.callback_query(F.data=='pve_start')
+    async def pve_from_menu(c:CallbackQuery):
+        async with Session() as s:
+            try:
+                u=await active_user(s,c.from_user)
+                league=league_for_rating(u.rating)
+                match=await start_pve_match(s,u,league)
+                await c.message.answer(
+                    f'🤖 Матч против бота запущен! Соперник: {league}. '
+                    f'Награда за победу — {match.reward} 🪙, за поражение — половина. '
+                    f'ID матча #{match.id}. /match'
+                )
+            except ValueError as e:
+                await c.answer(str(e),show_alert=True); return
+        await c.answer()
 
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
