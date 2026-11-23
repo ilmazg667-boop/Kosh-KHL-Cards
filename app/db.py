@@ -27,7 +27,7 @@ async def init_db():
                 'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
-                'daily_tournaments': {'title': "VARCHAR(100) NOT NULL DEFAULT ''"},
+                'daily_tournaments': {'title': "VARCHAR(100) NOT NULL DEFAULT ''", 'ends_at': 'DATETIME'},
             }.items():
                 result = await conn.exec_driver_sql(f'PRAGMA table_info({table})')
                 existing = {row[1] for row in result.fetchall()}
@@ -46,6 +46,7 @@ async def init_db():
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS premium_awarded BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
                 "ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS title VARCHAR(100) NOT NULL DEFAULT ''",
+                'ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ',
                 "UPDATE matches SET result_sent=TRUE WHERE status='completed' AND finished_at < NOW() - INTERVAL '1 hour'"
             ):
                 await conn.exec_driver_sql(statement)
