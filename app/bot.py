@@ -509,10 +509,7 @@ async def main():
         async with Session() as s:
             try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            league=league_for_rating(u.rating)
-            next_league=next(((name,low) for name,low,high in LEAGUES if low>u.rating),None)
-            progress=f'До лиги {next_league[0]}: {next_league[1]-u.rating} рейтинга.' if next_league else 'Вы в высшей лиге.'
-            caption=f'🏒 МАТЧИ\\nВаша лига: {league}\\nРейтинг: {u.rating}\\n{progress}\\n\\nВыберите режим:'
+            caption='🏒 МАТЧИ\\n\\nВыберите режим:'
         await send_section_photo(m,PHOTO_GAME,caption,reply_markup=pve_keyboard())
 
     friendly_steps=set()
@@ -567,7 +564,7 @@ async def main():
 
     @dp.callback_query(F.data=='pvp_start')
     async def queue_from_menu(c:CallbackQuery):
-        ranked=False
+        ranked=True
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user)
