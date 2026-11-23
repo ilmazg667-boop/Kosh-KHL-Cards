@@ -1371,7 +1371,7 @@ async def main():
                     count=await s.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==cl.id))
                     lines.append(f'{idx}. 🛡 {cl.name} · {cl.points or 0} очк. · рейтинг {cl.rating or 0} · {count}/25')
                 if not clans: lines.append('Пока нет созданных кланов.')
-                await c.message.answer('\\n'.join(lines))
+                await c.message.answer('\n'.join(lines))
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 t=await ensure_daily_tournament(s)
