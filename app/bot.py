@@ -1232,6 +1232,7 @@ async def main():
         await c.answer()
 
     clan_steps={}
+    clan_invite_steps=set()
     def clan_keyboard(is_member=False):
         kb=InlineKeyboardBuilder()
         if is_member:
@@ -1381,13 +1382,9 @@ async def main():
                 await c.message.answer(await weekly_clan_battle_text(s),reply_markup=clan_battle_keyboard())
             elif action=='invite':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
-                candidates=(await s.scalars(select(User).where(User.is_banned.is_(False),User.id!=c.from_user.id).order_by(desc(User.rating)).limit(20))).all()
-                kb=InlineKeyboardBuilder()
-                for user in candidates:
-                    existing=await s.scalar(select(ClanMember.id).where(ClanMember.user_id==user.id))
-                    if not existing: kb.button(text=f'Пригласить · {user.first_name or user.id}',callback_data=f'claninvite:{user.id}')
-                kb.button(text='⬅️ Назад',callback_data='player:clans'); kb.adjust(1)
-                await c.message.answer('Выберите игрока для приглашения:',reply_markup=kb.as_markup())
+                if member.role not in ('owner','admin'): await c.answer('Приглашать могут владелец и администратор клана.',show_alert=True); return
+                clan_invite_steps.add(c.from_user.id)
+                await c.message.answer('Введите Telegram ID игрока, которого хотите пригласить. Для отмены — /cancelclan.')
         await c.answer()
 
     @dp.callback_query(F.data.startswith('clanjoin:'))
@@ -1414,7 +1411,38 @@ async def main():
 
     @dp.message(Command('cancelclan'))
     async def clan_cancel(m:Message):
-        clan_steps.pop(m.from_user.id,None); await m.answer('Создание клана отменено.')
+        clan_steps.pop(m.from_user.id,None)
+        clan_invite_steps.discard(m.from_user.id)
+        await m.answer('Действие с кланом отменено.')
+
+    @dp.message(lambda m: m.from_user.id in clan_invite_steps and not (m.text or '').startswith('/'))
+    async def clan_invite_input(m:Message):
+        raw=(m.text or '').strip()
+        try:
+            target=int(raw)
+            if target<=0: raise ValueError
+        except ValueError:
+            await m.answer('Введите корректный числовой Telegram ID. Для отмены — /cancelclan.')
+            return
+        async with Session() as s:
+            try:
+                inv=await create_clan_invite(s,m.from_user.id,target)
+                kb=InlineKeyboardBuilder()
+                kb.button(text='✅ Принять',callback_data=f'clanyes:{inv.id}')
+                kb.button(text='❌ Отклонить',callback_data=f'clanno:{inv.id}')
+                kb.adjust(2)
+                try:
+                    await m.bot.send_message(target,'🛡 Вас приглашают в клан. Приглашение доступно ниже:',reply_markup=kb.as_markup())
+                except Exception:
+                    inv.status='delivery_failed'
+                    await s.commit()
+                    await m.answer('Не удалось доставить приглашение. Игрок должен хотя бы один раз запустить бота (/start).')
+                    clan_invite_steps.discard(m.from_user.id)
+                    return
+                clan_invite_steps.discard(m.from_user.id)
+                await m.answer(f'✅ Приглашение отправлено игроку с ID {target}.')
+            except ValueError as e:
+                await m.answer(str(e))
 
     @dp.message(lambda m: m.from_user.id in clan_steps and not (m.text or '').startswith('/'))
     async def clan_create_input(m:Message):
