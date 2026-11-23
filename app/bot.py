@@ -32,7 +32,7 @@ def keyboard():
         ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
         ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
         ('🛡 Кланы','clans'),('🔁 Обмены','trades'),('🎟 Battle Pass','battlepass'),
-        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('🎟 Промокоды','promo'),('📋 Задания','quests'),
+        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('🎟 Промокоды','promo'),
         ('❔ Помощь','help')
     ]
     for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
@@ -1311,6 +1311,7 @@ async def main():
                 if tier<=level and bp.premium and tier not in claimed_premium: kb.button(text=f'💎 Premium · ур. {tier}',callback_data=f'bp:one:premium:{tier}')
             if page>1: kb.button(text='⬅️ Страница '+str(page-1),callback_data=f'bp:page:{page-1}')
             if page<10: kb.button(text='➡️ Страница '+str(page+1),callback_data=f'bp:page:{page+1}')
+            kb.button(text='📋 Задания',callback_data='bp:quests')
             if not bp.premium: kb.button(text=f'💎 Активировать Premium · {BATTLEPASS_PREMIUM_PRICE}',callback_data='bp:premium')
             if level>0: kb.button(text='🎁 Забрать все Free-награды',callback_data='bp:claim:free')
             if level>0 and bp.premium: kb.button(text='💎 Забрать все Premium-награды',callback_data='bp:claim:premium')
@@ -1323,7 +1324,10 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user)
-                if action=='page':
+                if action=='quests':
+                    from types import SimpleNamespace
+                    await quest(SimpleNamespace(from_user=c.from_user,text='/quest',answer=c.message.answer))
+                elif action=='page':
                     from types import SimpleNamespace
                     await battlepass(SimpleNamespace(from_user=c.from_user,text=f'/bp page {rest[0]}',answer=c.message.answer))
                 elif action=='one':
@@ -1384,7 +1388,7 @@ async def main():
                     coins,gems,xp=rewards[key]
                     lines.append(f'• {title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎 + {xp} XP'+(f' · {status}' if status else ''))
                     if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {key}',callback_data=f'questclaim:{key}')
-            kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
+            kb.button(text='🎟 К Battle Pass',callback_data='player:battlepass'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('questclaim:'))
