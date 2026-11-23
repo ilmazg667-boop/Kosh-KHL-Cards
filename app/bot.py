@@ -1212,8 +1212,9 @@ async def main():
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
         async with Session() as s:
-            await ensure_daily_tournament_participants(s)
-        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
+            t=await ensure_daily_tournament_participants(s)
+            status='🟢 Турнир идёт' if t.status=='open' else '🔴 Турнир завершён'
+            await m.answer(f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}\n{status}\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
