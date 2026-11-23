@@ -329,6 +329,8 @@ async def process_match(match_id,bot):
                 if event.get('type')=='shootout_shot':
                     series=f"\n🎯 Буллиты: {event.get('shootout_home',0)} — {event.get('shootout_away',0)}"
                     messages.append(f"⏱ {minute}' {event.get('text','')}\n🏒 {home_name} {live_home}:{live_away} {away_name}{series}")
+                elif event.get('type')=='final':
+                    messages.append(f"⏱ {minute}' {event.get('text','')}\n🏒 {home_name} {m.home_score}:{m.away_score} {away_name}")
                 else:
                     messages.append(f"⏱ {minute}' {event.get('text','')}\n🏒 {home_name} {live_home}:{live_away} {away_name}")
         for message in messages:
