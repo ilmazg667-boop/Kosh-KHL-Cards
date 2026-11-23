@@ -1214,7 +1214,7 @@ async def main():
         async with Session() as s:
             t=await ensure_daily_tournament_participants(s)
             status='🟢 Турнир идёт' if t.status=='open' else '🔴 Турнир завершён'
-            await m.answer(f'⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР · {t.tournament_date}\n{status}\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
+            await m.answer(f'⚔️ {t.title or "ЕЖЕДНЕВНЫЙ ТУРНИР"} · {t.tournament_date}\n{status}\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
@@ -1225,7 +1225,7 @@ async def main():
             if action=='table':
                 t=await ensure_daily_tournament_participants(s)
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
-                lines=[f'🏆 ТАБЛИЦА ТУРНИРА · {t.tournament_date}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
+                lines=[f'🏆 {t.title or "ЕЖЕДНЕВНЫЙ ТУРНИР"} · {t.tournament_date}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
                 defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                 prizes={}
                 for place,(coins,gems) in defaults.items():
@@ -1745,7 +1745,7 @@ async def main():
             lines=['🏆 УПРАВЛЕНИЕ ЕЖЕДНЕВНЫМИ ТУРНИРАМИ','Выберите существующий турнир для просмотра или управления:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\\n{t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
+                lines.append(f"\\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
             kb.button(text='➕ Управлять по дате',callback_data='adm:tournament_date')
@@ -1784,8 +1784,40 @@ async def main():
             else:
                 kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
                 if not t.rewarded_at: kb.button(text='🎁 Начислить награды',callback_data=f'adm:tournament_reward:{tid}')
+            kb.button(text='✏️ Изменить название',callback_data=f'adm:tournament_rename:{tid}')
+            kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 Турнир {t.tournament_date}\\nСтатус: {"открыт" if t.status=="open" else "завершён"}\\nУчастников: {count}\\nID: {tid}',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\\nДата: {t.tournament_date}\\nСтатус: {"открыт" if t.status=="open" else "завершён"}\\nУчастников: {count}\\nID: {tid}',reply_markup=kb.as_markup())
+        elif action[1]=='tournament_rename':
+            tid=int(action[2])
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+            if not t:
+                await c.answer('Турнир не найден.',show_alert=True); return
+            admin_steps[c.from_user.id]={'kind':'tournament_rename','step':'title','tournament_id':tid}
+            await c.message.answer(f'Введите новое название турнира (до 100 символов). Сейчас: {t.title or "Ежедневный турнир"}. Отмена: /canceladmin')
+        elif action[1]=='tournament_delete':
+            tid=int(action[2])
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+                if not t:
+                    await c.answer('Турнир не найден.',show_alert=True); return
+                count=await s.scalar(select(func.count(TournamentEntry.id)).where(TournamentEntry.tournament_id==tid)) or 0
+            kb=InlineKeyboardBuilder()
+            kb.button(text='⚠️ Да, удалить',callback_data=f'adm:tournament_delete_apply:{tid}')
+            kb.button(text='❌ Отмена',callback_data=f'adm:tournament_view:{tid}'); kb.adjust(1)
+            await c.message.answer(f'Удалить турнир «{t.title or "Ежедневный турнир"}» от {t.tournament_date}? Будут удалены сведения о турнире и {count} записей участников. Уже начисленные награды с балансов не списываются.',reply_markup=kb.as_markup())
+        elif action[1]=='tournament_delete_apply':
+            tid=int(action[2])
+            async with Session() as s:
+                t=await s.get(DailyTournament,tid)
+                if not t:
+                    await c.answer('Турнир уже удалён.',show_alert=True); return
+                await s.execute(TournamentEntry.__table__.delete().where(TournamentEntry.tournament_id==tid))
+                await audit(s,c.from_user.id,'tournament_deleted',tid,f'{t.tournament_date}:{t.title}')
+                await s.delete(t)
+                await s.commit()
+            await c.message.answer('🗑 Турнир и связанные записи удалены. Ранее начисленные награды не изменены.',reply_markup=admin_back_keyboard())
         elif action[1] in ('tournament_start','tournament_finish','tournament_reward'):
             tid=int(action[2]); mode='open' if action[1]=='tournament_start' else 'closed'
             async with Session() as s:
@@ -2013,6 +2045,21 @@ async def main():
                     await s.commit()
                 admin_steps.pop(m.from_user.id,None)
                 await m.answer(f'✅ Награда за {place} место обновлена: {coins} 🪙 + {gems} 💎',reply_markup=admin_keyboard())
+                return
+            if kind=='tournament_rename' and step=='title':
+                title=m.text.strip()
+                if not title or len(title)>100:
+                    await m.answer('Название должно содержать от 1 до 100 символов.'); return
+                tid=state['tournament_id']
+                async with Session() as s:
+                    t=await s.get(DailyTournament,tid)
+                    if not t:
+                        await m.answer('Турнир не найден.'); admin_steps.pop(m.from_user.id,None); return
+                    t.title=title
+                    await audit(s,m.from_user.id,'tournament_renamed',tid,title)
+                    await s.commit()
+                admin_steps.pop(m.from_user.id,None)
+                await m.answer(f'✅ Название турнира изменено: «{title}».',reply_markup=admin_keyboard())
                 return
             if kind=='tournament' and step=='date':
                 raw=m.text.strip()
