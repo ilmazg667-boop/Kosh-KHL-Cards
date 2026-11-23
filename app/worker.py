@@ -31,7 +31,7 @@ MATCH_END_PHOTOS=[
 ]
 
 # A regulation match lasts 60 simulation minutes; cap misconfigured Railway values.
-TICK=min(5.0,max(0.2,float(os.getenv('MATCH_SECOND_PER_MINUTE','1.5'))))
+TICK=min(5.0,max(0.2,float(os.getenv('MATCH_SECOND_PER_MINUTE','1.0'))))
 
 def goalie(cards): return next((c.ovr for c in cards if c.position=='G'),70)
 
