@@ -204,7 +204,7 @@ async def main():
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
     async def help_cmd(m):
-        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan kick USER_ID | /clan leave | /clanbattle — таблица клановой войны\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
+        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan kick USER_ID | /clan leave | /clanbattle — недельная клановая битва\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
 
     @dp.message(F.text=='🪙 Баланс')
     async def balance(m):
@@ -1208,7 +1208,7 @@ async def main():
     @dp.message(Command('tournament'))
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
-        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nИграйте рейтинговые матчи — они автоматически идут в личный турнир и в недельную битву вашего клана. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
+        await m.answer('⚔️ ЕЖЕДНЕВНЫЙ ТУРНИР\nИграйте рейтинговые матчи — они автоматически идут в личный турнир и в недельную битву вашего клана. Регистрироваться отдельно не обязательно. Победа — 2 очка, поражение в OT/буллитах — 1. Призы получают места 1–5.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
