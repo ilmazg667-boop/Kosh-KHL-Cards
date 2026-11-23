@@ -88,8 +88,20 @@ async def open_pack(session,user,pack_name):
     rarity=rarity_pick(data['odds'])
     cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
     if not cards:
-        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
-    if not cards: raise ValueError(f'В базе пока нет карточек редкости «{rarity}». Добавьте карточки через импорт CSV или админ-панель.')
+        # Never issue artificial DEMO cards: use the nearest real rarity available.
+        available=(await session.scalars(select(Card.rarity).where(
+            Card.active.is_(True), Card.source!='demo'
+        ).distinct())).all()
+        if not available:
+            raise ValueError('В базе пока нет настоящих карточек. Импортируйте игроков через CSV или админ-панель.')
+        target=RARITY_RANGES[rarity]
+        target_mid=(target[0]+target[1])/2
+        nearest=min(available, key=lambda value: abs(
+            (RARITY_RANGES.get(value, target)[0]+RARITY_RANGES.get(value, target)[1])/2-target_mid
+        ))
+        cards=(await session.scalars(select(Card).where(
+            Card.active.is_(True), Card.rarity==nearest, Card.source!='demo'
+        ))).all()
     card=random.choice(cards)
     setattr(user,currency,getattr(user,currency)-price)
     owned=OwnedCard(user_id=user.id,card_id=card.id,slot='')
