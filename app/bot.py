@@ -195,6 +195,8 @@ async def profile_text(u):
 async def get_match_for_user(session,uid):
     return await session.scalar(select(Match).where(or_(Match.home_user_id==uid,Match.away_user_id==uid),Match.status!='paired').order_by(Match.id.desc()))
 
+_MENU_PHOTO_MESSAGES = {}
+
 async def main():
     if not BOT_TOKEN: raise RuntimeError('Укажите BOT_TOKEN в файле .env')
     await init_db()
@@ -2718,60 +2720,45 @@ async def main():
                     rows.append([InlineKeyboardButton(text='⬅️ Назад в главное меню',callback_data='player:home')])
                 kwargs['reply_markup']=InlineKeyboardMarkup(inline_keyboard=rows)
                 return kwargs
-            async def proxy_answer(*args,**kwargs):
-                kwargs=add_player_back(kwargs)
-                text_value=args[0] if args else kwargs.pop('text',None)
-                if text_value is None:
-                    text_value=kwargs.pop('caption','')
-                text_value=str(text_value or '')
-                parse_mode=kwargs.pop('parse_mode',None)
-                reply_markup=kwargs.pop('reply_markup',None)
-                # Every opened section gets the same menu artwork. Keep long
-                # section text in a separate message because Telegram captions
-                # are limited to 1024 characters.
-                try:
-                    from aiogram.types import BufferedInputFile
-                    photo_bytes=await telegram_post_photo()
-                    try: await c.message.delete()
+            async def remove_menu_photo():
+                photo_id=_MENU_PHOTO_MESSAGES.pop(c.from_user.id,None)
+                if photo_id:
+                    try: await c.bot.delete_message(c.from_user.id,photo_id)
                     except Exception: pass
-                    if len(text_value)<=1024:
-                        return await c.bot.send_photo(
-                            c.from_user.id,
-                            BufferedInputFile(photo_bytes,filename='main-menu.jpg'),
-                            caption=text_value,
+
+            async def update_menu_text(text_value, reply_markup=None, parse_mode=None):
+                await remove_menu_photo()
+                try:
+                    if c.message and not c.message.photo and c.message.text is not None:
+                        return await c.message.edit_text(
+                            str(text_value or ''),
                             reply_markup=reply_markup,
                             parse_mode=parse_mode
                         )
-                    await c.bot.send_photo(
-                        c.from_user.id,
-                        BufferedInputFile(photo_bytes,filename='main-menu.jpg'),
-                        caption='🏒 KOSH KHL CARDS'
-                    )
-                    return await c.bot.send_message(
-                        c.from_user.id,text_value,
-                        reply_markup=reply_markup,
-                        parse_mode=parse_mode
-                    )
                 except Exception as e:
-                    print(f'Не удалось показать фото раздела меню: {e}')
-                    try: await c.message.delete()
-                    except Exception: pass
-                    return await c.bot.send_message(
-                        c.from_user.id,text_value,
-                        reply_markup=reply_markup,
-                        parse_mode=parse_mode
-                    )
+                    # Telegram may reject an edit if the content is unchanged;
+                    # in that case keep the existing message and keyboard.
+                    if 'message is not modified' in str(e).lower():
+                        return c.message
+                return await c.bot.send_message(
+                    c.from_user.id,str(text_value or ''),
+                    reply_markup=reply_markup,parse_mode=parse_mode
+                )
+
+            async def proxy_answer(*args,**kwargs):
+                kwargs=add_player_back(kwargs)
+                text_value=args[0] if args else kwargs.pop('text',None)
+                if text_value is None: text_value=kwargs.pop('caption','')
+                parse_mode=kwargs.pop('parse_mode',None)
+                reply_markup=kwargs.pop('reply_markup',None)
+                return await update_menu_text(text_value,reply_markup,parse_mode)
+
             async def proxy_answer_photo(*args,**kwargs):
-                photo=kwargs.pop('photo',None)
+                # Section navigation removes the artwork and keeps the text
+                # message in place; section handlers still render their text.
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
-                if photo is not None:
-                    kwargs=add_player_back(kwargs)
-                    reply_markup=kwargs.pop('reply_markup',None)
-                    parse_mode=kwargs.pop('parse_mode',None)
-                    try: await c.message.delete()
-                    except Exception: pass
-                    return await c.bot.send_photo(c.from_user.id,photo=photo,caption=caption or '',reply_markup=reply_markup,parse_mode=parse_mode)
+                kwargs=add_player_back(kwargs)
                 return await proxy_answer(caption or '',**kwargs)
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
@@ -2779,14 +2766,14 @@ async def main():
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
                 caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
+                await remove_menu_photo()
                 try:
                     photo=await telegram_post_photo()
-                    try: await c.message.delete()
-                    except Exception: pass
-                    await c.bot.send_photo(c.from_user.id,photo,caption=caption,reply_markup=keyboard(),parse_mode='HTML')
+                    photo_message=await c.bot.send_photo(c.from_user.id,photo,caption='🏒 KOSH KHL CARDS')
+                    _MENU_PHOTO_MESSAGES[c.from_user.id]=photo_message.message_id
                 except Exception as e:
                     print(f'Не удалось показать фото главного меню: {e}')
-                    await proxy_answer(caption,reply_markup=keyboard(),parse_mode='HTML')
+                await update_menu_text(caption,keyboard(), 'HTML')
             else:
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
