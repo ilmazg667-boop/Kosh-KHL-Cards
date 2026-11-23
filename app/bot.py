@@ -1891,7 +1891,8 @@ async def main():
             if page+1<pages:
                 kb.button(text='Вперёд ➡️',callback_data=f'adm:players:{page+1}')
             kb.button(text='⬅️ В админ-меню',callback_data='adm:home')
-            kb.adjust(2)
+            # Pagination controls share a row; navigation back is always isolated below.
+            kb.adjust(2,1)
             text='\n'.join(lines)
             try:
                 await c.message.edit_text(text,reply_markup=kb.as_markup(),parse_mode='HTML')
@@ -2117,7 +2118,7 @@ async def main():
                 who='анонимно' if item.anonymous else f'ID {item.user_id}'
                 lines.append(f'\n#{item.id} · {title} · {who} · {item.status}')
                 kb.button(text=f'Открыть #{item.id}',callback_data=f'adm:message:{item.id}')
-            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(2)
+            kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(2,1)
             await c.message.answer('\n'.join(lines) if rows else 'Сообщений пока нет.',reply_markup=kb.as_markup())
         elif action[1]=='message':
             mid=int(action[2])
