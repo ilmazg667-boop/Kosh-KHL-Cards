@@ -324,9 +324,9 @@ def format_result(m,home_user,away_user,for_home=True):
         top=max(point_players,key=lambda name:(goals_by_player[name]+assists_by_player[name],goals_by_player[name],assists_by_player[name],str(name)))
         team_name=player_team.get(top,'Команда не определена')
         title+=(
-            f"\\n⭐ <b>MVP матча: {html.escape(str(top))}</b>"
-            f"\\n🏒 Команда: <b>{html.escape(str(team_name))}</b>"
-            f"\\n📊 Почему лучший: <b>{goals_by_player[top]} гола(ов) + {assists_by_player[top]} ассиста(ов) = {goals_by_player[top]+assists_by_player[top]} результативных очка</b>."
+            f"\n⭐ <b>MVP матча: {html.escape(str(top))}</b>"
+            f"\n🏒 Команда: <b>{html.escape(str(team_name))}</b>"
+            f"\n📊 Почему лучший: <b>{goals_by_player[top]} гола(ов) + {assists_by_player[top]} ассиста(ов) = {goals_by_player[top]+assists_by_player[top]} результативных очка</b>."
         )
     if m.mode=='pve' and for_home:
         awarded=m.reward if m.home_score>m.away_score else int(m.reward*.5)
@@ -387,7 +387,7 @@ async def award_pack_card(session,user_id,pack_name):
     """Award and open a configured pack without charging the winner."""
     pack=PACKS[pack_name]
     config=await session.get(PackConfig,pack_name)
-    rarity=rarity_pick(config.odds if config else pack['odds'])
+    rarity=rarity_pick(config.odds if config and config.odds else pack['odds'])
     cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
     if not cards:
         available=(await session.scalars(select(Card.rarity).where(Card.active.is_(True),Card.source!='demo').distinct())).all()
@@ -468,7 +468,7 @@ async def close_old_clan_tournaments(session,bot):
                 message=f'🏆 Клан «{clan.name}» занял {place}-е место в недельной битве! Ваш приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')
                 if place==1:
                     card=await award_pack_card(session,user.id,'Премиум')
-                    if card: message+=f'\\n🎁 Пак «Премиум» открыт автоматически: {card.player_name} · {card.ovr} OVR · {card.rarity}.'
+                    if card: message+=f'\n🎁 Пак «Премиум» открыт автоматически: {card.player_name} · {card.ovr} OVR · {card.rarity}.'
                 notifications.append((user.id,message))
         old.status='completed'; old.rewarded_at=now()
     await session.commit()
