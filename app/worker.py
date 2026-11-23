@@ -65,9 +65,9 @@ async def send_photo(bot, chat_id, photo, caption):
         try: await bot.send_photo(chat_id,photo,caption=caption)
         except Exception: logger.exception('Telegram photo send failed: chat_id=%s',chat_id)
 
-async def send(bot, chat_id, text):
+async def send(bot, chat_id, text, parse_mode=None):
     if chat_id and bot:
-        try: await bot.send_message(chat_id,text)
+        try: await bot.send_message(chat_id,text,parse_mode=parse_mode)
         except Exception:
             logger.exception('Telegram send failed: chat_id=%s text=%r', chat_id, text[:160])  # event remains in DB; user can fetch it using /match
 
@@ -187,10 +187,10 @@ async def finish_match(match_id,bot):
                         entry.goals+=score
         await s.commit()
         await send_photo(bot,m.home_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
-        await send(bot,m.home_user_id,format_result(m,home,away,for_home=True))
+        await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
         if away:
             await send_photo(bot,m.away_user_id,random.choice(MATCH_END_PHOTOS),f'🏁 Матч #{m.id} завершён · {m.home_score}:{m.away_score}')
-            await send(bot,m.away_user_id,format_result(m,home,away,for_home=False))
+            await send(bot,m.away_user_id,format_result(m,home,away,for_home=False),parse_mode='HTML')
 
 
 def format_result(m,home_user,away_user,for_home=True):
@@ -198,11 +198,10 @@ def format_result(m,home_user,away_user,for_home=True):
     opp_goals=m.away_goals if for_home else m.home_goals
     home_name=m.home_name or (home_user.first_name if home_user else None) or f'Игрок {m.home_user_id}'
     away_name=m.away_name or (away_user.first_name if away_user else None) or ('KHL Bot' if not m.away_user_id else f'Игрок {m.away_user_id}')
-    title=f"🏒 Матч #{m.id} завершён\\n{home_name} {m.home_score}:{m.away_score} {away_name}"
+    title=f"🏒 Матч #{m.id} завершён\n<b>{home_name}</b> <b>{m.home_score}:{m.away_score}</b> <b>{away_name}</b>"
     if m.mode=='ranked':
         change=m.rating_change or 0
-        title+=f"\\n⭐ Изменение рейтинга: {change if for_home else -change:+d}"
-    # Summarize all scoring contributions, not individual goal descriptions.
+        title+=f"\n⭐ Изменение рейтинга: <b>{change if for_home else -change:+d}</b>"
     from collections import Counter
     goals_by_player=Counter(); assists_by_player=Counter()
     for goal in (m.home_goals or [])+(m.away_goals or []):
@@ -210,35 +209,31 @@ def format_result(m,home_user,away_user,for_home=True):
         if goal.get('assist'): assists_by_player[goal['assist']]+=1
         if goal.get('assist2'): assists_by_player[goal['assist2']]+=1
     point_players=set(goals_by_player)|set(assists_by_player)
-    point_lines='\\n'.join(
-        f"• {name} — {goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)"
+    point_lines='\n'.join(
+        f"• <b>{name}</b> — <b>{goals_by_player[name]}+{assists_by_player[name]} ({goals_by_player[name]+assists_by_player[name]} оч.)</b>"
         for name in sorted(point_players,key=lambda n:(-(goals_by_player[n]+assists_by_player[n]),n))
     ) or '—'
-    title+=f"\\n\\n⭐ Очки игроков (гол+пас):\\n{point_lines}"
+    title+=f"\n\n⭐ <b>Очки игроков (гол+пас):</b>\n{point_lines}"
     home_events=m.events or []
     def stat(kind,side):
         return sum(1 for e in home_events if e.get('type')==kind and e.get('side')==side)
-    side='home' if for_home else 'away'
-    other='away' if for_home else 'home'
+    side='home' if for_home else 'away'; other='away' if for_home else 'home'
     own_goals_count=len(own_goals or []); opp_goals_count=len(opp_goals or [])
-    own_shots=stat('shot',side)+own_goals_count
-    opp_shots=stat('shot',other)+opp_goals_count
-    # Saves are derived from shots faced minus goals conceded, never from random event labels.
-    own_saves=max(0,opp_shots-opp_goals_count)
-    opp_saves=max(0,own_shots-own_goals_count)
-    own_pct=(own_saves/opp_shots*100) if opp_shots else 0
-    opp_pct=(opp_saves/own_shots*100) if own_shots else 0
-    title+=f"\\n\\n🎯 Броски: {own_shots}:{opp_shots} · 🧤 Сейвы вратарей: {own_saves} ({own_pct:.1f}%):{opp_saves} ({opp_pct:.1f}%)"
-    title+=f"\\n⚠️ Удаления: {stat('penalty',side)}:{stat('penalty',other)} · 🔵 Большинство: {stat('powerplay',side)}:{stat('powerplay',other)}"
+    own_shots=stat('shot',side)+own_goals_count; opp_shots=stat('shot',other)+opp_goals_count
+    own_saves=max(0,opp_shots-opp_goals_count); opp_saves=max(0,own_shots-own_goals_count)
+    own_pct=(own_saves/opp_shots*100) if opp_shots else 0; opp_pct=(opp_saves/own_shots*100) if own_shots else 0
+    title+=f"\n\n🎯 <b>Броски: {own_shots}:{opp_shots}</b> · 🧤 <b>Сейвы: {own_saves} ({own_pct:.1f}%):{opp_saves} ({opp_pct:.1f}%)</b>"
+    own_pen=stat('penalty',side); opp_pen=stat('penalty',other)
+    own_pp=stat('powerplay',side); opp_pp=stat('powerplay',other)
+    own_pp_goals=sum(1 for g in (own_goals or []) if g.get('powerplay'))
+    opp_pp_goals=sum(1 for g in (opp_goals or []) if g.get('powerplay'))
+    title+=f"\n⚠️ <b>Удаления: {own_pen}:{opp_pen}</b> · 🔵 <b>Реализованное большинство: {own_pp_goals}:{opp_pp_goals}</b> (возможностей {own_pp}:{opp_pp})"
     scorers=[g.get('scorer') for g in (own_goals or []) if g.get('scorer')]
     if scorers:
-        from collections import Counter
         top=Counter(scorers).most_common(1)[0][0]
-        title+=f"\\n⭐ Лучший игрок: {top}"
-    title+="\\n🪙 Награда начислена автоматически."
-    title+='\\n\\nПосмотреть трансляцию: /match'
+        title+=f"\n⭐ Лучший игрок: <b>{top}</b>"
+    title+="\n🪙 Награда начислена автоматически.\n\nПосмотреть трансляцию: /match"
     return title
-
 
 async def process_match(match_id,bot):
     logger.info('Processing match #%s', match_id)
@@ -275,7 +270,7 @@ async def process_match(match_id,bot):
                 )
         for message in messages:
             for chat_id in chat_ids:
-                await send(bot,chat_id,message)
+                await send(bot,chat_id,message,parse_mode='HTML')
         if done: break
         await asyncio.sleep(TICK)
     await finish_match(match_id,bot)
