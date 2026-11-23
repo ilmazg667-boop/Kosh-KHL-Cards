@@ -450,10 +450,10 @@ async def progress_pack_quest(session,user_id):
 
 async def claim_quest(session,user_id,key):
     today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
-    target={'play3':(today,3,300,0),'win1':(today,1,500,0),'score5goals':(today,5,500,1),
-        'play20':(week,20,1500,2),'win10':(week,10,2000,3),
-        'play60month':(month,60,3500,4),'win20month':(month,20,4500,5),
-        'play100':(season,100,5000,5),'win50':(season,50,7000,8),'reach_khl':(season,1,2500,3),'open50packs':(season,50,5000,5)}
+    target={'play3':(today,3,500,1),'win1':(today,1,750,2),'score5goals':(today,5,1000,3),
+        'play20':(week,20,2500,4),'win10':(week,10,3500,5),
+        'play60month':(month,60,6000,8),'win20month':(month,20,8000,10),
+        'play100':(season,100,10000,12),'win50':(season,50,15000,18),'reach_khl':(season,1,5000,8),'open50packs':(season,50,10000,15)}
     if key not in target: raise ValueError('Задание не найдено.')
     period,need,reward_coins,reward_gems=target[key]
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
@@ -463,7 +463,7 @@ async def claim_quest(session,user_id,key):
     u.coins+=reward_coins; u.gems+=reward_gems; q.claimed=True
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
     if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[]); session.add(bp)
-    quest_xp=50
+    quest_xp=100
     bp.xp=min(10000,bp.xp+quest_xp); await session.commit(); return (reward_coins,reward_gems,quest_xp)
 
 async def claim_bp_reward(session,user_id,level,premium=False):
