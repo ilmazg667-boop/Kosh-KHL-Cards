@@ -27,8 +27,17 @@ async def get_or_create_user(session, tg_user):
         return user, False
     user=User(id=tg_user.id, username=(tg_user.username or ''), first_name=(tg_user.first_name or ''), last_name=(tg_user.last_name or ''), coins=5000, gems=20)
     session.add(user); await session.flush()
-    starter=(await session.scalars(select(Card).where(Card.source=='demo', Card.rarity=='Обычный').order_by(Card.id.asc()).limit(6))).all()
-    for pos,card in zip(POSITIONS,starter): session.add(OwnedCard(user_id=user.id,card_id=card.id,slot=pos))
+    # Give a new user a complete starter lineup from the active real catalogue.
+    # Choose the weakest available card for each position to avoid demo cards.
+    starter=[]
+    for pos in POSITIONS:
+        card=await session.scalar(select(Card).where(
+            Card.active.is_(True), Card.source!='demo', Card.position==pos
+        ).order_by(Card.ovr.asc(), Card.id.asc()).limit(1))
+        if card:
+            starter.append((pos,card))
+    for pos,card in starter:
+        session.add(OwnedCard(user_id=user.id,card_id=card.id,slot=pos))
     await session.commit()
     return user, True
 
