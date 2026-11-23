@@ -155,11 +155,11 @@ async def start_pvp_queue(session,user,ranked=False,mode=None):
     if already: raise ValueError('У вас уже есть активный поиск или вызов.')
     from .game import team_power
     p=team_power(cards); g=next(c.ovr for c in cards if c.position=='G')
-    match_mode='clan' if mode=='clan' else 'pvp'
+    match_mode='clan' if mode=='clan' else ('ranked' if ranked else 'pvp')
     if match_mode not in ('pvp','ranked','clan'): raise ValueError('Неизвестный PvP-режим.')
     # Join the oldest compatible waiting player immediately instead of relying
     # only on the background worker's polling interval.
-    candidate_modes=['clan'] if match_mode=='clan' else ['pvp','ranked']
+    candidate_modes=[match_mode]
     candidates=(await session.scalars(
         select(Match).where(Match.status=='searching',Match.mode.in_(candidate_modes),
             Match.home_user_id!=user.id).order_by(Match.created_at,Match.id).with_for_update()
@@ -170,7 +170,7 @@ async def start_pvp_queue(session,user,ranked=False,mode=None):
             theirs=await session.scalar(select(ClanMember).where(ClanMember.user_id==candidate.home_user_id))
             if not mine or not theirs or mine.clan_id==theirs.clan_id:
                 continue
-        candidate.mode='clan' if match_mode=='clan' else 'pvp'
+        candidate.mode=match_mode
         candidate.away_user_id=user.id
         candidate.away_name=user.first_name or str(user.id)
         candidate.away_power=p
