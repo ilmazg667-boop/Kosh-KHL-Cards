@@ -148,12 +148,12 @@ async def finish_match(match_id,bot):
         m=await s.get(Match,match_id)
         if not m: return
         already_settled = (m.status == 'completed')
+        home=await s.get(User,m.home_user_id); away=await s.get(User,m.away_user_id) if m.away_user_id else None
         if not already_settled:
             m.status='completed'; m.finished_at=now(); m.minute=65 if any(e.get('minute')==65 for e in (m.events or [])) else 60
         if not already_settled:
             winner=m.home_user_id if m.home_score>m.away_score else m.away_user_id
             loser=m.away_user_id if winner==m.home_user_id else m.home_user_id
-            home=await s.get(User,m.home_user_id); away=await s.get(User,m.away_user_id) if m.away_user_id else None
             is_ot=m.shootout
             overtime=m.overtime
             if m.mode in ('pve','tournament'):
