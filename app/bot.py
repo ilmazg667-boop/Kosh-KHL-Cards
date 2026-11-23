@@ -1307,8 +1307,8 @@ async def main():
             claimed_free=set(bp.claimed_free or []); claimed_premium=set(bp.claimed_premium or [])
             lines=[f'🎟 BATTLE PASS · сезон {bp.season}',f'Уровень: {level}/100 · XP: {bp.xp} · до следующего уровня: {0 if level>=100 else 100-bp.xp%100} XP',f'Страница {page}/10 · уровни {start_level}–{end_level}','']
             for tier in range(start_level,end_level+1):
-                free_reward='🏒 Семён Кошелев · 99 OVR' if tier==100 else ( 'Пак «Обычный»' if tier%10==0 else f'{250+tier*25} 🪙')
-                premium_reward=('🎴 Бонусная карточка' if tier%10==0 else ('📦 Пак «Премиум»' if tier%5==0 else f'{2+tier//10} 💎'))
+                free_reward='🏒 Семён Кошелев · 95 OVR' if tier==100 else ( 'Пак «Обычный»' if tier%10==0 else f'{250+tier*25} 🪙')
+                premium_reward='🏒 Семён Кошелев · 99 OVR' if tier==100 else ('🎴 Бонусная карточка' if tier%10==0 else ('📦 Пак «Премиум»' if tier%5==0 else f'{2+tier//10} 💎'))
                 free_state='получено' if tier in claimed_free else ('доступно' if tier<=level else 'закрыто')
                 premium_state='получено' if tier in claimed_premium else ('доступно' if tier<=level and bp.premium else 'закрыто')
                 lines.append(f'Ур. {tier}: Free — {free_reward} ({free_state}); Premium — {premium_reward} ({premium_state})')
