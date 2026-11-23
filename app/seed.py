@@ -55,8 +55,15 @@ async def seed_cards(session):
         existing_legacy = set((await session.scalars(
             select(Card.player_key).where(Card.source=='legacy116')
         )).all())
+        existing_legacy_cards = (await session.scalars(
+            select(Card).where(Card.source=='legacy116')
+        )).all()
+        existing_by_key = {card.player_key: card for card in existing_legacy_cards}
         for card in legacy_cards:
-            if card.player_key not in existing_legacy:
+            current = existing_by_key.get(card.player_key)
+            if current is None:
                 session.add(card)
-                existing_legacy.add(card.player_key)
+            else:
+                current.club = card.club
+                current.league = card.league
     await session.commit()
