@@ -177,12 +177,15 @@ async def render_team(session,uid):
 
 def team_keyboard():
     kb=InlineKeyboardBuilder()
-    kb.button(text='✏️ Изменить название команды',callback_data='teamrename:start')
+    # Team name action gets its own full-width row.
+    kb.button(text='✏️ ИЗМЕНИТЬ НАЗВАНИЕ КОМАНДЫ',callback_data='teamrename:start')
     for pos in POSITIONS:
+        # Add/remove actions for each position stay side by side.
         kb.button(text=f'➕ Поставить {pos}',callback_data=f'team:choose:{pos}')
         kb.button(text=f'➖ Убрать {pos}',callback_data=f'team:remove:{pos}')
     kb.button(text='⬅️ Главное меню',callback_data='player:home')
-    kb.adjust(2); return kb.as_markup()
+    kb.adjust(1, *([2] * len(POSITIONS)), 1)
+    return kb.as_markup()
 
 def collection_keyboard(cards, session):
     return None
