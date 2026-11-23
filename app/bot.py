@@ -2820,14 +2820,7 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
-                await remove_menu_photo()
-                try:
-                    photo=await telegram_post_photo()
-                    photo_message=await c.bot.send_photo(c.from_user.id,photo,caption='🏒 KOSH KHL CARDS')
-                    _MENU_PHOTO_MESSAGES[c.from_user.id]=photo_message.message_id
-                except Exception as e:
-                    print(f'Не удалось показать фото главного меню: {e}')
+                caption='🏒 <b>KOSH KHL CARDS</b>\\n━━━━━━━━━━━━━━\\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
                 await update_menu_text(caption,keyboard(), 'HTML')
             else:
                 await handler(player_message)
