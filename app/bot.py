@@ -1439,8 +1439,8 @@ async def main():
         elif action[1]=='wiz':
             kind=action[2]
             admin_steps[c.from_user.id]={'kind':kind,'step':'user'}
-            prompt={'givecoins':'💰 Введите имя и фамилию игрока точно как в Telegram. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите имя и фамилию игрока точно как в Telegram. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','ban':'🚫 Введите имя и фамилию игрока точно как в Telegram, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
-            await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
+            prompt={'givecoins':'💰 Введите Telegram ID игрока. Баланс монет будет изменён на указанную сумму.','givegems':'💎 Введите Telegram ID игрока. Баланс алмазов будет изменён на указанную сумму.','givecard':'🃏 Введите имя и фамилию игрока точно как в Telegram, которому нужно выдать карточку.','ban':'🚫 Введите Telegram ID игрока, которого нужно заблокировать.'}.get(kind,'Неизвестное действие.')
+            await c.message.answer(prompt+'\\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
@@ -1607,24 +1607,30 @@ async def main():
                     await m.answer(f'✅ Промокод {data["code"]} создан!\nНаграда: {data["coins"]} 🪙 · {data["gems"]} 💎 · {data["xp"]} XP · Premium: {"да" if data["premium"] else "нет"}\nЛимит: {limit if limit else "без ограничений"}',reply_markup=admin_keyboard())
                 return
             if step=='user':
-                query=' '.join(m.text.strip().split())
-                async with Session() as s:
-                    matches=(await s.scalars(select(User).where(
-                        func.lower(func.trim(User.first_name + ' ' + User.last_name))==query.lower()
-                    ).limit(10))).all()
-                    if not matches:
-                        await m.answer('Игрок с таким именем и фамилией не найден. Проверьте написание или отправьте /canceladmin.'); return
-                    if len(matches)>1:
-                        choices='\\n'.join(f'• {x.first_name} {x.last_name} (@{x.username or "без username"}) — ID {x.id}' for x in matches)
-                        await m.answer('Найдено несколько игроков с таким именем. Уточните через поддержку: \\n'+choices); return
-                    target=matches[0]; uid=target.id
+                if kind=='givecard':
+                    query=' '.join(m.text.strip().split())
+                    async with Session() as s:
+                        matches=(await s.scalars(select(User).where(
+                            func.lower(func.trim(User.first_name + ' ' + User.last_name))==query.lower()
+                        ).limit(10))).all()
+                        if not matches:
+                            await m.answer('Игрок с таким именем и фамилией не найден. Проверьте написание или отправьте /canceladmin.'); return
+                        if len(matches)>1:
+                            choices='\\n'.join(f'• {x.first_name} {x.last_name} (@{x.username or "без username"}) — ID {x.id}' for x in matches)
+                            await m.answer('Найдено несколько игроков с таким именем. Уточните через поддержку:\\n'+choices); return
+                        uid=matches[0].id
+                else:
+                    uid=int(m.text.strip())
+                    async with Session() as s:
+                        if not await s.get(User,uid):
+                            await m.answer('Игрок с таким Telegram ID не найден.'); return
                 state['uid']=uid
                 if kind in ('givecoins','givegems'):
                     state['step']='amount'
                     await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
                     state['step']='card'
-                    await m.answer('Шаг 2 из 2. Введите номер шаблона карточки, которую нужно выдать игроку.')
+                    await m.answer('Шаг 2 из 2. Введите ID шаблона карточки, которую нужно выдать игроку.')
                 elif kind=='ban':
                     async with Session() as s:
                         target=await s.get(User,uid); target.is_banned=True
