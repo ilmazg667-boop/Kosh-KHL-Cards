@@ -48,38 +48,47 @@ def format_msk(value, naive_is_utc=True):
 def admin(uid): return uid in ADMIN_IDS
 
 TELEGRAM_POST_URL='https://t.me/bullet_kings_forms/40'
-_TELEGRAM_POST_PHOTO=None
+_TELEGRAM_POST_PHOTO_BYTES=None
 
 async def telegram_post_photo():
-    global _TELEGRAM_POST_PHOTO
-    if _TELEGRAM_POST_PHOTO:
-        return _TELEGRAM_POST_PHOTO
+    global _TELEGRAM_POST_PHOTO_BYTES
+    if _TELEGRAM_POST_PHOTO_BYTES:
+        return _TELEGRAM_POST_PHOTO_BYTES
     import aiohttp, re
     page_url='https://t.me/s/bullet_kings_forms/40?single'
-    timeout=aiohttp.ClientTimeout(total=20)
+    timeout=aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession(timeout=timeout,headers={'User-Agent':'Mozilla/5.0'}) as session:
         async with session.get(page_url) as response:
             response.raise_for_status()
             page=await response.text()
-    # Telegram's public channel preview stores post photos in the CSS background.
-    patterns=[
-        r"""tgme_widget_message_photo_wrap[^>]*style="[^"]*?background-image\s*:\s*url\(['"]?(https?://[^'")]+)""",
-        r"""<img[^>]+src="(https?://[^"]+)"[^>]+class="[^"]*tgme_widget_message_photo""",
-        r"""background-image\s*:\s*url\(['"]?(https?://[^'")]+)"""
-    ]
-    for pattern in patterns:
-        match=re.search(pattern,page,re.I)
-        if match:
-            _TELEGRAM_POST_PHOTO=match.group(1).replace('&amp;','&')
-            return _TELEGRAM_POST_PHOTO
-    raise RuntimeError('В публикации Telegram не найдено изображение')
+        marker='data-post="bullet_kings_forms/40"'
+        pos=page.find(marker)
+        if pos < 0:
+            raise RuntimeError('Публикация #40 не найдена в публичной ленте Telegram')
+        block=page[max(0,pos-12000):pos+30000]
+        block_end=block.find('data-post="bullet_kings_forms/41"')
+        if block_end>0:
+            block=block[:block_end]
+        match=re.search(r"""tgme_widget_message_photo_wrap[^>]*?style="[^"]*?background-image\\s*:\\s*url\\(['"]?(https?://[^'")]+)""",block,re.I)
+        if not match:
+            match=re.search(r"""<img[^>]+class="[^"]*tgme_widget_message_photo[^"]*"[^>]+src="(https?://[^"]+)""",block,re.I)
+        if not match:
+            raise RuntimeError('В публикации #40 не найдено фото')
+        photo_url=match.group(1).replace('&amp;','&')
+        async with session.get(photo_url) as response:
+            response.raise_for_status()
+            data=await response.read()
+    if not data:
+        raise RuntimeError('Telegram вернул пустой файл изображения')
+    _TELEGRAM_POST_PHOTO_BYTES=data
+    return data
 
 async def send_main_menu(m, caption, reply_markup):
     try:
-        photo=await telegram_post_photo()
-        await m.answer_photo(photo=photo,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+        from aiogram.types import BufferedInputFile
+        photo_bytes=await telegram_post_photo()
+        await m.answer_photo(photo=BufferedInputFile(photo_bytes,filename='main-menu.jpg'),caption=caption,reply_markup=reply_markup,parse_mode='HTML')
     except Exception as e:
-        # Keep the bot usable if Telegram's public preview is temporarily unavailable.
         print(f'Не удалось получить фото главного меню из Telegram: {e}')
         await m.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
 
