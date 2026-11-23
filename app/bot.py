@@ -109,7 +109,11 @@ def collection_keyboard(cards, session):
     return None
 
 async def profile_text(u):
-    return (f'👤 Профиль · {u.first_name or u.id}\n🪙 {u.coins} монет · 💎 {u.gems} алмазов\n'
+    import html
+    player_name=html.escape(str(u.first_name or u.id))
+    return (f'👤 Профиль · {player_name}\n'
+            f'🆔 ID игрока: <code>{u.id}</code>  ← нажмите и удерживайте, чтобы скопировать\n'
+            f'🪙 {u.coins} монет · 💎 {u.gems} алмазов\n'
             f'🏆 {league_for_rating(u.rating)} · ⭐ {u.rating} рейтинга\n'
             f'📊 Матчи: {u.games} · Победы/поражения: {u.wins}/{u.losses}\n'
             f'📈 Лучший рейтинг сезона: {u.lifetime_rating}')
@@ -220,7 +224,7 @@ async def main():
         async with Session() as s:
             try: u=await active_user(s,m.from_user)
             except ValueError as e: await m.answer(str(e)); return
-            await m.answer(await profile_text(u))
+            await m.answer(await profile_text(u),parse_mode='HTML')
 
     @dp.message(Command('team'))
     @dp.message(F.text=='🏒 Моя команда')
