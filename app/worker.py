@@ -326,10 +326,11 @@ async def process_match(match_id,bot):
                         live_home+=1
                     else:
                         live_away+=1
-                messages.append(
-                    f"⏱ {minute}'\n{event.get('text','')}\n\n"
-                    f"🏒 {home_name} {live_home}:{live_away} {away_name}"
-                )
+                if event.get('type')=='shootout_shot':
+                    series=f"\n🎯 Буллиты: {event.get('shootout_home',0)} — {event.get('shootout_away',0)}"
+                    messages.append(f"⏱ {minute}' {event.get('text','')}\n🏒 {home_name} {live_home}:{live_away} {away_name}{series}")
+                else:
+                    messages.append(f"⏱ {minute}' {event.get('text','')}\n🏒 {home_name} {live_home}:{live_away} {away_name}")
         for message in messages:
             for chat_id in chat_ids:
                 await send(bot,chat_id,message,parse_mode='HTML')
