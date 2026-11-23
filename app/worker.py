@@ -382,31 +382,71 @@ async def close_old_tournaments(session,bot):
     cutoff=now().date().isoformat()
     olds=(await session.scalars(select(DailyTournament).where(DailyTournament.tournament_date<cutoff,DailyTournament.status=='open'))).all()
     notifications=[]
+    daily_prizes={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
     for old in olds:
-        # Finish games/searches/challenges created on that date before locking the leaderboard.
-        from datetime import datetime, timezone
         day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW).astimezone(timezone.utc)
         day_end=day_start+timedelta(days=1)
         unfinished=await session.scalar(select(Match.id).where(Match.created_at>=day_start,Match.created_at<day_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
         if unfinished:
             continue
-        winner=await session.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==old.id).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc()).limit(1))
-        if winner:
+        rows=(await session.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==old.id).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc(),TournamentEntry.user_id).limit(5))).all()
+        for place,row in enumerate(rows,1):
+            user=await session.get(User,row.user_id)
+            if not user: continue
+            coins,gems=daily_prizes[place]
+            user.coins=_counter(user.coins)+coins
+            user.gems=_counter(user.gems)+gems
+            notifications.append((user.id,f'🏆 Ежедневный турнир {old.tournament_date}: {place}-е место! Приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')))
+        if rows:
+            winner=rows[0]
             pool=(await session.scalars(select(Card).where(Card.ovr>=80,Card.ovr<=90,Card.active.is_(True),Card.source!='demo'))).all()
             weights={80:20,81:17,82:14,83:12,84:10,85:8,86:7,87:5,88:3,89:2,90:1}
-            by_ovr={ovr:[c for c in pool if c.ovr==ovr] for ovr in weights}
+            by_ovr={ovr:[card for card in pool if card.ovr==ovr] for ovr in weights}
             available=[ovr for ovr,group in by_ovr.items() if group]
             if available:
                 chosen_ovr=random.choices(available,weights=[weights[ovr] for ovr in available],k=1)[0]
                 card=random.choice(by_ovr[chosen_ovr])
                 session.add(OwnedCard(user_id=winner.user_id,card_id=card.id,slot=''))
-                notifications.append((winner.user_id,f'🏆 Вы заняли 1-е место в турнире {old.tournament_date}! Получена карточка {card.player_name} · {card.ovr} OVR.'))
-            else:
-                notifications.append((winner.user_id,'🏆 Вы заняли 1-е место в турнире, но карточки 80–90 OVR ещё не загружены. Администратор должен импортировать призовой пул.'))
+                notifications.append((winner.user_id,f'🎴 Дополнительный приз за 1-е место: {card.player_name} · {card.ovr} OVR.'))
         old.status='completed'; old.rewarded_at=now()
     if olds:
         await session.commit()
-    # Deliver only after the reward and completed status are durable, preventing duplicate prizes on restart.
+    for user_id,message in notifications:
+        await send(bot,user_id,message)
+
+async def close_old_clan_tournaments(session,bot):
+    current_date=now().date()
+    iso=current_date.isocalendar()
+    current_key=f'{iso.year}-W{iso.week:02d}'
+    current=await session.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==current_key))
+    if not current:
+        session.add(WeeklyClanTournament(week_key=current_key,status='open'))
+        await session.flush()
+    old_weeks=(await session.scalars(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key<current_key,WeeklyClanTournament.status=='open').order_by(WeeklyClanTournament.week_key))).all()
+    notifications=[]
+    weekly_prizes={1:(30000,60),2:(20000,40),3:(15000,30),4:(10000,20),5:(5000,10)}
+    for old in old_weeks:
+        year_text,week_text=old.week_key.split('-W')
+        week_start_date=date.fromisocalendar(int(year_text),int(week_text),1)
+        week_start=datetime.combine(week_start_date,datetime.min.time(),tzinfo=MOSCOW).astimezone(timezone.utc)
+        week_end=week_start+timedelta(days=7)
+        unfinished=await session.scalar(select(Match.id).where(Match.created_at>=week_start,Match.created_at<week_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
+        if unfinished:
+            continue
+        rows=(await session.scalars(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==old.id).order_by(WeeklyClanTournamentEntry.points.desc(),WeeklyClanTournamentEntry.wins.desc(),WeeklyClanTournamentEntry.goals.desc(),WeeklyClanTournamentEntry.clan_id).limit(5))).all()
+        for place,row in enumerate(rows,1):
+            clan=await session.get(Clan,row.clan_id)
+            if not clan: continue
+            coins,gems=weekly_prizes[place]
+            members=(await session.scalars(select(ClanMember).where(ClanMember.clan_id==clan.id))).all()
+            for member in members:
+                user=await session.get(User,member.user_id)
+                if not user: continue
+                user.coins=_counter(user.coins)+coins
+                user.gems=_counter(user.gems)+gems
+                notifications.append((user.id,f'🏆 Клан «{clan.name}» занял {place}-е место в недельной битве! Ваш приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')))
+        old.status='completed'; old.rewarded_at=now()
+    await session.commit()
     for user_id,message in notifications:
         await send(bot,user_id,message)
 
@@ -549,6 +589,7 @@ async def run_worker():
                     await expire_match_searches(s,bot)
                     await expire_trade_offers(s)
                     await close_old_tournaments(s,bot)
+                    await close_old_clan_tournaments(s,bot)
                     expired=(await s.scalars(select(Auction).where(Auction.status=='active',Auction.ends_at<=now()))).all()
                     for a in expired:
                         oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
