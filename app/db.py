@@ -26,6 +26,7 @@ async def init_db():
                 'users': {'last_name': "VARCHAR(128) NOT NULL DEFAULT ''"},
                 'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
+                'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
             }.items():
                 result = await conn.exec_driver_sql(f'PRAGMA table_info({table})')
                 existing = {row[1] for row in result.fetchall()}
@@ -39,5 +40,6 @@ async def init_db():
                 'ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_premium BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS xp_awarded INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS premium_awarded BOOLEAN NOT NULL DEFAULT FALSE',
+                'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
             ):
                 await conn.exec_driver_sql(statement)
