@@ -1856,16 +1856,15 @@ async def main():
                         .group_by(OwnedCard.user_id)
                     )).all()
                     avg_rows={uid:avg for uid,avg in averages}
-                    matches=(await session.scalars(
-                        select(Match).where(
-                            Match.status=='completed',
-                            or_(Match.home_user_id.in_(user_ids),Match.away_user_id.in_(user_ids))
-                        ).order_by(Match.id.desc())
-                    )).all()
-                    for match in matches:
-                        for uid in (match.home_user_id,match.away_user_id):
-                            if uid in user_ids and uid not in last_rows:
-                                last_rows[uid]=match
+                    for uid in user_ids:
+                        last=await session.scalar(
+                            select(Match).where(
+                                Match.status=='completed',
+                                or_(Match.home_user_id==uid,Match.away_user_id==uid)
+                            ).order_by(Match.id.desc()).limit(1)
+                        )
+                        if last:
+                            last_rows[uid]=last
             lines=[f'👥 СПИСОК ИГРОКОВ · страница {page+1}/{pages} · всего {total}',
                    'Сортировка: рейтинг и количество матчей. По 20 игроков на странице.']
             from html import escape
