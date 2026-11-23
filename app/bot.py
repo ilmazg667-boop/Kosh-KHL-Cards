@@ -308,7 +308,11 @@ async def main():
         else:
             try: rarity=RARITIES[int(parts[2])]; page=int(parts[3])
             except (ValueError,IndexError): await c.answer('Фильтр не найден.',show_alert=True); return
-        await render_collection(c.message,c.from_user.id,rarity,page)
+        from types import SimpleNamespace
+        async def edit_collection(text, **kwargs):
+            try: return await c.message.edit_text(text, **kwargs)
+            except Exception: return await c.message.answer(text, **kwargs)
+        await render_collection(SimpleNamespace(answer=edit_collection),c.from_user.id,rarity,page)
         await c.answer()
 
     @dp.callback_query(F.data.startswith('cardmenu:'))
@@ -734,7 +738,8 @@ async def main():
                         kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
                 if not count: lines.append('\nПока нет активных лотов.')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
-                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
+                try: await c.message.edit_text('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
+            except Exception: await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
             elif action=='mine':
                 listings=(await s.scalars(select(MarketListing).where(MarketListing.seller_id==c.from_user.id,MarketListing.status=='active').order_by(desc(MarketListing.created_at)))).all()
                 kb=InlineKeyboardBuilder(); lines=['📦 МОИ ЛОТЫ']
@@ -1326,10 +1331,16 @@ async def main():
                 u=await active_user(s,c.from_user)
                 if action=='quests':
                     from types import SimpleNamespace
-                    await quest(SimpleNamespace(from_user=c.from_user,text='/quest',answer=c.message.answer))
+                    async def edit_quests(text, **kwargs):
+                        try: return await c.message.edit_text(text, **kwargs)
+                        except Exception: return await c.message.answer(text, **kwargs)
+                    await quest(SimpleNamespace(from_user=c.from_user,text='/quest',answer=edit_quests))
                 elif action=='page':
                     from types import SimpleNamespace
-                    await battlepass(SimpleNamespace(from_user=c.from_user,text=f'/bp page {rest[0]}',answer=c.message.answer))
+                    async def edit_page(text, **kwargs):
+                        try: return await c.message.edit_text(text, **kwargs)
+                        except Exception: return await c.message.answer(text, **kwargs)
+                    await battlepass(SimpleNamespace(from_user=c.from_user,text=f'/bp page {rest[0]}',answer=edit_page))
                 elif action=='one':
                     premium=rest[0]=='premium'; tier=int(rest[1])
                     reward=await claim_bp_reward(s,u.id,tier,premium)
@@ -2234,7 +2245,9 @@ async def main():
                 kwargs['reply_markup']=InlineKeyboardMarkup(inline_keyboard=rows)
                 return kwargs
             async def proxy_answer(*args,**kwargs):
-                return await c.message.answer(*args,**add_player_back(kwargs))
+                kwargs=add_player_back(kwargs)
+                try: return await c.message.edit_text(*args,**kwargs)
+                except Exception: return await c.message.answer(*args,**kwargs)
             async def proxy_answer_photo(*args,**kwargs):
                 return await c.message.answer_photo(*args,**add_player_back(kwargs))
             from types import SimpleNamespace
