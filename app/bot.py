@@ -21,7 +21,7 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
     create_trade, resolve_trade, submit_auction_card, place_bid, make_tournament_entry,
     create_clan, join_clan, ensure_daily_tournament, ensure_season, progress_after_match,
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
-    create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner)
+    create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member)
 
 def keyboard():
     kb=InlineKeyboardBuilder()
@@ -205,7 +205,7 @@ async def main():
     @dp.message(Command('help'))
     @dp.message(F.text=='❔ Помощь')
     async def help_cmd(m):
-        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan leave | /clanbattle — таблица клановой войны\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
+        await m.answer('Команды игрока:\n/equip ID POS — поставить карточку в состав\n/pve — матчи против AI\n/pvp — обычный PvP поиск\n/ranked — рейтинговый поиск\n/challenge ID [ставка] — вызов игрока\n/cancelchallenge — отменить исходящий вызов\n/sell ID PRICE — выставить на рынок\n/buy ID — купить лот\n/trades — обмены карточками через кнопки\n/auction_submit ID — передать карточку администрации\n/bid AUCTION_ID AMOUNT — ставка\n/tournament — ежедневный турнир\n/clan create НАЗВАНИЕ | /clan join ID | /clan invite USER_ID | /clan role USER_ID admin|member | /clan transfer USER_ID | /clan kick USER_ID | /clan leave | /clanbattle — таблица клановой войны\n/bp — Battle Pass с 10 страницами уровней\n/match — статус и текущая трансляция\n/leaderboard — рейтинг игроков\n/promo КОД — активировать промокод.')
 
     @dp.message(F.text=='🪙 Баланс')
     async def balance(m):
@@ -1264,6 +1264,8 @@ async def main():
         kb=InlineKeyboardBuilder()
         if is_member:
             kb.button(text='⚔️ Клановая битва',callback_data='clanmenu:battle')
+            kb.button(text='👥 Участники клана',callback_data='clanmenu:members')
+            kb.button(text='🏆 Рейтинг кланов',callback_data='clanmenu:top')
             kb.button(text='👥 Пригласить игрока',callback_data='clanmenu:invite')
             kb.button(text='🚪 Покинуть клан',callback_data='clanmenu:leave')
         else:
@@ -1295,6 +1297,12 @@ async def main():
                         return
                     await m.answer('Приглашение отправлено.')
                 except ValueError as e: await m.answer(str(e))
+                return
+            if len(parts)>=3 and parts[1].lower()=='kick':
+                try:
+                    await kick_clan_member(s,m.from_user.id,int(parts[2]))
+                    await m.answer('Участник исключён из клана.')
+                except (ValueError,TypeError) as e: await m.answer(str(e))
                 return
             if len(parts)>=2 and parts[1].lower()=='leave':
                 try: await leave_clan(s,m.from_user.id); await m.answer('Вы вышли из клана.')
@@ -1343,6 +1351,27 @@ async def main():
             elif action=='leave':
                 try: await leave_clan(s,c.from_user.id); await c.message.answer('Вы покинули клан.',reply_markup=clan_keyboard(False))
                 except ValueError as e: await c.answer(str(e),show_alert=True); return
+            elif action=='members':
+                if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
+                clan_obj=await s.get(Clan,member.clan_id)
+                rows=(await s.execute(select(ClanMember,User).join(User,User.id==ClanMember.user_id).where(ClanMember.clan_id==member.clan_id))).all()
+                role_names={'owner':'👑 Владелец','admin':'🛡 Администратор','member':'Игрок'}
+                rows.sort(key=lambda pair:(0 if pair[0].role=='owner' else 1 if pair[0].role=='admin' else 2,-(pair[1].rating or 0)))
+                lines=[f'👥 СОСТАВ КЛАНА «{clan_obj.name}» · {len(rows)}/25','']
+                for idx,(mem,user) in enumerate(rows,1):
+                    display=(user.first_name or user.username or f'Игрок {user.id}').replace('<','').replace('>','')
+                    lines.append(f'{idx}. {role_names.get(mem.role,"Игрок")} · {display} · ⭐ {user.rating or 0}')
+                lines.append('')
+                lines.append('Управление: /clan role ID admin|member (только владелец); /clan kick ID (владелец или администратор).')
+                await c.message.answer('\\n'.join(lines))
+            elif action=='top':
+                clans=(await s.scalars(select(Clan).order_by(desc(Clan.points),desc(Clan.rating),Clan.created_at).limit(15))).all()
+                lines=['🏆 РЕЙТИНГ КЛАНОВ','Сортировка по суммарным очкам клановых матчей и рейтингу.','']
+                for idx,cl in enumerate(clans,1):
+                    count=await s.scalar(select(func.count(ClanMember.id)).where(ClanMember.clan_id==cl.id))
+                    lines.append(f'{idx}. 🛡 {cl.name} · {cl.points or 0} очк. · рейтинг {cl.rating or 0} · {count}/25')
+                if not clans: lines.append('Пока нет созданных кланов.')
+                await c.message.answer('\\n'.join(lines))
             elif action=='battle':
                 if not member: await c.answer('Сначала вступите в клан.',show_alert=True); return
                 t=await ensure_daily_tournament(s)
