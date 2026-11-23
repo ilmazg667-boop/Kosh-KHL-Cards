@@ -452,9 +452,56 @@ async def claim_bp_reward(session,user_id,level,premium=False):
     await session.commit()
     return reward_text
 
+def _card_import_identities(card):
+    edition = (
+        (card.season or '').strip(),
+        (card.club or '').strip().casefold(),
+        (card.league or '').strip().casefold(),
+        (card.position or '').strip().upper(),
+        (card.rarity or '').strip().casefold(),
+        int(card.ovr),
+        (card.image_url or '').strip(),
+    )
+    name_identity = ('name', (card.player_name or '').strip().casefold(), *edition)
+    player_key = (card.player_key or '').strip().casefold()
+    player_identity = ('key', player_key, *edition) if player_key else None
+    return name_identity, player_identity
+
+
 async def import_cards(session,path):
     cards=read_csv_cards(path)
-    session.add_all(cards); await session.commit(); return len(cards)
+    existing=(await session.scalars(select(Card))).all()
+    known_names=set()
+    known_player_keys=set()
+    known_unkeyed_names=set()
+    for card in existing:
+        name_identity, player_identity = _card_import_identities(card)
+        known_names.add(name_identity)
+        if player_identity:
+            known_player_keys.add(player_identity)
+        else:
+            known_unkeyed_names.add(name_identity)
+
+    added=[]
+    for card in cards:
+        name_identity, player_identity = _card_import_identities(card)
+        duplicate=(
+            player_identity in known_player_keys or name_identity in known_unkeyed_names
+            if player_identity else name_identity in known_names
+        )
+        if duplicate:
+            continue
+        added.append(card)
+        known_names.add(name_identity)
+        if player_identity:
+            known_player_keys.add(player_identity)
+        else:
+            known_unkeyed_names.add(name_identity)
+
+    if added:
+        session.add_all(added)
+        await session.commit()
+    return len(added)
 
 async def import_chemistry(session,path):
     import csv
