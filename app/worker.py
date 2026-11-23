@@ -423,36 +423,62 @@ async def award_pack_card(session,user_id,pack_name):
     session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
     return card
 
+async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
+    """Pay final standings, publish results, then remove tournament data."""
+    from .models import TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry
+    entries=(await session.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tournament.id).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc(),TournamentEntry.user_id))).all()
+    defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
+    ranked=[]
+    for place,entry in enumerate(entries,1):
+        user=await session.get(User,entry.user_id)
+        coins=gems=0
+        if place<=5:
+            cfg=await session.get(TournamentPrizeConfig,place)
+            coins,gems=(cfg.coins,cfg.gems) if cfg else defaults[place]
+            if user and not user.is_banned:
+                user.coins=_counter(user.coins)+coins
+                user.gems=_counter(user.gems)+gems
+        ranked.append((place,entry,user,coins,gems))
+    extra=''
+    if ranked and ranked[0][2] and not ranked[0][2].is_banned:
+        card=await award_pack_card(session,ranked[0][2].id,'Элитный')
+        if card: extra=f'\\n🎁 Дополнительный пак «Элитный»: {card.player_name} · {card.ovr} OVR.'
+    table=[]
+    for place,entry,user,coins,gems in ranked:
+        name=(user.first_name or f'Игрок {entry.user_id}') if user else f'Игрок {entry.user_id}'
+        table.append(f'{place}. {name} — {entry.points} очк. · {entry.wins} побед · {entry.goals} голов')
+    title=tournament.title or 'Ежедневный турнир'
+    header=f'🏁 Турнир «{title}» ({tournament.tournament_date}) завершён!\\n\\n🏆 ИТОГОВАЯ ТУРНИРНАЯ ТАБЛИЦА\\n'+('\\n'.join(table) if table else 'Участников нет.')
+    for place,entry,user,coins,gems in ranked:
+        if user and not user.is_banned:
+            message=header+f'\\n\\n🎉 Ваше место: {place}.\\n🎁 Награда: {coins} 🪙 и {gems} 💎.'
+            if coins or gems: message+=' Награда начислена на баланс.'
+            if place==1: message+=extra
+            await send(bot,user.id,message)
+    await session.execute(TournamentEntry.__table__.delete().where(TournamentEntry.tournament_id==tournament.id))
+    await session.execute(ClanTournamentEntry.__table__.delete().where(ClanTournamentEntry.tournament_id==tournament.id))
+    tid=tournament.id
+    await session.delete(tournament)
+    await session.commit()
+    logger.info('Daily tournament %s finalized, rewards paid, standings announced and data deleted',tid)
+
+
 async def close_old_tournaments(session,bot):
-    from .models import DailyTournament, TournamentEntry, OwnedCard, Card
-    cutoff=now().date().isoformat()
-    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.tournament_date<cutoff,DailyTournament.status=='open'))).all()
-    notifications=[]
-    daily_prizes={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
+    today=now()
+    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.status=='open'))).all()
     for old in olds:
+        if old.ends_at:
+            deadline=old.ends_at
+            if deadline.tzinfo is None: deadline=deadline.replace(tzinfo=timezone.utc)
+            expired=deadline<=today.astimezone(timezone.utc)
+        else:
+            expired=old.tournament_date<today.date().isoformat()
+        if not expired: continue
         day_start=datetime.fromisoformat(old.tournament_date).replace(tzinfo=MOSCOW).astimezone(timezone.utc)
         day_end=day_start+timedelta(days=1)
         unfinished=await session.scalar(select(Match.id).where(Match.created_at>=day_start,Match.created_at<day_end,Match.status.in_(['searching','challenge','queued','running'])).limit(1))
-        if unfinished:
-            continue
-        rows=(await session.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==old.id).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc(),TournamentEntry.user_id).limit(5))).all()
-        for place,row in enumerate(rows,1):
-            user=await session.get(User,row.user_id)
-            if not user: continue
-            coins,gems=daily_prizes[place]
-            user.coins=_counter(user.coins)+coins
-            user.gems=_counter(user.gems)+gems
-            notifications.append((user.id,f'🏆 Ежедневный турнир {old.tournament_date}: {place}-е место! Приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')))
-        if rows:
-            winner=rows[0]
-            card=await award_pack_card(session,winner.user_id,'Элитный')
-            if card:
-                notifications.append((winner.user_id,f'🎁 Пак «Элитный» за 1-е место открыт автоматически! В коллекцию добавлена карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}.'))
-        old.status='completed'; old.rewarded_at=now()
-    if olds:
-        await session.commit()
-    for user_id,message in notifications:
-        await send(bot,user_id,message)
+        if unfinished: continue
+        await finalize_daily_tournament(session,old,bot)
 
 async def close_old_clan_tournaments(session,bot):
     current_date=now().date()
