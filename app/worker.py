@@ -6,8 +6,8 @@ from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL
 from .db import Session, init_db
-from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger
-from .game import simulate, team_power, chemistry, league_for_rating
+from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger, PackConfig
+from .game import simulate, team_power, chemistry, league_for_rating, PACKS, rarity_pick
 from .services import now, ensure_season, ensure_daily_tournament, progress_after_match, settle_auction, expire_trade_offers
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO').upper(), format='%(asctime)s %(levelname)s [match-worker] %(message)s')
@@ -320,10 +320,14 @@ def format_result(m,home_user,away_user,for_home=True):
     own_pp_goals=sum(1 for g in (own_goals or []) if g.get('powerplay'))
     opp_pp_goals=sum(1 for g in (opp_goals or []) if g.get('powerplay'))
     title+=f"\n⚠️ <b>Удаления: {own_pen}:{opp_pen}</b> · 🔵 <b>Реализованное большинство: {own_pp_goals}:{opp_pp_goals}</b> (возможностей {own_pp}:{opp_pp})"
-    scorers=[g.get('scorer') for g in (own_goals or []) if g.get('scorer')]
-    if scorers:
-        top=Counter(scorers).most_common(1)[0][0]
-        title+=f"\n⭐ Лучший игрок: <b>{html.escape(str(top))}</b>"
+    if point_players:
+        top=max(point_players,key=lambda name:(goals_by_player[name]+assists_by_player[name],goals_by_player[name],assists_by_player[name],str(name)))
+        team_name=player_team.get(top,'Команда не определена')
+        title+=(
+            f"\\n⭐ <b>MVP матча: {html.escape(str(top))}</b>"
+            f"\\n🏒 Команда: <b>{html.escape(str(team_name))}</b>"
+            f"\\n📊 Почему лучший: <b>{goals_by_player[top]} гола(ов) + {assists_by_player[top]} ассиста(ов) = {goals_by_player[top]+assists_by_player[top]} результативных очка</b>."
+        )
     if m.mode=='pve' and for_home:
         awarded=m.reward if m.home_score>m.away_score else int(m.reward*.5)
         title+=f"\n🪙 Начислено: <b>{awarded}</b> монет"
@@ -379,6 +383,27 @@ async def process_match(match_id,bot):
     await finish_match(match_id,bot)
     logger.info('Finished processing match #%s', match_id)
 
+async def award_pack_card(session,user_id,pack_name):
+    """Award and open a configured pack without charging the winner."""
+    pack=PACKS[pack_name]
+    config=await session.get(PackConfig,pack_name)
+    rarity=rarity_pick(config.odds if config else pack['odds'])
+    cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
+    if not cards:
+        available=(await session.scalars(select(Card.rarity).where(Card.active.is_(True),Card.source!='demo').distinct())).all()
+        if not available:
+            logger.warning('Cannot award %s pack to %s: no real cards in database',pack_name,user_id)
+            return None
+        from .game import RARITY_RANGES
+        target=RARITY_RANGES[rarity]
+        midpoint=(target[0]+target[1])/2
+        nearest=min(available,key=lambda value:abs(sum(RARITY_RANGES.get(value,target))/2-midpoint))
+        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==nearest,Card.source!='demo'))).all()
+    if not cards: return None
+    card=random.choice(cards)
+    session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
+    return card
+
 async def close_old_tournaments(session,bot):
     from .models import DailyTournament, TournamentEntry, OwnedCard, Card
     cutoff=now().date().isoformat()
@@ -401,15 +426,9 @@ async def close_old_tournaments(session,bot):
             notifications.append((user.id,f'🏆 Ежедневный турнир {old.tournament_date}: {place}-е место! Приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')))
         if rows:
             winner=rows[0]
-            pool=(await session.scalars(select(Card).where(Card.ovr>=80,Card.ovr<=90,Card.active.is_(True),Card.source!='demo'))).all()
-            weights={80:20,81:17,82:14,83:12,84:10,85:8,86:7,87:5,88:3,89:2,90:1}
-            by_ovr={ovr:[card for card in pool if card.ovr==ovr] for ovr in weights}
-            available=[ovr for ovr,group in by_ovr.items() if group]
-            if available:
-                chosen_ovr=random.choices(available,weights=[weights[ovr] for ovr in available],k=1)[0]
-                card=random.choice(by_ovr[chosen_ovr])
-                session.add(OwnedCard(user_id=winner.user_id,card_id=card.id,slot=''))
-                notifications.append((winner.user_id,f'🎴 Дополнительный приз за 1-е место: {card.player_name} · {card.ovr} OVR.'))
+            card=await award_pack_card(session,winner.user_id,'Элитный')
+            if card:
+                notifications.append((winner.user_id,f'🎁 Пак «Элитный» за 1-е место открыт автоматически! В коллекцию добавлена карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}.'))
         old.status='completed'; old.rewarded_at=now()
     if olds:
         await session.commit()
@@ -446,7 +465,11 @@ async def close_old_clan_tournaments(session,bot):
                 if not user: continue
                 user.coins=_counter(user.coins)+coins
                 user.gems=_counter(user.gems)+gems
-                notifications.append((user.id,f'🏆 Клан «{clan.name}» занял {place}-е место в недельной битве! Ваш приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')))
+                message=f'🏆 Клан «{clan.name}» занял {place}-е место в недельной битве! Ваш приз: {coins:,} 🪙 и {gems} 💎.'.replace(',',' ')
+                if place==1:
+                    card=await award_pack_card(session,user.id,'Премиум')
+                    if card: message+=f'\\n🎁 Пак «Премиум» открыт автоматически: {card.player_name} · {card.ovr} OVR · {card.rarity}.'
+                notifications.append((user.id,message))
         old.status='completed'; old.rewarded_at=now()
     await session.commit()
     for user_id,message in notifications:
