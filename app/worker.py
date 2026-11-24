@@ -199,6 +199,23 @@ async def finish_match(match_id,bot):
                         reason='pve_match_win' if won else 'pve_match_loss',reference_id=m.id))
                     if won and not is_ot: home.gems+=3
                     await progress_after_match(s,home.id,won,len(m.home_goals or []),home.rating)
+                    # PvE matches against the bot count for the daily tournament too.
+                    tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
+                    t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
+                    if t and t.status=='open':
+                        entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==home.id))
+                        if not entry:
+                            entry=TournamentEntry(tournament_id=t.id,user_id=home.id)
+                            s.add(entry)
+                        entry.points=_counter(entry.points)
+                        entry.wins=_counter(entry.wins)
+                        entry.goals=_counter(entry.goals)
+                        if won:
+                            entry.points+=2
+                            entry.wins+=1
+                        elif m.shootout:
+                            entry.points+=1
+                        entry.goals+=_counter(m.home_score)
             else:
                 if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
                 if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
