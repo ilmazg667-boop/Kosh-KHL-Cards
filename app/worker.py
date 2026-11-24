@@ -473,7 +473,14 @@ async def close_old_tournaments(session,bot):
     current=await session.scalar(
         select(DailyTournament).where(DailyTournament.status=='open').order_by(DailyTournament.id.desc())
     )
-    if current and current_time.hour==20 and current_time.minute<30:
+    # Send the 20:00 reminder only if the tournament existed at least 10 hours
+    # before the reminder time. A newly created tournament should not nag admins.
+    reminder_at=datetime.combine(current_time.date(),datetime.min.time(),tzinfo=MOSCOW)+timedelta(hours=20)
+    created_at=current.created_at if current else None
+    if created_at and created_at.tzinfo is None:
+        created_at=created_at.replace(tzinfo=timezone.utc)
+    reminder_eligible=bool(current and created_at and created_at.astimezone(MOSCOW)<=reminder_at-timedelta(hours=10))
+    if reminder_eligible and current_time.hour==20 and current_time.minute<30:
         from .models import AuditLog
         reminded=await session.scalar(select(AuditLog.id).where(
             AuditLog.action=='tournament_reminder_20',
