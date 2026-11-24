@@ -1876,7 +1876,8 @@ async def main():
                 premium_reward='🏒 Семён Кошелев · 99 OVR' if tier==100 else ('🎴 Бонусная карточка' if tier%10==0 else ('📦 Пак «Премиум»' if tier%5==0 else f'{5+tier//5} 💎'))
                 free_state='✅ получено' if tier in claimed_free else ('🟢 доступно' if tier<=level else '🔒 закрыто')
                 premium_state='✅ получено' if tier in claimed_premium else ('🟢 доступно' if tier<=level and bp.premium else '🔒 закрыто')
-                lines.append(f'Ур. {tier}: Free — {free_reward} ({free_state}); Premium — {premium_reward} ({premium_state})')
+                tier_xp=bp_xp_required(tier)-bp_xp_required(tier-1)
+                lines.append(f'Ур. {tier} · нужно {tier_xp} XP: Free — {free_reward} ({free_state}); Premium — {premium_reward} ({premium_state})')
                 if tier<=level and tier not in claimed_free: kb.button(text=f'🎁 Free · ур. {tier}',callback_data=f'bp:one:free:{tier}')
                 if tier<=level and bp.premium and tier not in claimed_premium: kb.button(text=f'💎 Premium · ур. {tier}',callback_data=f'bp:one:premium:{tier}')
             if page>1: kb.button(text='⬅️ Страница '+str(page-1),callback_data=f'bp:page:{page-1}')
@@ -1888,7 +1889,7 @@ async def main():
             if free_ready_count>1: kb.button(text='🎁 Забрать Free за эту страницу',callback_data=f'bp:claim:free:{page}')
             if bp.premium and premium_ready_count>1: kb.button(text='💎 Забрать Premium за эту страницу',callback_data=f'bp:claim:premium:{page}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await m.answer('\n'.join(lines)+'\n\nЗа матч начисляется 100 XP. Требование XP для каждого следующего уровня постепенно растёт. За задания начисляется от 200 до 1 500 XP.',reply_markup=kb.as_markup())
+            await m.answer('\n'.join(lines)+'\n\nЗа победу начисляется 200 XP, за поражение — 50 XP. XP для каждого уровня указано рядом с его номером. За задания начисляется от 200 до 1 500 XP.',reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('bp:'))
     async def battlepass_button(c:CallbackQuery):
@@ -2397,8 +2398,8 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         state=admin_steps.get(c.from_user.id)
-        if not state or state.get('kind')!='givecard':
-            await c.answer('Начните выдачу карточки заново из админ-меню.',show_alert=True); return
+        if not state or state.get('kind') not in ('givecard','promo') or (state.get('kind')=='promo' and state.get('step') not in ('cards','team','player','exclusive_player')):
+            await c.answer('Начните выбор карточек заново из админ-меню.',show_alert=True); return
         parts=c.data.split(':')
         action=parts[1] if len(parts)>1 else ''
         if action=='cancel':
@@ -2449,32 +2450,58 @@ async def main():
             try: cid=int(parts[2])
             except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
             async with Session() as s:
-                target=await s.get(User,state.get('uid'))
+                target=await s.get(User,state.get('uid')) if state.get('kind')=='givecard' else None
                 card=await s.get(Card,cid)
-                if not target or not card or not card.active or card.source=='demo' or card.player_name!='Семён Кошелев' or card.ovr not in (95,99):
+                if (state.get('kind')=='givecard' and not target) or not card or not card.active or card.source=='demo' or card.player_name!='Семён Кошелев' or card.ovr not in (95,99):
                     await c.answer('Эксклюзивная карточка больше недоступна.',show_alert=True); return
-                s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
-                await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
-                target_id=target.id; player_name=card.player_name; card_id=card.id; ovr=card.ovr
-            admin_steps.pop(c.from_user.id,None)
-            try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка: {player_name} · {ovr} OVR.')
-            except Exception: pass
-            await c.message.answer(f'✅ Эксклюзивная карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
+                if state.get('kind')=='promo':
+                    ids=state['data'].setdefault('card_ids',[])
+                    if card.id in ids: await c.answer('Эта карточка уже выбрана. Выберите другую.',show_alert=True); return
+                    ids.append(card.id)
+                else:
+                    s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
+                    await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
+                target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+            if state.get('kind')=='promo':
+                if len(state['data']['card_ids'])<state['data']['cards_count']:
+                    state.update(step='cards',league='',club='')
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    await c.message.answer(f'Выбрана карточка {player_name} · {ovr} OVR. Теперь выберите карточку {len(state["data"]["card_ids"])+1} из {state["data"]["cards_count"]}:',reply_markup=kb.as_markup())
+                else:
+                    state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
+            else:
+                admin_steps.pop(c.from_user.id,None)
+                try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка: {player_name} · {ovr} OVR.')
+                except Exception: pass
+                await c.message.answer(f'✅ Эксклюзивная карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         elif action=='player':
             try: cid=int(parts[2])
             except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
             async with Session() as s:
-                target=await s.get(User,state.get('uid'))
+                target=await s.get(User,state.get('uid')) if state.get('kind')=='givecard' else None
                 card=await s.get(Card,cid)
-                if not target or not card or not card.active or card.source=='demo' or card.league!=state.get('league') or card.club!=state.get('club'):
+                if (state.get('kind')=='givecard' and not target) or not card or not card.active or card.source=='demo' or card.league!=state.get('league') or card.club!=state.get('club'):
                     await c.answer('Игрок или карточка больше недоступны.',show_alert=True); return
-                s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
-                await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
-                target_id=target.id; player_name=card.player_name; card_id=card.id; ovr=card.ovr
-            admin_steps.pop(c.from_user.id,None)
-            try: await c.bot.send_message(target_id,f'🃏 Вам выдана карточка: {player_name} · {ovr} OVR.')
-            except Exception: pass
-            await c.message.answer(f'✅ Карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
+                if state.get('kind')=='promo':
+                    ids=state['data'].setdefault('card_ids',[])
+                    if card.id in ids: await c.answer('Эта карточка уже выбрана. Выберите другую.',show_alert=True); return
+                    ids.append(card.id)
+                else:
+                    s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
+                    await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
+                target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+            if state.get('kind')=='promo':
+                if len(state['data']['card_ids'])<state['data']['cards_count']:
+                    state.update(step='cards',league='',club='')
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    await c.message.answer(f'Выбрана карточка {player_name} · {ovr} OVR. Теперь выберите карточку {len(state["data"]["card_ids"])+1} из {state["data"]["cards_count"]}:',reply_markup=kb.as_markup())
+                else:
+                    state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
+            else:
+                admin_steps.pop(c.from_user.id,None)
+                try: await c.bot.send_message(target_id,f'🃏 Вам выдана карточка: {player_name} · {ovr} OVR.')
+                except Exception: pass
+                await c.message.answer(f'✅ Карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         await c.answer()
 
     @dp.message(Command('canceladmin'))
@@ -2598,16 +2625,26 @@ async def main():
                 elif step=='premium':
                     value=m.text.strip().lower()
                     if value not in ('да','нет','yes','no'): await m.answer('Ответьте «да» или «нет».'); return
-                    data['premium']=value in ('да','yes'); state['step']='limit'
-                    await m.answer('Шаг 6 из 6. Укажите максимальное число активаций. 0 — без ограничений.')
+                    data['premium']=value in ('да','yes'); state['step']='cards_count'
+                    await m.answer('Шаг 6 из 7. Сколько разных карточек игроков будет выдаваться за промокод? Укажите число от 0 до 20.')
+                elif step=='cards_count':
+                    count=int(m.text.strip())
+                    if count<0 or count>20: raise ValueError()
+                    data['card_ids']=[]; data['cards_count']=count
+                    if count:
+                        state['step']='cards'
+                        kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                        await m.answer(f'Выберите карточку 1 из {count}:',reply_markup=kb.as_markup())
+                    else:
+                        state['step']='limit'; await m.answer('Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
                 elif step=='limit':
                     limit=int(m.text.strip())
                     if limit<0: raise ValueError()
-                    if not any((data.get('coins',0),data.get('gems',0),data.get('xp',0),data.get('premium',False))):
-                        await m.answer('Укажите хотя бы одну награду: монеты, алмазы, XP или Premium.'); return
+                    if not any((data.get('coins',0),data.get('gems',0),data.get('xp',0),data.get('premium',False),data.get('card_ids',[]))):
+                        await m.answer('Укажите хотя бы одну награду: монеты, алмазы, XP, Premium или карточки.'); return
                     async with Session() as s:
                         s.add(PromoCode(code=data['code'],reward_coins=data['coins'],reward_gems=data['gems'],
-                            reward_xp=data['xp'],reward_premium=data['premium'],max_uses=limit,uses_count=0,active=True))
+                            reward_xp=data['xp'],reward_premium=data['premium'],reward_card_ids=data.get('card_ids',[]),max_uses=limit,uses_count=0,active=True))
                         await audit(s,m.from_user.id,'promo_create',0,f'{data["code"]}:{data["coins"]}:{data["gems"]}:{data["xp"]}:{data["premium"]}:{limit}')
                         await s.commit()
                     admin_steps.pop(m.from_user.id,None)
@@ -2711,6 +2748,12 @@ async def main():
             if used:
                 await m.answer('Вы уже активировали этот промокод.'); return
             u.coins+=promo.reward_coins; u.gems+=promo.reward_gems; promo.uses_count+=1
+            awarded_cards=[]
+            for card_id in (promo.reward_card_ids or []):
+                card=await s.get(Card,card_id)
+                if card:
+                    s.add(OwnedCard(user_id=u.id,card_id=card.id,slot=''))
+                    awarded_cards.append(f'{card.player_name} · {card.ovr} OVR')
             if promo.reward_xp or promo.reward_premium:
                 bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
                 if not bp:
@@ -2721,7 +2764,7 @@ async def main():
             s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems,
                 xp_awarded=promo.reward_xp,premium_awarded=promo.reward_premium))
             await s.commit()
-        await m.answer(f'🎉 Промокод {code} активирован!\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎 · {promo.reward_xp} XP · Premium: {"да" if promo.reward_premium else "нет"}')
+        await m.answer(f'🎉 Промокод {code} активирован!\nПолучено: {promo.reward_coins} 🪙 · {promo.reward_gems} 💎 · {promo.reward_xp} XP · Premium: {"да" if promo.reward_premium else "нет"}'+('\n🃏 Карточки: '+'; '.join(awarded_cards) if awarded_cards else ''))
 
     @dp.message(Command('givecoins'))
     async def givecoins(m):
