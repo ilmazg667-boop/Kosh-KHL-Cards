@@ -1345,12 +1345,12 @@ async def main():
                 current_bid=a.highest_bid or a.start_price
                 detail_text=(
                     f'🔨 АУКЦИОН · {card.player_name}\n\n'
-                    f'🏒 КАРТОЧКА\nИгрок: {card.player_name}\nРейтинг: {card.ovr} OVR\n'
-                    f'Позиция: {card.position}\nРедкость: {card.rarity}\nКлуб: {card.club}\n'
-                    f'Страна: {card.country}\nЛига: {card.league}'
-                    +(f'\nСезон: {card.season}' if card.season else '')
-                    +f'\n\n💰 ТЕКУЩАЯ СТАВКА: {current_bid} 🪙\nШаг ставки: {a.bid_step} 🪙'
-                    +f'\nОкончание: {end_text[:5]} {end_text[11:16]} МСК'
+                    f'🏒 КАРТОЧКА\n👤 Игрок: {card.player_name}\n⭐ Рейтинг: {card.ovr} OVR\n'
+                    f'📍 Позиция: {card.position}\n💎 Редкость: {card.rarity}\n🏒 Клуб: {card.club}\n'
+                    f'🌍 Страна: {card.country}\n🏆 Лига: {card.league}'
+                    +(f'\n📅 Сезон: {card.season}' if card.season else '')
+                    +f'\n\n💰 ТЕКУЩАЯ СТАВКА: {current_bid} 🪙\n📈 Шаг ставки: {a.bid_step} 🪙'
+                    +f'\n🗓 Окончание: {end_text[:5]} {end_text[11:16]} МСК'
                     +f'\n⏳ Осталось: {auction_countdown(a.ends_at)}'
                 )
                 kb=InlineKeyboardBuilder()
