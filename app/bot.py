@@ -2534,7 +2534,7 @@ async def main():
                     await m.answer(f'✅ Premium Pass выдан игроку {uid}.',reply_markup=admin_keyboard())
                 elif kind=='givebpxp':
                     state['step']='amount'
-                    await m.answer('Шаг 2 из 2. Сколько уровней Battle Pass начислить? 1 уровень = 100 XP.')
+                    await m.answer('Шаг 2 из 2. Сколько уровней Battle Pass начислить? Каждый следующий уровень требует больше XP.')
                 elif kind=='ban':
                     async with Session() as s:
                         target=await s.get(User,uid); target.is_banned=True
@@ -3044,7 +3044,7 @@ async def main():
                 parse_mode=kwargs.pop('parse_mode',None)
                 reply_markup=kwargs.pop('reply_markup',None)
                 wallet=await wallet_line()
-                if wallet and '🪙' not in str(text_value): text_value=f'{wallet}\n\n{text_value}'
+                if wallet and wallet not in str(text_value): text_value=f'{wallet}\n\n{text_value}'
                 return await update_menu_text(text_value,reply_markup,parse_mode)
 
             async def proxy_answer_photo(*args,**kwargs):
@@ -3054,7 +3054,7 @@ async def main():
                 kwargs=add_player_back(kwargs)
                 wallet=await wallet_line()
                 caption=caption or ''
-                if wallet and '🪙' not in caption: caption=f'{wallet}\n\n{caption}'
+                if wallet and wallet not in caption: caption=f'{wallet}\n\n{caption}'
                 return await c.bot.send_photo(
                     c.from_user.id,photo=photo,caption=caption,
                     reply_markup=kwargs.get('reply_markup'),
