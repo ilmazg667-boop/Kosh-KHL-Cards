@@ -2256,6 +2256,8 @@ async def main():
                 if not t:
                     await c.answer('Турнир не найден.',show_alert=True); return
                 t.status=mode
+                if mode=='open' and (now().hour>20 or (now().hour==20 and now().minute>=30)):
+                    await audit(s,c.from_user.id,'tournament_started_after_2030',tid,now().date().isoformat())
                 notices=[]
                 if mode=='open':
                     users=(await s.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
