@@ -1301,7 +1301,7 @@ async def main():
         kb=InlineKeyboardBuilder()
         kb.button(text='➕ Начать аукцион',callback_data='auctionmenu:start')
         kb.button(text='🔥 Текущие аукционы',callback_data='auctionmenu:current')
-        kb.button(text='⏹ Завершить мой аукцион',callback_data='auctionmenu:end')
+        kb.button(text='📌 Мои аукционы',callback_data='auctionmenu:end')
         kb.button(text='📚 История аукционов',callback_data='auctionmenu:history')
         kb.button(text='⬅️ Главное меню',callback_data='player:home')
         kb.adjust(1); return kb.as_markup()
@@ -1353,13 +1353,13 @@ async def main():
                     await c.message.answer(text_value,reply_markup=kb.as_markup())
             elif action=='end':
                 rows=(await s.scalars(select(Auction).where(Auction.owner_id==c.from_user.id,Auction.status.in_(['submitted','active'])).order_by(Auction.created_at.desc()))).all()
-                kb=InlineKeyboardBuilder(); lines=['⏹ ВАШИ АУКЦИОНЫ']
+                kb=InlineKeyboardBuilder(); lines=['📌 ВАШИ АУКЦИОНЫ']
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        lines.append(f'{card.player_name} · {card.ovr} OVR · {("на проверке" if a.status=="submitted" else "идёт")} ')
-                        kb.button(text=f'Завершить · {card.player_name}',callback_data=f'auctionstop:{a.id}')
+                        lines.append(f'{card.player_name} · {card.ovr} OVR · {("на проверке" if a.status=="submitted" else "идёт до "+format_msk(a.ends_at,naive_is_utc=True)[0:5]+" "+format_msk(a.ends_at,naive_is_utc=True)[11:16]+" МСК")}')
                 if not rows: lines.append('У вас нет активных аукционов.')
+                lines.append('После запуска аукцион нельзя отменить — дождитесь автоматического завершения.')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
                 await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
             elif action=='history':
@@ -1416,21 +1416,7 @@ async def main():
 
     @dp.callback_query(F.data.startswith('auctionstop:'))
     async def auction_stop(c:CallbackQuery):
-        aid=int(c.data.split(':',1)[1])
-        async with Session() as s:
-            a=await s.scalar(select(Auction).where(Auction.id==aid, Auction.owner_id==c.from_user.id).with_for_update())
-            if not a or a.status not in ('submitted','active'):
-                await c.answer('Этот аукцион уже нельзя завершить.',show_alert=True); return
-            if a.winner_id and a.highest_bid:
-                bidder=await s.scalar(select(User).where(User.id==a.winner_id).with_for_update())
-                if bidder:
-                    bidder.coins+=a.highest_bid
-                    s.add(EconomyLedger(user_id=bidder.id,currency='coins',amount=a.highest_bid,reason='auction_bid_refund',reference_id=a.id))
-            oc=await s.get(OwnedCard,a.owned_card_id)
-            if oc: oc.locked=False
-            a.status='cancelled'; await s.commit()
-        await c.message.answer('⏹ Аукцион завершён. Карточка разблокирована, зарезервированная ставка возвращена.')
-        await c.answer()
+        await c.answer('После запуска аукцион нельзя отменить. Дождитесь его автоматического завершения.',show_alert=True)
 
     @dp.message(Command('cancelauction'))
     async def cancel_auction_input(m:Message):
@@ -2184,9 +2170,9 @@ async def main():
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
-            kb.button(text='❌ Отменить аукцион',callback_data='adm:auction_cancel')
+            
             kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
-            await c.message.answer('🔨 УПРАВЛЕНИЕ АУКЦИОНАМИ\nЗдесь можно просматривать заявки, запускать и отменять аукционы. Выберите действие:',reply_markup=kb.as_markup())
+            await c.message.answer('🔨 УПРАВЛЕНИЕ АУКЦИОНАМИ\nЗдесь можно просматривать заявки и запускать аукционы. После запуска отмена невозможна.',reply_markup=kb.as_markup())
         elif action[1]=='auction_queue':
             async with Session() as s:
                 rows=(await s.scalars(select(Auction).where(Auction.status=='submitted').order_by(Auction.created_at))).all()
@@ -2269,7 +2255,7 @@ async def main():
             await c.message.answer(f'Введите ответ для сообщения #{mid}. Игрок получит его в боте.')
 
         elif action[1]=='help':
-            await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. /auction_cancel — отменить аукцион.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
+            await c.message.answer('📖 СПРАВОЧНИК АДМИНИСТРАТОРА\n/givecoins ID_ИГРОКА СУММА — изменить баланс монет. Положительное число начисляет, отрицательное списывает.\n/givegems ID_ИГРОКА СУММА — изменить баланс алмазов по тому же принципу.\n/givecard ID_ИГРОКА ID_КАРТОЧКИ — выдать игроку карточку по номеру шаблона.\n/ban ID_ИГРОКА — заблокировать игрока.\n/unban ID_ИГРОКА — снять блокировку.\n/createcard — создать шаблон карточки; порядок полей показан в разделе «Карточки и паки».\n/editcard — изменить рейтинг, редкость, страну или фото карточки.\n/transfercard — создать новую версию карточки после перехода игрока в другой клуб.\n/cardactive — разрешить или запретить выпадение карточки из паков.\n/auction_queue — посмотреть заявки на аукцион. /auction_create — запустить аукцион, указав цены, шаг и срок. После запуска аукцион нельзя отменить.\n/setpack — настроить стоимость пака и шансы редкостей.\n/importcards /importchem — загрузить данные из CSV-файлов.\n/bpgrant ID_ИГРОКА КОЛИЧЕСТВО_XP — начислить опыт Battle Pass.\n/season_reset — обнулить рейтинг текущего сезона (общая статистика матчей сохранится).\n/stats — краткая статистика бота.',reply_markup=admin_back_keyboard())
         elif action[1]=='home':
             await c.message.answer('🛡 ПАНЕЛЬ АДМИНИСТРАТОРА\nВыберите нужный раздел:',reply_markup=admin_keyboard())
         await c.answer()
@@ -2927,20 +2913,7 @@ async def main():
     @dp.message(Command('auction_cancel'))
     async def auction_cancel(m):
         if not admin(m.from_user.id): return
-        try: aid=int(m.text.split()[1])
-        except: await m.answer('Формат: /auction_cancel ID'); return
-        async with Session() as s:
-            a=await s.scalar(select(Auction).where(Auction.id==aid).with_for_update())
-            if not a or a.status not in ('active','submitted'): await m.answer('Аукцион недоступен.'); return
-            if a.winner_id:
-                bidder=await s.scalar(select(User).where(User.id==a.winner_id).with_for_update())
-                if bidder:
-                    bidder.coins+=a.highest_bid
-                    s.add(EconomyLedger(user_id=bidder.id,currency='coins',amount=a.highest_bid,reason='auction_bid_refund',reference_id=a.id))
-            oc=await s.scalar(select(OwnedCard).where(OwnedCard.id==a.owned_card_id).with_for_update())
-            if oc and oc.user_id==a.owner_id: oc.locked=False
-            a.status='cancelled'; await audit(s,m.from_user.id,'auction_cancel',aid); await s.commit()
-        await m.answer('Аукцион отменён, блокировки и резервы ставок сняты.')
+        await m.answer('❌ Отмена аукционов отключена. Если аукцион уже запущен, он завершится автоматически по таймеру.')
 
     @dp.message(Command('season_reset'))
     async def season_reset(m):
