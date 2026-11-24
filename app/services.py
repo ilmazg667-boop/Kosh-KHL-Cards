@@ -45,7 +45,7 @@ async def ensure_daily_tournament(session):
     day=now().date().isoformat()
     t=await session.scalar(select(DailyTournament).where(DailyTournament.tournament_date==day))
     if not t:
-        t=DailyTournament(tournament_date=day,status='open'); session.add(t); await session.commit()
+        t=DailyTournament(tournament_date=day,title='',status='closed'); session.add(t); await session.commit()
     return t
 
 async def ensure_season(session):
