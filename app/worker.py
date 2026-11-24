@@ -454,6 +454,19 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
     logger.info('Daily tournament %s finalized, rewards paid and standings announced; record retained as closed',tid)
 
 
+async def cancel_daily_tournament(session,tournament,bot):
+    """Cancel an unattended daily event without paying prizes."""
+    tournament.status='cancelled'
+    await session.commit()
+    user_ids=(await session.scalars(
+        select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==tournament.id)
+    )).all()
+    title=tournament.title or 'Без названия'
+    for uid in user_ids:
+        await send(bot,uid,
+            f'🚫 Турнир «{title}» ({tournament.tournament_date}) автоматически отменён в 20:30 МСК. '
+            'Администратор не завершил его вовремя, награды не начислялись.')
+
 async def close_old_tournaments(session,bot):
     """Remind admins at 20:00 MSK, auto-finish at 20:30 and prepare tomorrow's event."""
     today=now()
@@ -472,11 +485,11 @@ async def close_old_tournaments(session,bot):
                         'Завершите его в админ-панели до 20:30 МСК.')
                 await audit_worker(session,current.id,'tournament_reminder_20',today_key)
         if today.hour>20 or (today.hour==20 and today.minute>=30):
-            await finalize_daily_tournament(session,current,bot)
+            await cancel_daily_tournament(session,current,bot)
             for admin_id in ADMIN_IDS:
                 await send(bot,admin_id,
-                    f'🤖 Турнир «{current.title or "Без названия"}» автоматически завершён в 20:30 МСК: '
-                    'администратор не закрыл его вовремя. Итоги и награды обработаны.')
+                    f'🚫 Турнир «{current.title or "Без названия"}» автоматически отменён в 20:30 МСК: '
+                    'администратор не завершил его вовремя. Награды не начислялись.')
     # If the next day's event does not exist, create it and open registration automatically.
     if today.hour>20 or (today.hour==20 and today.minute>=30):
         tomorrow_key=(today.date()+timedelta(days=1)).isoformat()
