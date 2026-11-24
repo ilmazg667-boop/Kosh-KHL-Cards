@@ -1,5 +1,5 @@
 import asyncio, csv, os, random, shlex, html
-from datetime import date, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from aiogram import Bot, Dispatcher, F
@@ -45,6 +45,34 @@ def format_msk(value, naive_is_utc=True):
     if value.tzinfo is None:
         value=value.replace(tzinfo=timezone.utc if naive_is_utc else MOSCOW)
     return value.astimezone(MOSCOW).strftime('%d.%m.%Y %H:%M:%S')
+
+def auction_duration(value):
+    import re
+    raw=str(value or '').strip().lower().replace(' ', '')
+    if raw.isdigit():
+        minutes=int(raw)*60
+    else:
+        match=re.fullmatch(r'(?:(\\d+)ч)?(?:(\\d+)м)?',raw)
+        if not match or not any(match.groups()):
+            raise ValueError('Укажите срок как 2ч, 90м или 1ч30м.')
+        minutes=int(match.group(1) or 0)*60+int(match.group(2) or 0)
+    if minutes<1 or minutes>43200:
+        raise ValueError('Срок должен быть от 1 минуты до 720 часов.')
+    return minutes
+
+def auction_countdown(value):
+    if value.tzinfo is None:
+        value=value.replace(tzinfo=timezone.utc)
+    seconds=max(0,int((value-datetime.now(timezone.utc)).total_seconds()))
+    days,seconds=divmod(seconds,86400)
+    hours,seconds=divmod(seconds,3600)
+    minutes,seconds=divmod(seconds,60)
+    parts=[]
+    if days: parts.append(f'{days}д')
+    if hours or days: parts.append(f'{hours}ч')
+    if minutes or hours or days: parts.append(f'{minutes}м')
+    parts.append(f'{seconds}с')
+    return ' '.join(parts)
 
 def admin(uid): return uid in ADMIN_IDS
 
@@ -1304,17 +1332,25 @@ async def main():
                 if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'auctionmenu:start:{page+1}')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
                 await c.message.answer(f'Шаг 1 из 2. Выберите карточку · страница {page+1}/{pages}. Если карточка стоит в составе, позиция освободится автоматически.' if cards else 'У вас пока нет карточек для аукциона. Откройте пак или получите карточку, затем вернитесь сюда.',reply_markup=kb.as_markup() if cards else auction_menu_keyboard())
-            elif action=='current':
+            elif action.startswith('current'):
+                refresh=action.endswith(':refresh')
                 rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
                 lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ']; kb=InlineKeyboardBuilder()
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {(format_msk(a.ends_at,naive_is_utc=True)[:5]+' '+format_msk(a.ends_at,naive_is_utc=True)[11:16])} МСК')
+                        end_text=format_msk(a.ends_at,naive_is_utc=True)
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {end_text[:5]} {end_text[11:16]} МСК\n⏳ Осталось: {auction_countdown(a.ends_at)}')
                         kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
                 if not rows: lines.append('\nПока нет активных аукционов.')
+                kb.button(text='🔄 Обновить отсчёт',callback_data='auctionmenu:current:refresh')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
-                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
+                text_value='\n'.join(lines)
+                if refresh:
+                    try: await c.message.edit_text(text_value,reply_markup=kb.as_markup())
+                    except Exception: await c.message.answer(text_value,reply_markup=kb.as_markup())
+                else:
+                    await c.message.answer(text_value,reply_markup=kb.as_markup())
             elif action=='end':
                 rows=(await s.scalars(select(Auction).where(Auction.owner_id==c.from_user.id,Auction.status.in_(['submitted','active'])).order_by(Auction.created_at.desc()))).all()
                 kb=InlineKeyboardBuilder(); lines=['⏹ ВАШИ АУКЦИОНЫ']
@@ -2824,17 +2860,23 @@ async def main():
     async def admin_auction_wizard(m:Message):
         if not admin(m.from_user.id): admin_auction_steps.pop(m.from_user.id,None); return
         state=admin_auction_steps.get(m.from_user.id)
-        prompts={'step':'Шаг 2 из 5. Введите шаг повышения ставки.','hours':'Шаг 3 из 5. На сколько часов открыть аукцион?','minprice':'Шаг 4 из 5. Введите минимальную цену продажи.','maxbid':'Шаг 5 из 5. Введите максимальную ставку (лимит).'}
-        try: value=int((m.text or '').strip())
-        except ValueError: await m.answer('Введите целое число. Для отмены нажмите /canceladmin.'); return
-        if value<=0: await m.answer('Значение должно быть больше нуля. Повторите ввод.'); return
+        prompts={'step':'Шаг 2 из 5. Введите шаг повышения ставки.','hours':'Шаг 3 из 5. Укажите срок: 2ч, 90м или 1ч30м (максимум 720 часов).','minprice':'Шаг 4 из 5. Введите минимальную цену продажи.','maxbid':'Шаг 5 из 5. Введите максимальную ставку (лимит).'}
+        raw_value=(m.text or '').strip()
+        try: value=int(raw_value)
+        except ValueError: value=None
+        if state['step']=='hours':
+            try: duration_minutes=auction_duration(raw_value)
+            except ValueError as e: await m.answer(str(e)); return
+        elif value is None:
+            await m.answer('Введите целое число. Для отмены нажмите /canceladmin.'); return
+        elif value<=0:
+            await m.answer('Значение должно быть больше нуля. Повторите ввод.'); return
         if state['step']=='start':
             state['start']=value; state['step']='step'; await m.answer(prompts['step'])
         elif state['step']=='step':
             state['bid_step']=value; state['step']='hours'; await m.answer(prompts['hours'])
         elif state['step']=='hours':
-            if value>720: await m.answer('Срок не может превышать 720 часов.'); return
-            state['hours']=value; state['step']='minprice'; await m.answer(prompts['minprice'])
+            state['duration_minutes']=duration_minutes; state['step']='minprice'; await m.answer(prompts['minprice'])
         elif state['step']=='minprice':
             state['min_price']=value; state['step']='maxbid'; await m.answer(prompts['maxbid'])
         elif state['step']=='maxbid':
@@ -2846,7 +2888,7 @@ async def main():
                 if not a: admin_auction_steps.pop(m.from_user.id,None); await m.answer('Заявка уже обработана.'); return
                 a.start_price=state['start']; a.highest_bid=0; a.bid_step=state['bid_step']
                 a.min_price=state['min_price']; a.max_bid=value
-                a.ends_at=now()+timedelta(hours=state['hours']); a.status='active'
+                a.ends_at=now()+timedelta(minutes=state['duration_minutes']); a.status='active'
                 await audit(s,m.from_user.id,'auction_create',a.id); owner_id=a.owner_id; await s.commit()
             admin_auction_steps.pop(m.from_user.id,None)
             try: await m.bot.send_message(owner_id,'🔨 Ваша карточка одобрена и выставлена на аукцион!')
@@ -2861,22 +2903,22 @@ async def main():
             lines=['ЗАЯВКИ НА АУКЦИОН']
             for a in rows:
                 oc=await s.get(OwnedCard,a.owned_card_id); c=await s.get(Card,oc.card_id) if oc else None
-                if c: lines.append(f'#{a.id} · владелец {a.owner_id} · {c.player_name} · OVR {c.ovr}\n/auction_create {a.id} СТАРТ ШАГ ЧАСЫ МИН_СТАВКА МАКС_СТАВКА')
+                if c: lines.append(f'#{a.id} · владелец {a.owner_id} · {c.player_name} · OVR {c.ovr}\n/auction_create {a.id} СТАРТ ШАГ СРОК(2ч/90м) МИН_СТАВКА МАКС_СТАВКА')
             await m.answer('\n'.join(lines) if len(lines)>1 else 'Очередь пуста.')
 
     @dp.message(Command('auction_create'))
     async def auction_create(m):
         if not admin(m.from_user.id): return
         try:
-            _,aid,start,step,hours,minprice,maxbid=m.text.split()
-            aid=int(aid); start=int(start); step=int(step); hours=int(hours); minprice=int(minprice); maxbid=int(maxbid)
-        except: await m.answer('Формат: /auction_create ID НАЧАЛЬНАЯ_ЦЕНА ШАГ_СТАВКИ СРОК_В_ЧАСАХ МИН_ЦЕНА МАКС_СТАВКА'); return
+            _,aid,start,step,duration,minprice,maxbid=m.text.split()
+            aid=int(aid); start=int(start); step=int(step); duration_minutes=auction_duration(duration); minprice=int(minprice); maxbid=int(maxbid)
+        except: await m.answer('Формат: /auction_create ID СТАРТ ШАГ СРОК(2ч/90м/1ч30м) МИН_ЦЕНА МАКС_СТАВКА'); return
         async with Session() as s:
             a=await s.get(Auction,aid)
             if not a or a.status!='submitted': await m.answer('Заявка не найдена или уже обработана.'); return
-            if min(start,step,hours,minprice)<=0 or maxbid<start or maxbid<minprice or maxbid>1_000_000_000: await m.answer('Проверьте цены, шаг, срок и лимит.'); return
+            if min(start,step,minprice)<=0 or maxbid<start or maxbid<minprice or maxbid>1_000_000_000: await m.answer('Проверьте цены, шаг, срок и лимит.'); return
             from datetime import timedelta
-            a.start_price=start; a.highest_bid=0; a.bid_step=step; a.min_price=minprice; a.max_bid=maxbid; a.ends_at=now()+timedelta(hours=hours); a.status='active'
+            a.start_price=start; a.highest_bid=0; a.bid_step=step; a.min_price=minprice; a.max_bid=maxbid; a.ends_at=now()+timedelta(minutes=duration_minutes); a.status='active'
             await audit(s,m.from_user.id,'auction_create',aid); await s.commit()
             try: await m.bot.send_message(a.owner_id,f'🔨 Ваша карточка выставлена на аукцион #{aid}.')
             except Exception: pass
