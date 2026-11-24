@@ -27,6 +27,7 @@ async def init_db():
                 'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
+                'battlepass_progress': {'xp_curve': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'daily_tournaments': {'title': "VARCHAR(100) NOT NULL DEFAULT ''", 'ends_at': 'DATETIME'},
                 'trade_offers': {'sender_coins': 'INTEGER NOT NULL DEFAULT 0', 'sender_gems': 'INTEGER NOT NULL DEFAULT 0', 'receiver_coins': 'INTEGER NOT NULL DEFAULT 0', 'receiver_gems': 'INTEGER NOT NULL DEFAULT 0', 'sender_confirmed': 'BOOLEAN NOT NULL DEFAULT 0', 'receiver_confirmed': 'BOOLEAN NOT NULL DEFAULT 0'},
             }.items():
@@ -46,6 +47,7 @@ async def init_db():
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS xp_awarded INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS premium_awarded BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
+                'ALTER TABLE battlepass_progress ADD COLUMN IF NOT EXISTS xp_curve BOOLEAN NOT NULL DEFAULT FALSE',
                 "ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS title VARCHAR(100) NOT NULL DEFAULT ''",
                 'ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ',
                 'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_coins INTEGER NOT NULL DEFAULT 0',
