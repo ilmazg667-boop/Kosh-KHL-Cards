@@ -105,6 +105,12 @@ class TradeOffer(Base):
     receiver_id: Mapped[int] = mapped_column(BigInteger, index=True)
     give_card_ids: Mapped[list] = mapped_column(JSON, default=list)
     receive_card_ids: Mapped[list] = mapped_column(JSON, default=list)
+    sender_coins: Mapped[int] = mapped_column(Integer, default=0)
+    sender_gems: Mapped[int] = mapped_column(Integer, default=0)
+    receiver_coins: Mapped[int] = mapped_column(Integer, default=0)
+    receiver_gems: Mapped[int] = mapped_column(Integer, default=0)
+    sender_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    receiver_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
