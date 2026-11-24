@@ -21,6 +21,9 @@ async def init_db():
             await conn.exec_driver_sql('PRAGMA foreign_keys=ON')
         await conn.run_sync(Base.metadata.create_all)
         # Lightweight additive migrations for existing databases.
+        # One-time pack-price rebalance: triple only untouched defaults, preserving admin overrides.
+        if DATABASE_URL.startswith('sqlite'):
+            await conn.exec_driver_sql("UPDATE pack_configs SET price=price*3 WHERE (name='Обычный' AND price=2000) OR (name='Премиум' AND price=6000) OR (name='Элитный' AND price=14000) OR (name='Мифический' AND price=32000) OR (name='Легендарный' AND price=120) OR (name='Хроматический' AND price=300)")
         if DATABASE_URL.startswith('sqlite'):
             for table, columns in {
                 'users': {'last_name': "VARCHAR(128) NOT NULL DEFAULT ''", 'team_name': "VARCHAR(40) NOT NULL DEFAULT 'Моя команда'"},
@@ -44,6 +47,7 @@ async def init_db():
             await conn.exec_driver_sql("UPDATE cards SET ovr=MIN(ovr+2,100), rating_boosted=1 WHERE league='КХЛ' AND rating_boosted=0 AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
             await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN datetime(created_at,'+2 minutes') ELSE datetime(created_at,'+5 minutes') END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
         else:
+            await conn.exec_driver_sql("UPDATE pack_configs SET price=price*3 WHERE (name='Обычный' AND price=2000) OR (name='Премиум' AND price=6000) OR (name='Элитный' AND price=14000) OR (name='Мифический' AND price=32000) OR (name='Легендарный' AND price=120) OR (name='Хроматический' AND price=300)")
             for statement in (
                 'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(128) NOT NULL DEFAULT \'\'',
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_name VARCHAR(40) NOT NULL DEFAULT 'Моя команда'",
