@@ -1579,7 +1579,7 @@ async def main():
                     prizes[place]=(cfg.coins,cfg.gems) if cfg else (coins,gems)
                 for i,row in enumerate(rows,1):
                     user=await s.get(User,row.user_id)
-                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.games} матч. · {row.wins} побед · {row.goals} голов')
+                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · Матчи: {row.games} · {row.wins} побед · {row.goals} голов')
                 if len(rows)==0: lines.append('Пока нет участников.')
                 elif rows:
                     lead=rows[0]
@@ -2265,9 +2265,9 @@ async def main():
                     await audit(s,c.from_user.id,'tournament_started_after_2030',tid,now().date().isoformat())
                 notices=[]
                 if mode=='open':
-                    users=(await s.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
+                    users=(await s.scalars(select(User.id))).all()
                 elif mode=='closed' and not t.rewarded_at:
-                    rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id))).all()
+                    rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid,TournamentEntry.games>0).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id))).all()
                     defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                     for place,entry in enumerate(rows,1):
                         user=await s.get(User,entry.user_id)
