@@ -681,13 +681,20 @@ async def run_worker():
                         owner_id=a.owner_id; winner_id=a.winner_id; bid=a.highest_bid; minimum=a.min_price
                         oc_after=await s.get(OwnedCard,a.owned_card_id)
                         sold=bool(winner_id and bid>=minimum and oc_after and oc_after.user_id==winner_id and not oc_after.locked)
+                        owner_after=await s.scalar(select(User).where(User.id==owner_id).execution_options(populate_existing=True))
+                        winner_after=await s.scalar(select(User).where(User.id==winner_id).execution_options(populate_existing=True)) if winner_id else None
+                        owner_balance=owner_after.coins if owner_after else 0
+                        winner_balance=winner_after.coins if winner_after else 0
+                        card_name=card.player_name if card else 'карточка'
                         if sold:
                             payout=bid*90//100
-                            await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён: карточка {card.player_name if card else ""} продана. Вам начислено {payout} 🪙 (комиссия 10%).')
-                            await send(bot,winner_id,f'🏆 Вы выиграли аукцион #{a.id}. Карточка {card.player_name if card else ""} передана в коллекцию.')
+                            fee=bid-payout
+                            await send(bot,owner_id,f'🏁 Аукцион #{a.id} завершён!\nКарточка: {card_name}\nПродана за: {bid} 🪙\nКомиссия: {fee} 🪙 (10%)\nНачислено вам: +{payout} 🪙\n💰 Ваш баланс: {owner_balance} 🪙')
+                            await send(bot,winner_id,f'🏆 Вы выиграли аукцион #{a.id}!\nКарточка {card_name} · ставка {bid} 🪙\nКарточка передана в вашу коллекцию.\n💰 Остаток баланса: {winner_balance} 🪙')
                         else:
-                            await send(bot,owner_id,f'🔨 Аукцион #{a.id} завершён без продажи. Карточка не передана; ставка возвращена.')
-                            if winner_id: await send(bot,winner_id,f'Аукцион #{a.id}: минимальная цена не достигнута или лот недоступен. Ставка {bid} 🪙 возвращена.')
+                            reason='Минимальная цена не достигнута' if winner_id and bid<minimum else 'Покупатель не найден или лот недоступен'
+                            await send(bot,owner_id,f'🏁 Аукцион #{a.id} завершён без продажи.\nКарточка: {card_name}\nПричина: {reason if winner_id else "Не поступило ни одной ставки"}\nКарточка возвращена в вашу коллекцию.\n💰 Ваш баланс: {owner_balance} 🪙')
+                            if winner_id: await send(bot,winner_id,f'🏁 Аукцион #{a.id} завершён без продажи.\nПричина: {reason}.\nСтавка {bid} 🪙 возвращена.\n💰 Ваш баланс: {winner_balance} 🪙')
                 await matchmaking(bot)
                 async with Session() as s:
                     queued=(await s.scalars(select(Match.id).where(Match.status=='queued').limit(20))).all()
