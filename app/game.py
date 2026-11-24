@@ -28,9 +28,9 @@ def adjust_pack_odds(pack_name, odds):
     """Reduce high-rarity odds consistently for pack openings and displayed rates."""
     factors = {
         'Обычный': 1.25, 'Редкий': 1.15, 'Элитный': 1.05,
-        'Сверхредкий': 0.90, 'Эпический': 0.70, 'Мифический': 0.50,
-        'Легендарный': 0.35, 'Хроматический': 0.25, 'Легенда': 0.15,
-        'Икона': 0.10,
+        'Сверхредкий': 0.80, 'Эпический': 0.50, 'Мифический': 0.30,
+        'Легендарный': 0.18, 'Хроматический': 0.10, 'Легенда': 0.05,
+        'Икона': 0.025,
     }
     weighted = [(rarity, float(weight) * factors.get(rarity, 1.0)) for rarity, weight in odds]
     total = sum(weight for _, weight in weighted)
