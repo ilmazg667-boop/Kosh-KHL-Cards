@@ -1203,9 +1203,6 @@ async def main():
         kb.button(text='📨 Входящие приглашения',callback_data='trade:incoming'); kb.button(text='📤 Исходящие приглашения',callback_data='trade:outgoing')
         kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
         await m.answer('🔁 ОБМЕНЫ\nУкажите Telegram ID. После принятия обе стороны смогут добавить несколько карточек, монеты и алмазы. Обмен завершается после подтверждения обеими сторонами.',reply_markup=kb.as_markup())
-ly_markup=kb.as_markup())
-        await c.answer()
-
     @dp.message(Command('auction_submit'))
     async def auction_submit(m):
         try: oid=int(m.text.split()[1])
