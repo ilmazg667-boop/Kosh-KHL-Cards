@@ -2197,7 +2197,7 @@ async def main():
             admin_auction_steps[c.from_user.id]={'auction_id':aid,'step':'start'}
             await c.message.answer(f'Запускаем аукцион: {card.player_name} · {card.ovr} OVR.\nШаг 1 из 5. Введите начальную цену в монетах.')
         elif action[1]=='auction_cancel':
-            await c.message.answer('Чтобы отменить аукцион, укажите его номер командой /auction_cancel НОМЕР. Кнопочное управление добавим следующим этапом.',reply_markup=admin_back_keyboard())
+            await c.message.answer('Отмена аукционов отключена. Запущенный аукцион автоматически завершится по таймеру.',reply_markup=admin_back_keyboard())
         elif action[1]=='cards':
             await c.message.answer('🃏 КАРТОЧКИ И ПАКИ\n/createcard — создать шаблон карточки. После команды укажите через |: имя игрока | позиция | общий рейтинг | редкость | страна | клуб | лига | ссылка на фото | ключ игрока.\n/editcard ID ПОЛЕ ЗНАЧЕНИЕ — изменить карточку. ID — номер шаблона; поле: ovr (общий рейтинг), rarity (редкость), country (страна) или image_url (ссылка на фото).\n/transfercard ID НОВЫЙ_КЛУБ НОВАЯ_ЛИГА СЕЗОН — создать новую версию карточки после трансфера.\n/cardactive ID on|off — включить или отключить карточку в новых выпадениях (уже выданные карты сохраняются).\n/setpack — изменить стоимость пака и вероятности выпадения редкостей.\n/importcards и /importchem — загрузить CSV-файл с карточками или сыгранностью.',reply_markup=admin_back_keyboard())
         elif action[1]=='promos':
