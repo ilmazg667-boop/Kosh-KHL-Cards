@@ -28,6 +28,7 @@ async def init_db():
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'daily_tournaments': {'title': "VARCHAR(100) NOT NULL DEFAULT ''", 'ends_at': 'DATETIME'},
+                'trade_offers': {'sender_coins': 'INTEGER NOT NULL DEFAULT 0', 'sender_gems': 'INTEGER NOT NULL DEFAULT 0', 'receiver_coins': 'INTEGER NOT NULL DEFAULT 0', 'receiver_gems': 'INTEGER NOT NULL DEFAULT 0', 'sender_confirmed': 'BOOLEAN NOT NULL DEFAULT 0', 'receiver_confirmed': 'BOOLEAN NOT NULL DEFAULT 0'},
             }.items():
                 result = await conn.exec_driver_sql(f'PRAGMA table_info({table})')
                 existing = {row[1] for row in result.fetchall()}
@@ -47,6 +48,12 @@ async def init_db():
                 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
                 "ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS title VARCHAR(100) NOT NULL DEFAULT ''",
                 'ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_coins INTEGER NOT NULL DEFAULT 0',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_gems INTEGER NOT NULL DEFAULT 0',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS receiver_coins INTEGER NOT NULL DEFAULT 0',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS receiver_gems INTEGER NOT NULL DEFAULT 0',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_confirmed BOOLEAN NOT NULL DEFAULT FALSE',
+                'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS receiver_confirmed BOOLEAN NOT NULL DEFAULT FALSE',
                 "UPDATE matches SET result_sent=TRUE WHERE status='completed' AND finished_at < NOW() - INTERVAL '1 hour'"
             ):
                 await conn.exec_driver_sql(statement)
