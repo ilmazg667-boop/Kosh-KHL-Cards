@@ -2439,7 +2439,23 @@ async def main():
                 clubs=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.source!='demo',Card.league==state['league'],Card.club!='—').distinct().order_by(Card.club))).all()
                 if idx<0 or idx>=len(clubs): await c.answer('Команда не найдена.',show_alert=True); return
                 club=clubs[idx]
-                cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league==state['league'],Card.club==club).order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
+                raw_cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league==state['league'],Card.club==club).order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
+                # Show each real player only once; keep the strongest available card.
+                best_by_player={}
+                for candidate in raw_cards:
+                    player_key=' '.join(str(candidate.player_name or '').split()).casefold()
+                    current=best_by_player.get(player_key)
+                    if not current or (candidate.ovr,candidate.id)>(current.ovr,current.id):
+                        best_by_player[player_key]=candidate
+                cards=list(best_by_player.values())
+                # Promo rewards must contain different players, not merely different card IDs.
+                if state.get('kind')=='promo' and state.get('data',{}).get('card_ids'):
+                    previous=(await s.scalars(select(Card).where(Card.id.in_(state['data']['card_ids'])))).all()
+                    already_selected={' '.join(str(item.player_name or '').split()).casefold() for item in previous}
+                    cards=[item for item in cards if ' '.join(str(item.player_name or '').split()).casefold() not in already_selected]
+                cards.sort(key=lambda item:(str(item.player_name or '').casefold(),-item.ovr,-item.id))
+            if not cards:
+                await c.answer('В этой команде больше нет новых игроков для выбора.',show_alert=True); return
             state.update(step='player',club=club)
             kb=InlineKeyboardBuilder()
             for card in cards:
