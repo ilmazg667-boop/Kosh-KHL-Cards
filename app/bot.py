@@ -2221,7 +2221,7 @@ async def main():
 
         elif action[1]=='messages':
             async with Session() as s:
-                rows=(await s.scalars(select(SupportMessage).order_by(SupportMessage.created_at.desc()).limit(25))).all()
+                rows=(await s.scalars(select(SupportMessage).where(SupportMessage.status!='answered').order_by(SupportMessage.created_at.desc()).limit(25))).all()
                 unread=await s.scalar(select(func.count(SupportMessage.id)).where(SupportMessage.status=='new')) or 0
             lines=[f'📩 СООБЩЕНИЯ ИГРОКОВ · новых: {unread}']
             kb=InlineKeyboardBuilder()
@@ -2410,7 +2410,8 @@ async def main():
                         await m.answer('Сообщение не найдено.'); admin_steps.pop(m.from_user.id,None); return
                     target=item.user_id; item.admin_reply=reply_text; item.status='answered'; await s.commit()
                 try:
-                    await m.bot.send_message(target,f'✉️ Ответ администрации на ваше сообщение #{item.id}:\n\n{reply_text}')
+                    admin_name=m.from_user.full_name or 'Администратор'
+                    await m.bot.send_message(target,f'✉️ Ответ администрации на ваше сообщение #{item.id}:\n👤 Ответил: {admin_name} (ID {m.from_user.id})\n\n{reply_text}')
                     await m.answer('✅ Ответ отправлен игроку.',reply_markup=admin_keyboard())
                 except Exception:
                     await m.answer('Ответ сохранён, но доставить его игроку не удалось.')
