@@ -535,7 +535,7 @@ async def progress_after_match(session,user_id,won,goals=0,rating=0):
         ('play20',week,1,35),('win10',week,1 if won else 0,20),
         ('play60month',month,1,100),('win20month',month,1 if won else 0,40),
         ('play200',season,1,200),('win100',season,1 if won else 0,100),
-        ('reach_khl',season,1 if rating>=3001 else 0,1)]:
+        ('reach_khl_v2',season,1 if rating>=3001 else 0,1)]:
         if amount: await _increment_quest(session,user_id,key,period,amount,cap)
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
     if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); session.add(bp)
@@ -550,7 +550,7 @@ async def claim_quest(session,user_id,key):
     target={'play3':(today,5,2000,3,200),'win1':(today,3,3000,5,250),'score5goals':(today,10,4000,6,300),
         'play20':(week,35,10000,12,400),'win10':(week,20,15000,18,500),
         'play60month':(month,100,30000,30,700),'win20month':(month,40,40000,40,800),
-        'play200':(season,200,75000,60,1200),'win100':(season,100,100000,80,1500),'reach_khl':(season,1,25000,25,600),'open100packs':(season,100,50000,50,1000)}
+        'play200':(season,200,75000,60,1200),'win100':(season,100,100000,80,1500),'reach_khl_v2':(season,1,25000,25,600),'open100packs':(season,100,50000,50,1000)}
     if key not in target: raise ValueError('Задание не найдено.')
     period,need,reward_coins,reward_gems,quest_xp=target[key]
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
