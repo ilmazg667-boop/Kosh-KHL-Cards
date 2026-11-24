@@ -1860,7 +1860,7 @@ async def main():
                 lines.extend(f'{medals.get(i, f"{i}.")} <b>{u.first_name or u.id}</b> — ⭐ {u.rating} · {league_for_rating(u.rating)}' for i,u in enumerate(rows,1))
             else:
                 lines.append('Пока нет игроков в рейтинге. Сыграй первый матч!')
-            await send_section_photo(m,PHOTO_ARENA,'\n'.join(lines),parse_mode='HTML')
+            await m.answer('\n'.join(lines),parse_mode='HTML')
 
     @dp.message(Command('season'))
     async def season(m):
