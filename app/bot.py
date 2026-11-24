@@ -1332,18 +1332,46 @@ async def main():
                 if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'auctionmenu:start:{page+1}')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
                 await c.message.answer(f'Шаг 1 из 2. Выберите карточку · страница {page+1}/{pages}. Если карточка стоит в составе, позиция освободится автоматически.' if cards else 'У вас пока нет карточек для аукциона. Откройте пак или получите карточку, затем вернитесь сюда.',reply_markup=kb.as_markup() if cards else auction_menu_keyboard())
+            elif action.startswith('detail:'):
+                try: aid=int(action.split(':',1)[1])
+                except ValueError: await c.answer('Аукцион не найден.',show_alert=True); return
+                a=await s.get(Auction,aid)
+                if not a or a.status!='active':
+                    await c.answer('Этот аукцион уже завершён или недоступен.',show_alert=True); return
+                oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
+                if not card:
+                    await c.answer('Карточка не найдена.',show_alert=True); return
+                end_text=format_msk(a.ends_at,naive_is_utc=True)
+                current_bid=a.highest_bid or a.start_price
+                detail_text=(
+                    f'🔨 АУКЦИОН · {card.player_name}\n\n'
+                    f'🏒 КАРТОЧКА\nИгрок: {card.player_name}\nРейтинг: {card.ovr} OVR\n'
+                    f'Позиция: {card.position}\nРедкость: {card.rarity}\nКлуб: {card.club}\n'
+                    f'Страна: {card.country}\nЛига: {card.league}'
+                    +(f'\nСезон: {card.season}' if card.season else '')
+                    +f'\n\n💰 ТЕКУЩАЯ СТАВКА: {current_bid} 🪙\nШаг ставки: {a.bid_step} 🪙'
+                    +f'\nОкончание: {end_text[:5]} {end_text[11:16]} МСК'
+                    +f'\n⏳ Осталось: {auction_countdown(a.ends_at)}'
+                )
+                kb=InlineKeyboardBuilder()
+                kb.button(text='💰 Сделать ставку',callback_data=f'auctionbid:{a.id}')
+                kb.button(text='🔄 Обновить время',callback_data=f'auctionmenu:detail:{a.id}')
+                kb.button(text='⬅️ К списку аукционов',callback_data='auctionmenu:current')
+                kb.adjust(1)
+                await c.message.answer(detail_text,reply_markup=kb.as_markup())
             elif action.startswith('current'):
                 refresh=action.endswith(':refresh')
                 rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
-                lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ']; kb=InlineKeyboardBuilder()
+                lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ','Выберите игрока, чтобы посмотреть карточку и условия аукциона:']; kb=InlineKeyboardBuilder()
+                count=0
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        end_text=format_msk(a.ends_at,naive_is_utc=True)
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {end_text[:5]} {end_text[11:16]} МСК\n⏳ Осталось: {auction_countdown(a.ends_at)}')
-                        kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
-                if not rows: lines.append('\nПока нет активных аукционов.')
-                kb.button(text='🔄 Обновить отсчёт',callback_data='auctionmenu:current:refresh')
+                        lines.append(f'• {card.player_name}')
+                        kb.button(text=card.player_name[:60],callback_data=f'auctionmenu:detail:{a.id}')
+                        count+=1
+                if not count: lines.append('\nПока нет активных аукционов.')
+                kb.button(text='🔄 Обновить список',callback_data='auctionmenu:current:refresh')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
                 text_value='\n'.join(lines)
                 if refresh:
