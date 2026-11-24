@@ -21,23 +21,23 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, set_trade_card, set_trade_currency, confirm_trade, submit_auction_card, place_bid,
     create_clan, join_clan, ensure_daily_tournament, ensure_daily_tournament_participants, ensure_season, progress_after_match,
-    claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
+    claim_quest, claim_bp_reward, bp_level_from_xp, bp_xp_required, ensure_bp_xp_curve, BP_MAX_XP, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
     create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member, auto_best_lineup)
 
 def keyboard():
     kb=InlineKeyboardBuilder()
     items=[
         ('🏒 Моя команда','team'),('🏒 Матчи','matches'),
-        ('✉️ Написать админу','support'),('🃏 Карточки','cards'),
-        ('📦 Паки','packs'),('🏪 Рынок','market'),
-        ('🔨 Аукционы','auctions'),('🏆 Рейтинг','leaderboard'),
-        ('🎁 Ежедневная награда','daily'),('⚔️ Турнир','tournament'),
-        ('🛡 Кланы','clans'),('🔁 Обмены','trades'),('🎟 Battle Pass','battlepass'),
-        ('👤 Профиль','profile'),('🪙 Баланс','balance'),('🎟 Промокоды','promo'),
-        ('❔ Помощь','help')
+        ('🃏 Карточки','cards'),('📦 Паки','packs'),
+        ('🏪 Рынок','market'),('🔨 Аукционы','auctions'),
+        ('🏆 Рейтинг','leaderboard'),('🎁 Ежедневная награда','daily'),
+        ('⚔️ Турнир','tournament'),('🛡 Кланы','clans'),
+        ('🔁 Обмены','trades'),('🎟 Battle Pass','battlepass'),
+        ('👤 Профиль','profile'),('🎟 Промокоды','promo'),
+        ('✉️ Написать админу','support'),('❔ Помощь','help')
     ]
     for label,key in items: kb.button(text=label,callback_data=f'player:{key}')
-    kb.adjust(2)
+    kb.adjust(2,2,2,2,2,2,2,1,1)
     return kb.as_markup()
 MOSCOW=ZoneInfo('Europe/Moscow')
 def format_msk(value, naive_is_utc=True):
@@ -253,7 +253,7 @@ async def main():
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await send_main_menu(m,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
+            await send_main_menu(m,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\n🪙 Баланс: {u.coins} монет · 💎 {u.gems} алмазов\n\nВыберите раздел в меню.',reply_markup=keyboard())
 
 
     support_steps={}
@@ -1780,7 +1780,8 @@ async def main():
             u=await s.scalar(select(User).where(User.id==u.id).with_for_update())
             bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
             if not bp:
-                bp=BattlePassProgress(user_id=u.id,season=season_key()); s.add(bp); await s.commit()
+                bp=BattlePassProgress(user_id=u.id,season=season_key(),xp_curve=True); s.add(bp); await s.commit()
+            ensure_bp_xp_curve(bp)
             if len(parts)>1 and parts[1].lower()=='premium':
                 if bp.premium: await m.answer('Premium уже активирован.'); return
                 if u.gems<BATTLEPASS_PREMIUM_PRICE: await m.answer(f'Нужно {BATTLEPASS_PREMIUM_PRICE} 💎 для Premium-линии.'); return
@@ -1791,7 +1792,7 @@ async def main():
                     await m.answer(f'🎁 Получена награда: {reward}.')
                 except ValueError as e: await m.answer(str(e))
                 return
-            level=min(100,bp.xp//100)
+            level=bp_level_from_xp(bp.xp)
             page=1
             if len(parts)>2 and parts[1].lower()=='page':
                 try: page=max(1,min(10,int(parts[2])))
@@ -1799,12 +1800,15 @@ async def main():
             start_level=(page-1)*10+1; end_level=min(page*10,100)
             kb=InlineKeyboardBuilder()
             claimed_free=set(bp.claimed_free or []); claimed_premium=set(bp.claimed_premium or [])
-            lines=[f'🎟 BATTLE PASS · сезон {bp.season}',f'Уровень: {level}/100 · XP: {bp.xp} · до следующего уровня: {0 if level>=100 else 100-bp.xp%100} XP',f'Страница {page}/10 · уровни {start_level}–{end_level}','']
+            level_xp=bp.xp-bp_xp_required(level)
+            next_cost=0 if level>=100 else bp_xp_required(level+1)-bp_xp_required(level)
+            remaining=max(0,next_cost-level_xp)
+            lines=[f'🎟 BATTLE PASS · сезон {bp.season}',f'Уровень: {level}/100 · XP: {bp.xp} · до следующего уровня: {remaining} XP',f'Страница {page}/10 · уровни {start_level}–{end_level}','']
             for tier in range(start_level,end_level+1):
-                free_reward='🏒 Семён Кошелев · 95 OVR' if tier==100 else ( 'Пак «Обычный»' if tier%10==0 else f'{250+tier*25} 🪙')
-                premium_reward='🏒 Семён Кошелев · 99 OVR' if tier==100 else ('🎴 Бонусная карточка' if tier%10==0 else ('📦 Пак «Премиум»' if tier%5==0 else f'{2+tier//10} 💎'))
-                free_state='получено' if tier in claimed_free else ('доступно' if tier<=level else 'закрыто')
-                premium_state='получено' if tier in claimed_premium else ('доступно' if tier<=level and bp.premium else 'закрыто')
+                free_reward='🏒 Семён Кошелев · 95 OVR' if tier==100 else ('📦 Пак «Обычный»' if tier%10==0 else f'{500+tier*100:,} 🪙'.replace(',',' '))
+                premium_reward='🏒 Семён Кошелев · 99 OVR' if tier==100 else ('🎴 Бонусная карточка' if tier%10==0 else ('📦 Пак «Премиум»' if tier%5==0 else f'{5+tier//5} 💎'))
+                free_state='✅ получено' if tier in claimed_free else ('🟢 доступно' if tier<=level else '🔒 закрыто')
+                premium_state='✅ получено' if tier in claimed_premium else ('🟢 доступно' if tier<=level and bp.premium else '🔒 закрыто')
                 lines.append(f'Ур. {tier}: Free — {free_reward} ({free_state}); Premium — {premium_reward} ({premium_state})')
                 if tier<=level and tier not in claimed_free: kb.button(text=f'🎁 Free · ур. {tier}',callback_data=f'bp:one:free:{tier}')
                 if tier<=level and bp.premium and tier not in claimed_premium: kb.button(text=f'💎 Premium · ур. {tier}',callback_data=f'bp:one:premium:{tier}')
@@ -1812,12 +1816,12 @@ async def main():
             if page<10: kb.button(text='➡️ Страница '+str(page+1),callback_data=f'bp:page:{page+1}')
             kb.button(text='📋 Задания',callback_data='bp:quests')
             if not bp.premium: kb.button(text=f'💎 Активировать Premium · {BATTLEPASS_PREMIUM_PRICE}',callback_data='bp:premium')
-            free_ready_count=sum(1 for tier in range(1,level+1) if tier not in claimed_free)
-            premium_ready_count=sum(1 for tier in range(1,level+1) if tier not in claimed_premium)
-            if free_ready_count>2: kb.button(text='🎁 Забрать все Free-награды',callback_data='bp:claim:free')
-            if bp.premium and premium_ready_count>2: kb.button(text='💎 Забрать все Premium-награды',callback_data='bp:claim:premium')
+            free_ready_count=sum(1 for tier in range(start_level,min(end_level,level)+1) if tier not in claimed_free)
+            premium_ready_count=sum(1 for tier in range(start_level,min(end_level,level)+1) if tier not in claimed_premium)
+            if free_ready_count>1: kb.button(text='🎁 Забрать Free за эту страницу',callback_data=f'bp:claim:free:{page}')
+            if bp.premium and premium_ready_count>1: kb.button(text='💎 Забрать Premium за эту страницу',callback_data=f'bp:claim:premium:{page}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-            await m.answer('\n'.join(lines)+'\n\nЗа матч начисляется 100 XP, за выполненное задание — 50 XP.',reply_markup=kb.as_markup())
+            await m.answer('\n'.join(lines)+'\n\nЗа матч начисляется 100 XP. Требование XP для каждого следующего уровня постепенно растёт. За задания начисляется от 200 до 1 500 XP.',reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith('bp:'))
     async def battlepass_button(c:CallbackQuery):
@@ -1844,24 +1848,27 @@ async def main():
                 elif action=='premium':
                     u=await s.scalar(select(User).where(User.id==u.id).with_for_update())
                     bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
-                    if not bp: bp=BattlePassProgress(user_id=u.id,season=season_key()); s.add(bp)
+                    if not bp: bp=BattlePassProgress(user_id=u.id,season=season_key(),xp_curve=True); s.add(bp)
+                    ensure_bp_xp_curve(bp)
                     if bp.premium: await c.answer('Premium уже активирован.',show_alert=True); return
                     if u.gems<BATTLEPASS_PREMIUM_PRICE: await c.answer(f'Нужно {BATTLEPASS_PREMIUM_PRICE} 💎.',show_alert=True); return
                     u.gems-=BATTLEPASS_PREMIUM_PRICE; bp.premium=True; await s.commit()
                     await c.message.answer('✅ Premium-линия активирована.')
                 elif action=='claim':
                     premium=rest[0]=='premium'
-                    bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()))
-                    current=min(100,bp.xp//100) if bp else 0
+                    page=max(1,min(10,int(rest[1]))) if len(rest)>1 else 1
+                    bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
+                    if bp: ensure_bp_xp_curve(bp)
+                    current=bp_level_from_xp(bp.xp) if bp else 0
                     claimed=set(bp.claimed_premium if premium and bp else (bp.claimed_free if bp else []))
                     count=0; rewards=[]
-                    for level in range(1,current+1):
-                        if level in claimed: continue
+                    for tier in range((page-1)*10+1,min(page*10,current)+1):
+                        if tier in claimed: continue
                         try:
-                            reward=await claim_bp_reward(s,u.id,level,premium)
-                            rewards.append(f'{level}: {reward}'); count+=1
+                            reward=await claim_bp_reward(s,u.id,tier,premium)
+                            rewards.append(f'{tier}: {reward}'); count+=1
                         except ValueError: continue
-                    await c.message.answer('🎁 Получено наград: '+str(count)+('.\n'+'\n'.join(rewards[:10]) if rewards else '. Новых наград нет.'))
+                    await c.message.answer('🎁 Получено наград: '+str(count)+('.\n'+'\n'.join(rewards[:10]) if rewards else '. На этой странице новых наград нет.'))
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
 
@@ -1879,22 +1886,24 @@ async def main():
                 return
             today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
             groups=[
-                ('📅 ЕЖЕДНЕВНЫЕ',[( 'play3',today,3,'Сыграть 3 матча'),('win1',today,1,'Выиграть 1 матч'),('score5goals',today,5,'Забить 5 голов')]),
-                ('🗓 ЕЖЕНЕДЕЛЬНЫЕ',[( 'play20',week,20,'Сыграть 20 матчей'),('win10',week,10,'Выиграть 10 матчей')]),
-                ('🗓 ЕЖЕМЕСЯЧНЫЕ',[( 'play60month',month,60,'Сыграть 60 матчей за месяц'),('win20month',month,20,'Выиграть 20 матчей за месяц')]),
-                ('🏆 СЕЗОННЫЕ',[( 'play100',season,100,'Сыграть 100 матчей'),('win50',season,50,'Одержать 50 побед'),('reach_khl',season,1,'Достичь КХЛ'),('open50packs',season,50,'Открыть 50 паков')])
+                ('📅 ЕЖЕДНЕВНЫЕ',[( 'play3',today,5,'Сыграть 5 матчей'),('win1',today,3,'Выиграть 3 матча'),('score5goals',today,10,'Забить 10 голов')]),
+                ('🗓 ЕЖЕНЕДЕЛЬНЫЕ',[( 'play20',week,35,'Сыграть 35 матчей'),('win10',week,20,'Выиграть 20 матчей')]),
+                ('🗓 ЕЖЕМЕСЯЧНЫЕ',[( 'play60month',month,100,'Сыграть 100 матчей за месяц'),('win20month',month,40,'Выиграть 40 матчей за месяц')]),
+                ('🏆 СЕЗОННЫЕ',[( 'play100',season,200,'Сыграть 200 матчей'),('win50',season,100,'Одержать 100 побед'),('reach_khl',season,1,'Достичь КХЛ'),('open50packs',season,100,'Открыть 100 паков')])
             ]
-            rewards={'play3':(500,1,100),'win1':(750,2,100),'score5goals':(1000,3,100),'play20':(2500,4,100),'win10':(3500,5,100),'play60month':(6000,8,100),'win20month':(8000,10,100),'play100':(10000,12,100),'win50':(15000,18,100),'reach_khl':(5000,8,100),'open50packs':(10000,15,100)}
+            rewards={'play3':(2000,3,200),'win1':(3000,5,250),'score5goals':(4000,6,300),'play20':(10000,12,400),'win10':(15000,18,500),'play60month':(30000,30,700),'win20month':(40000,40,800),'play100':(75000,60,1200),'win50':(100000,80,1500),'reach_khl':(25000,25,600),'open50packs':(50000,50,1000)}
             lines=['📋 ЗАДАНИЯ']
             kb=InlineKeyboardBuilder()
             for heading,items in groups:
                 lines.extend(['', '━━━━━━━━━━━━', heading])
                 for key,period,need,title in items:
                     q=await s.scalar(select(QuestProgress).where(QuestProgress.user_id==m.from_user.id,QuestProgress.quest_key==key,QuestProgress.period_key==period))
-                    value=q.progress if q else 0; status='получено' if q and q.claimed else ('доступно' if value>=need else '')
+                    value=q.progress if q else 0
+                    completed=value>=need
+                    status='✅ Награда получена' if q and q.claimed else ('☑️ Выполнено — заберите награду' if completed else '🔄 В процессе')
                     coins,gems,xp=rewards[key]
-                    lines.append(f'• {title}: {value}/{need} · 🎁 {coins} 🪙 + {gems} 💎 + {xp} XP'+(f' · {status}' if status else ''))
-                    if value>=need and not (q and q.claimed): kb.button(text=f'🎁 Забрать награду · {title}',callback_data=f'questclaim:{key}')
+                    lines.append(f'{"✅" if q and q.claimed else "☑️" if completed else "▫️"} {title}: {value}/{need}\n   🎁 {coins:,} 🪙 + {gems} 💎 + {xp:,} XP · {status}'.replace(',',' '))
+                    if completed and not (q and q.claimed): kb.button(text=f'🎁 Забрать · {title}',callback_data=f'questclaim:{key}')
             kb.button(text='🎟 К Battle Pass',callback_data='player:battlepass'); kb.adjust(1)
             await m.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
@@ -2516,7 +2525,8 @@ async def main():
                 elif kind=='givepremium':
                     async with Session() as s:
                         bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==uid,BattlePassProgress.season==season_key()).with_for_update())
-                        if not bp: bp=BattlePassProgress(user_id=uid,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
+                        if not bp: bp=BattlePassProgress(user_id=uid,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); s.add(bp)
+                        ensure_bp_xp_curve(bp)
                         bp.premium=True; await audit(s,m.from_user.id,'givepremium',uid,'admin grant'); await s.commit()
                     admin_steps.pop(m.from_user.id,None)
                     try: await m.bot.send_message(uid,'🎟 Администрация выдала вам Premium Battle Pass!')
@@ -2538,8 +2548,11 @@ async def main():
                     if amount<0 or amount>100: raise ValueError()
                     async with Session() as s:
                         bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==state['uid'],BattlePassProgress.season==season_key()).with_for_update())
-                        if not bp: bp=BattlePassProgress(user_id=state['uid'],season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
-                        xp=amount*100; bp.xp=min(10000,bp.xp+xp)
+                        if not bp: bp=BattlePassProgress(user_id=state['uid'],season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); s.add(bp)
+                        ensure_bp_xp_curve(bp)
+                        current_level=bp_level_from_xp(bp.xp)
+                        xp=sum(bp_xp_required(current_level+i+1)-bp_xp_required(current_level+i) for i in range(min(amount,100-current_level)))
+                        bp.xp=min(BP_MAX_XP,bp.xp+xp)
                         await audit(s,m.from_user.id,'bpgrant',state['uid'],f'{amount} levels / {xp} XP'); await s.commit()
                     admin_steps.pop(m.from_user.id,None)
                     try: await m.bot.send_message(state['uid'],f'⭐ Администрация начислила вам {amount} уровней Battle Pass ({xp} XP).')
@@ -2594,8 +2607,9 @@ async def main():
             if promo.reward_xp or promo.reward_premium:
                 bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==u.id,BattlePassProgress.season==season_key()).with_for_update())
                 if not bp:
-                    bp=BattlePassProgress(user_id=u.id,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
-                bp.xp=min(10000,bp.xp+promo.reward_xp)
+                    bp=BattlePassProgress(user_id=u.id,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); s.add(bp)
+                ensure_bp_xp_curve(bp)
+                bp.xp=min(BP_MAX_XP,bp.xp+promo.reward_xp)
                 if promo.reward_premium: bp.premium=True
             s.add(PromoRedemption(promo_code=code,user_id=u.id,coins_awarded=promo.reward_coins,gems_awarded=promo.reward_gems,
                 xp_awarded=promo.reward_xp,premium_awarded=promo.reward_premium))
@@ -2720,8 +2734,9 @@ async def main():
             if not await s.get(User,uid): await m.answer('Игрок не найден.'); return
             bp=await s.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==uid,BattlePassProgress.season==season_key()).with_for_update())
             if not bp:
-                bp=BattlePassProgress(user_id=uid,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[]); s.add(bp)
-            bp.xp=min(10000,bp.xp+xp); await audit(s,m.from_user.id,'bpgrant',uid,str(xp)); await s.commit()
+                bp=BattlePassProgress(user_id=uid,season=season_key(),xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); s.add(bp)
+            ensure_bp_xp_curve(bp)
+            bp.xp=min(BP_MAX_XP,bp.xp+xp); await audit(s,m.from_user.id,'bpgrant',uid,str(xp)); await s.commit()
         await m.answer('XP Battle Pass начислен.')
 
     @dp.message(Command('cardactive'))
@@ -3018,12 +3033,18 @@ async def main():
                     reply_markup=reply_markup,parse_mode=parse_mode
                 )
 
+            async def wallet_line():
+                async with Session() as wallet_session:
+                    wallet_user=await wallet_session.get(User,c.from_user.id)
+                    return f'🪙 {wallet_user.coins} монет · 💎 {wallet_user.gems} алмазов' if wallet_user else ''
             async def proxy_answer(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
                 text_value=args[0] if args else kwargs.pop('text',None)
                 if text_value is None: text_value=kwargs.pop('caption','')
                 parse_mode=kwargs.pop('parse_mode',None)
                 reply_markup=kwargs.pop('reply_markup',None)
+                wallet=await wallet_line()
+                if wallet and '🪙' not in str(text_value): text_value=f'{wallet}\n\n{text_value}'
                 return await update_menu_text(text_value,reply_markup,parse_mode)
 
             async def proxy_answer_photo(*args,**kwargs):
@@ -3031,8 +3052,11 @@ async def main():
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
                 kwargs=add_player_back(kwargs)
+                wallet=await wallet_line()
+                caption=caption or ''
+                if wallet and '🪙' not in caption: caption=f'{wallet}\n\n{caption}'
                 return await c.bot.send_photo(
-                    c.from_user.id,photo=photo,caption=caption or '',
+                    c.from_user.id,photo=photo,caption=caption,
                     reply_markup=kwargs.get('reply_markup'),
                     parse_mode=kwargs.get('parse_mode')
                 )
@@ -3041,7 +3065,8 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
+                wallet=await wallet_line()
+                caption=f'🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\n{wallet}\n\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
                 try:
                     from aiogram.types import BufferedInputFile
                     photo=BufferedInputFile(await telegram_post_photo(),filename='main-menu.jpg')
