@@ -2403,11 +2403,22 @@ async def main():
         action=parts[1] if len(parts)>1 else ''
         if action=='cancel':
             admin_steps.pop(c.from_user.id,None); await c.message.answer('Выдача карточки отменена.',reply_markup=admin_keyboard()); await c.answer(); return
-        league_map={'KHL':'КХЛ','NHL':'НХЛ','LEGENDS':'Легенды'}
+        league_map={'KHL':'КХЛ','NHL':'НХЛ','LEGENDS':'Легенды','EXCLUSIVE':'Эксклюзив'}
         if action=='league':
             code=parts[2] if len(parts)>2 else ''
             if code not in league_map: await c.answer('Лига не найдена.',show_alert=True); return
             league=league_map[code]
+            if code=='EXCLUSIVE':
+                async with Session() as s:
+                    cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.player_name=='Семён Кошелев',Card.ovr.in_([95,99])).order_by(Card.ovr))).all()
+                if not cards: await c.answer('Эксклюзивные карточки Семёна Кошелева пока не загружены.',show_alert=True); return
+                state.update(step='exclusive_player',league=league,club='')
+                kb=InlineKeyboardBuilder()
+                for card in cards: kb.button(text=f'{card.player_name} · {card.ovr} OVR',callback_data=f'admcard:exclusiveplayer:{card.id}')
+                kb.button(text='⬅️ К выбору категории',callback_data='admcard:back:league'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                await c.message.answer('Шаг 3 из 4. Выберите эксклюзивную карточку:',reply_markup=kb.as_markup())
+                await c.answer()
+                return
             async with Session() as s:
                 clubs=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.source!='demo',Card.league==league,Card.club!='—').distinct().order_by(Card.club))).all()
             if not clubs: await c.answer(f'В каталоге пока нет активных карточек лиги {league}.',show_alert=True); return
@@ -2418,7 +2429,7 @@ async def main():
             await c.message.answer(f'Шаг 3 из 4. Лига: {league}. Выберите команду:',reply_markup=kb.as_markup())
         elif action=='back' and len(parts)>2 and parts[2]=='league':
             state['step']='league'
-            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
             await c.message.answer('Выберите лигу карточки:',reply_markup=kb.as_markup())
         elif action=='team':
             code=parts[2] if len(parts)>2 else ''; idx=int(parts[3]) if len(parts)>3 else -1
@@ -2434,6 +2445,21 @@ async def main():
                 kb.button(text=f'{card.player_name} · {card.position} · {card.ovr} OVR',callback_data=f'admcard:player:{card.id}')
             kb.button(text='⬅️ К командам',callback_data=f'admcard:league:{code}'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
             await c.message.answer(f'Шаг 4 из 4. {state["league"]} · {club}. Выберите игрока:',reply_markup=kb.as_markup())
+        elif action=='exclusiveplayer':
+            try: cid=int(parts[2])
+            except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
+            async with Session() as s:
+                target=await s.get(User,state.get('uid'))
+                card=await s.get(Card,cid)
+                if not target or not card or not card.active or card.source=='demo' or card.player_name!='Семён Кошелев' or card.ovr not in (95,99):
+                    await c.answer('Эксклюзивная карточка больше недоступна.',show_alert=True); return
+                s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
+                await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
+                target_id=target.id; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+            admin_steps.pop(c.from_user.id,None)
+            try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка: {player_name} · {ovr} OVR.')
+            except Exception: pass
+            await c.message.answer(f'✅ Эксклюзивная карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         elif action=='player':
             try: cid=int(parts[2])
             except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
@@ -2601,7 +2627,7 @@ async def main():
                     await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
                     state['step']='league'
-                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                     await m.answer('Шаг 2 из 4. Выберите лигу карточки:',reply_markup=kb.as_markup())
                 elif kind=='givepremium':
                     async with Session() as s:
