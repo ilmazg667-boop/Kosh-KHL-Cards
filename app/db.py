@@ -40,6 +40,7 @@ async def init_db():
                         if table == 'matches' and name == 'result_sent':
                             await conn.exec_driver_sql("UPDATE matches SET result_sent=1 WHERE status='completed' AND finished_at < datetime('now','-1 hour')")
             await conn.exec_driver_sql("UPDATE cards SET ovr=MIN(ovr+2,100), rating_boosted=1 WHERE league='КХЛ' AND rating_boosted=0 AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
+            await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN datetime(created_at,'+2 minutes') ELSE datetime(created_at,'+5 minutes') END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
         else:
             for statement in (
                 'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(128) NOT NULL DEFAULT \'\'',
@@ -66,3 +67,4 @@ async def init_db():
             ):
                 await conn.exec_driver_sql(statement)
             await conn.exec_driver_sql("UPDATE cards SET ovr=LEAST(ovr+2,100), rating_boosted=TRUE WHERE league='КХЛ' AND rating_boosted=FALSE AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
+            await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN created_at + INTERVAL '2 minutes' ELSE created_at + INTERVAL '5 minutes' END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
