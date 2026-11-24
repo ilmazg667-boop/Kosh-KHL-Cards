@@ -529,7 +529,9 @@ async def main():
             if not oc.locked:
                 kb.button(text=f'🏒 Поставить на {card.position}',callback_data=f'teamequip:{oc.id}:{card.position}')
                 if oc.slot: kb.button(text='➖ Снять из состава',callback_data=f'team:remove:{oc.slot}')
-                if not oc.slot: kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
+                if not oc.slot:
+                    kb.button(text='🏪 Выставить на рынок',callback_data=f'marketcard:{oc.id}')
+                    kb.button(text=f'💰 Продать за {card.ovr*50} 🪙',callback_data=f'cardsellhalf:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
             kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
             await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
@@ -985,10 +987,16 @@ async def main():
                     if card:
                         kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}',callback_data=f'marketcard:{oc.id}'); count+=1
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
-                await c.message.answer('Выберите свободную карточку для продажи:' if count else 'Нет свободных карточек. Сначала снимите карточку с позиции в меню «Моя команда».',reply_markup=kb.as_markup())
-            elif action=='current':
-                listings=(await s.scalars(select(MarketListing).where(MarketListing.status=='active').order_by(desc(MarketListing.created_at)).limit(25))).all()
-                lines=['🏪 АКТИВНЫЕ ЛОТЫ']; kb=InlineKeyboardBuilder(); count=0
+                await c.message.answer('Выберите свободную карточку для выставления на рынок:' if count else 'Нет свободных карточек. Сначала снимите карточку с позиции в меню «Моя команда».',reply_markup=kb.as_markup())
+            elif action.startswith('current'):
+                try: page=max(0,int(action.split(':',1)[1])) if ':' in action else 0
+                except ValueError: page=0
+                page_size=5
+                total=await s.scalar(select(func.count(MarketListing.id)).where(MarketListing.status=='active')) or 0
+                pages=max(1,(total+page_size-1)//page_size)
+                page=min(page,pages-1)
+                listings=(await s.scalars(select(MarketListing).where(MarketListing.status=='active').order_by(desc(MarketListing.created_at),desc(MarketListing.id)).offset(page*page_size).limit(page_size))).all()
+                lines=[f'🏪 АКТИВНЫЕ ЛОТЫ · Страница {page+1}/{pages}']; kb=InlineKeyboardBuilder(); count=0
                 for listing in listings:
                     oc=await s.get(OwnedCard,listing.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     seller=await s.get(User,listing.seller_id)
@@ -996,6 +1004,8 @@ async def main():
                         lines.append(f'\n{card.player_name} · {card.ovr} OVR · {rarity_label(card.rarity)}\nПродавец: {seller.first_name or seller.id if seller else "игрок"}\nЦена: {listing.price} 🪙')
                         kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
                 if not count: lines.append('\nПока нет активных лотов.')
+                if page>0: kb.button(text='⬅️ Предыдущая',callback_data=f'market:current:{page-1}')
+                if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'market:current:{page+1}')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
                 try: await c.message.edit_text('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
                 except Exception: await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup(),parse_mode='HTML')
@@ -1038,6 +1048,26 @@ async def main():
                 market_steps.pop(m.from_user.id,None)
                 await m.answer(f'✅ Карточка выставлена на рынок за {price} 🪙.')
             except (ValueError,KeyError) as e: await m.answer(str(e))
+
+    @dp.callback_query(F.data.startswith('cardsellhalf:'))
+    async def card_sell_half(c:CallbackQuery):
+        try: oid=int(c.data.split(':',1)[1])
+        except ValueError:
+            await c.answer('Карточка не найдена.',show_alert=True); return
+        async with Session() as s:
+            oc=await s.scalar(select(OwnedCard).where(OwnedCard.id==oid).with_for_update())
+            if not oc or oc.user_id!=c.from_user.id or oc.slot or oc.locked:
+                await c.answer('Можно продать только свободную незаблокированную карточку.',show_alert=True); return
+            card=await s.get(Card,oc.card_id)
+            user=await s.scalar(select(User).where(User.id==c.from_user.id).with_for_update())
+            if not card or not user:
+                await c.answer('Карточка или игрок не найдены.',show_alert=True); return
+            payout=card.ovr*50
+            user.coins+=payout
+            await s.delete(oc)
+            await s.commit()
+        await c.message.answer(f'💰 Карточка {card.player_name} · {card.ovr} OVR продана за половину рейтинга: {payout} 🪙.')
+        await c.answer('Продано!')
 
     @dp.callback_query(F.data.startswith('marketbuy:'))
     async def market_buy_button(c:CallbackQuery):
