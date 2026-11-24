@@ -2216,11 +2216,14 @@ async def main():
                 t=await s.get(DailyTournament,tid)
                 if not t:
                     await c.answer('Турнир уже удалён.',show_alert=True); return
+                # Remove both individual and clan standings before deleting the parent row.
+                await s.execute(ClanTournamentEntry.__table__.delete().where(ClanTournamentEntry.tournament_id==tid))
                 await s.execute(TournamentEntry.__table__.delete().where(TournamentEntry.tournament_id==tid))
                 await audit(s,c.from_user.id,'tournament_deleted',tid,f'{t.tournament_date}:{t.title}')
                 await s.delete(t)
                 await s.commit()
-            await c.message.answer('🗑 Турнир и связанные записи удалены. Ранее начисленные награды не изменены.',reply_markup=admin_back_keyboard())
+            await c.answer('Турнир удалён.')
+            await c.message.answer('🗑 Турнир, личные и клановые результаты удалены. Ранее начисленные награды не изменены.',reply_markup=admin_back_keyboard())
         elif action[1] in ('tournament_start','tournament_finish','tournament_reward'):
             tid=int(action[2]); mode='open' if action[1]=='tournament_start' else 'closed'
             async with Session() as s:
