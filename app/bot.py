@@ -1310,7 +1310,7 @@ async def main():
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {format_msk(a.ends_at,naive_is_utc=True)[:-3]} МСК')
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {(format_msk(a.ends_at,naive_is_utc=True)[:5]+' '+format_msk(a.ends_at,naive_is_utc=True)[11:16])} МСК')
                         kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
                 if not rows: lines.append('\nПока нет активных аукционов.')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
