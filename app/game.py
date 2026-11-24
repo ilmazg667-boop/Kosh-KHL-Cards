@@ -121,11 +121,13 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
             team_name=home_team_name if side=='home' else away_team_name
-            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2,'team':team_name,'powerplay':powerplay_at(side,minute)}
+            finishes=['мощным щелчком','точным кистевым броском','броском в одно касание','броском с неудобной руки','после сольного прохода','добиванием с пятака','рикошетом от защитника']
+            finish=random.choice(finishes)
+            goal={'minute':minute,'scorer':scorer,'assist':assist,'assist2':assist2,'team':team_name,'powerplay':powerplay_at(side,minute),'finish':finish}
             (home_goals if side=='home' else away_goals).append(goal)
             assist_text=f"; ассисты: <b>{assist}</b> и <b>{assist2}</b>" if assist2 else f"; ассист: <b>{assist}</b>"
             pp_label=' 🔵 <b>РЕАЛИЗОВАННОЕ БОЛЬШИНСТВО!</b>' if goal['powerplay'] else ''
-            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! <b>{scorer}</b> ({team_name}){assist_text}{pp_label}"})
+            events.append({'minute':minute,'type':'goal','side':side,'text':f"🥅 ГООООЛ! <b>{scorer}</b> ({team_name}) забивает {finish}{assist_text}{pp_label}"})
     # Hockey teams typically produce dozens of shots, not just a handful.
     # Every non-goal shot is counted as a goalie save in the final box score.
     for side in ('home','away'):
@@ -199,13 +201,14 @@ def simulate(home_power, away_power, home_goalie, away_goalie, home_chem=0, away
             assists=random.sample(helpers,k=min(2,len(helpers)))
             assist=assists[0]; assist2=assists[1] if len(assists)>1 else None
             ot_team_name=home_team_name if ot_side=='home' else away_team_name
-            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2,'team':ot_team_name,'powerplay':False}
+            ot_finish=random.choice(['мощным щелчком','точным кистевым броском','броском в одно касание','после сольного прохода','добиванием с пятака'])
+            goal={'minute':65,'scorer':scorer,'assist':assist,'assist2':assist2,'team':ot_team_name,'powerplay':False,'finish':ot_finish}
             if ot_side=='home':
                 home+=1; home_goals.append(goal)
             else:
                 away+=1; away_goals.append(goal)
             assist_text=f"; ассисты: <b>{assist}</b> и <b>{assist2}</b>" if assist2 else f"; ассист: <b>{assist}</b>"
-            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! <b>{scorer}</b> ({ot_team_name}){assist_text}'})
+            events.append({'minute':65,'type':'goal','side':ot_side,'text':f'🥅 ЗОЛОТОЙ ГОЛ В ОВЕРТАЙМЕ! <b>{scorer}</b> ({ot_team_name}) забивает {ot_finish}{assist_text}'})
             events.append({'minute':65,'type':'overtime','text':'🏒 Овертайм завершён. Победитель определён.'})
     events.sort(key=lambda e:e['minute'])
     events.insert(0,{'minute':0,'type':'start','text':'🏒 Команды на точке вбрасывания. Судья готов — первое вбрасывание! Матч начался, 60 минут игрового времени.'})
