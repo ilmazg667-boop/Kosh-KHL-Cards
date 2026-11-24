@@ -187,7 +187,7 @@ def team_keyboard():
         kb.button(text=f'➕ Поставить {pos}',callback_data=f'team:choose:{pos}')
         kb.button(text=f'➖ Убрать {pos}',callback_data=f'team:remove:{pos}')
     kb.button(text='⬅️ Главное меню',callback_data='player:home')
-    kb.adjust(1, *([2] * len(POSITIONS)), 1)
+    kb.adjust(1, 1, *([2] * len(POSITIONS)), 1)
     return kb.as_markup()
 
 def collection_keyboard(cards, session):
@@ -355,7 +355,7 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             await send_team_art(m,s,m.from_user.id,team_name=u.team_name)
 
-    @dp.callback_query(F.data.startswith('team:'))
+    @dp.callback_query(F.data.regexp(r'^team:(?:remove|choose):'))
     async def team_action(c:CallbackQuery):
         _,action,pos=c.data.split(':',2)
         if pos not in POSITIONS: await c.answer('Позиция не найдена.',show_alert=True); return
