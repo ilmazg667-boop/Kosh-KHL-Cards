@@ -248,38 +248,67 @@ async def buy_market_listing(session,buyer,listing_id):
     oc.user_id=buyer.id; oc.locked=False; listing.buyer_id=buyer.id; listing.status='sold'
     await session.commit(); return oc
 
-async def create_trade(session,sender_id,receiver_id,give_id,receive_id):
+async def create_trade(session,sender_id,receiver_id):
     if sender_id==receiver_id: raise ValueError('Нельзя обмениваться с самим собой.')
     receiver=await session.get(User,receiver_id)
     if not receiver or receiver.is_banned: raise ValueError('Игрок не найден или заблокирован. Он должен хотя бы раз запустить бота.')
-    # Lock both cards in stable ID order to avoid reciprocal-trade deadlocks.
-    rows=(await session.scalars(select(OwnedCard).where(OwnedCard.id.in_([give_id,receive_id])).order_by(OwnedCard.id).with_for_update())).all()
-    cards={oc.id:oc for oc in rows}
-    a=cards.get(give_id); b=cards.get(receive_id)
-    if not a or a.user_id!=sender_id or a.slot or a.locked: raise ValueError('Ваша карточка недоступна для обмена.')
-    if not b or b.user_id!=receiver_id or b.slot or b.locked: raise ValueError('Карточка второго игрока недоступна для обмена.')
-    a.locked=True; b.locked=True
-    offer=TradeOffer(sender_id=sender_id,receiver_id=receiver_id,give_card_ids=[a.id],receive_card_ids=[b.id])
+    offer=TradeOffer(sender_id=sender_id,receiver_id=receiver_id,status='pending')
     session.add(offer); await session.commit(); await session.refresh(offer); return offer
+
+async def set_trade_card(session,offer_id,user_id,owned_id):
+    offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
+    if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
+    if not oc or oc.user_id!=user_id or oc.slot or oc.locked: raise ValueError('Карточка недоступна: нужна свободная карточка.')
+    mine=offer.give_card_ids if user_id==offer.sender_id else offer.receive_card_ids
+    if owned_id in mine: raise ValueError('Эта карточка уже добавлена в обмен.')
+    oc.locked=True; mine.append(owned_id)
+    offer.sender_confirmed=False; offer.receiver_confirmed=False
+    await session.commit(); return offer
+
+async def set_trade_currency(session,offer_id,user_id,kind,amount):
+    if kind not in ('coins','gems') or amount<0: raise ValueError('Некорректная сумма.')
+    offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
+    if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    user=await session.scalar(select(User).where(User.id==user_id).with_for_update())
+    if amount>getattr(user,kind): raise ValueError(f'Недостаточно {"монет" if kind=="coins" else "алмазов"}.')
+    prefix='sender' if user_id==offer.sender_id else 'receiver'
+    setattr(offer,f'{prefix}_{kind}',amount)
+    offer.sender_confirmed=False; offer.receiver_confirmed=False
+    await session.commit(); return offer
+
+async def confirm_trade(session,offer_id,user_id):
+    offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
+    if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    if user_id==offer.sender_id: offer.sender_confirmed=True
+    else: offer.receiver_confirmed=True
+    if not (offer.sender_confirmed and offer.receiver_confirmed):
+        await session.commit(); return False
+    sender=await session.scalar(select(User).where(User.id==offer.sender_id).with_for_update())
+    receiver=await session.scalar(select(User).where(User.id==offer.receiver_id).with_for_update())
+    if sender.coins<offer.sender_coins or sender.gems<offer.sender_gems or receiver.coins<offer.receiver_coins or receiver.gems<offer.receiver_gems:
+        offer.sender_confirmed=False; offer.receiver_confirmed=False; await session.commit()
+        raise ValueError('Баланс изменился. Проверьте суммы и подтвердите обмен заново.')
+    ids=list(offer.give_card_ids or [])+list(offer.receive_card_ids or [])
+    rows=(await session.scalars(select(OwnedCard).where(OwnedCard.id.in_(ids)).order_by(OwnedCard.id).with_for_update())).all() if ids else []
+    by_id={x.id:x for x in rows}
+    if len(by_id)!=len(set(ids)) or any(not by_id[i].locked or by_id[i].slot for i in ids): raise ValueError('Одна из карточек больше недоступна.')
+    for cid in offer.give_card_ids:
+        oc=by_id[cid]
+        if oc.user_id!=sender.id: raise ValueError('Карточка отправителя изменила владельца.')
+        oc.user_id=receiver.id; oc.locked=False
+    for cid in offer.receive_card_ids:
+        oc=by_id[cid]
+        if oc.user_id!=receiver.id: raise ValueError('Карточка получателя изменила владельца.')
+        oc.user_id=sender.id; oc.locked=False
+    sender.coins+=offer.receiver_coins-offer.sender_coins; receiver.coins+=offer.sender_coins-offer.receiver_coins
+    sender.gems+=offer.receiver_gems-offer.sender_gems; receiver.gems+=offer.sender_gems-offer.receiver_gems
+    offer.status='accepted'; await session.commit(); return True
 
 async def resolve_trade(session,offer_id,receiver_id,accept):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='pending' or offer.receiver_id!=receiver_id: raise ValueError('Предложение недоступно.')
-    ids=sorted(set((offer.give_card_ids or [])+(offer.receive_card_ids or [])))
-    rows=(await session.scalars(select(OwnedCard).where(OwnedCard.id.in_(ids)).order_by(OwnedCard.id).with_for_update())).all()
-    cards={oc.id:oc for oc in rows}
-    a=cards.get(offer.give_card_ids[0]) if offer.give_card_ids else None
-    b=cards.get(offer.receive_card_ids[0]) if offer.receive_card_ids else None
-    if not a or not b or a.user_id!=offer.sender_id or b.user_id!=offer.receiver_id or not a.locked or not b.locked or a.slot or b.slot:
-        for oc in cards.values(): oc.locked=False
-        offer.status='cancelled'
-        await session.commit()
-        raise ValueError('Карточки изменили состояние. Обмен отменён, доступные карточки разблокированы.')
-    if accept:
-        a.user_id=receiver_id; b.user_id=offer.sender_id
-        offer.status='accepted'
-    else: offer.status='declined'
-    a.locked=False; b.locked=False
+    offer.status='negotiating' if accept else 'declined'
     await session.commit(); return offer
 
 async def submit_auction_card(session,user_id,owned_id):
