@@ -498,6 +498,30 @@ async def join_clan(session,user_id,clan_id):
     if count>=25: raise ValueError('В клане уже 25 участников.')
     session.add(ClanMember(clan_id=clan.id,user_id=user_id,role='member')); await session.commit(); return clan
 
+BP_MAX_LEVEL=100
+BP_MAX_XP=BP_MAX_LEVEL*100+5*BP_MAX_LEVEL*(BP_MAX_LEVEL-1)
+
+def bp_xp_required(level):
+    level=max(0,min(BP_MAX_LEVEL,int(level)))
+    return level*100+5*level*(level-1)
+
+def bp_level_from_xp(xp):
+    xp=max(0,int(xp or 0))
+    level=0
+    while level<BP_MAX_LEVEL and xp>=bp_xp_required(level+1):
+        level+=1
+    return level
+
+def ensure_bp_xp_curve(bp):
+    # Convert legacy linear XP once while preserving the old level and remainder.
+    if not getattr(bp,'xp_curve',False):
+        old_xp=max(0,int(bp.xp or 0))
+        old_level=min(BP_MAX_LEVEL,old_xp//100)
+        remainder=old_xp%100 if old_level<BP_MAX_LEVEL else 0
+        bp.xp=bp_xp_required(old_level)+remainder
+        bp.xp_curve=True
+    return bp
+
 async def _increment_quest(session,user_id,key,period,amount=1,cap=None):
     q=await session.scalar(select(QuestProgress).where(QuestProgress.user_id==user_id,QuestProgress.quest_key==key,QuestProgress.period_key==period).with_for_update())
     if not q: q=QuestProgress(user_id=user_id,quest_key=key,period_key=period,progress=0,claimed=False); session.add(q)
@@ -507,42 +531,44 @@ async def _increment_quest(session,user_id,key,period,amount=1,cap=None):
 async def progress_after_match(session,user_id,won,goals=0,rating=0):
     today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
     for key,period,amount,cap in [
-        ('play3',today,1,3),('win1',today,1 if won else 0,1),('score5goals',today,goals,5),
-        ('play20',week,1,20),('win10',week,1 if won else 0,10),
-        ('play60month',month,1,60),('win20month',month,1 if won else 0,20),
-        ('play100',season,1,100),('win50',season,1 if won else 0,50),
+        ('play3',today,1,5),('win1',today,1 if won else 0,3),('score5goals',today,goals,10),
+        ('play20',week,1,35),('win10',week,1 if won else 0,20),
+        ('play60month',month,1,100),('win20month',month,1 if won else 0,40),
+        ('play100',season,1,200),('win50',season,1 if won else 0,100),
         ('reach_khl',season,1 if rating>=3001 else 0,1)]:
         if amount: await _increment_quest(session,user_id,key,period,amount,cap)
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
-    if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[]); session.add(bp)
-    bp.xp+=100
+    if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); session.add(bp)
+    ensure_bp_xp_curve(bp)
+    bp.xp=min(BP_MAX_XP,bp.xp+100)
 
 async def progress_pack_quest(session,user_id):
-    await _increment_quest(session,user_id,'open50packs',season_key(),1,50)
+    await _increment_quest(session,user_id,'open50packs',season_key(),1,100)
 
 async def claim_quest(session,user_id,key):
     today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
-    target={'play3':(today,3,500,1),'win1':(today,1,750,2),'score5goals':(today,5,1000,3),
-        'play20':(week,20,2500,4),'win10':(week,10,3500,5),
-        'play60month':(month,60,6000,8),'win20month':(month,20,8000,10),
-        'play100':(season,100,10000,12),'win50':(season,50,15000,18),'reach_khl':(season,1,5000,8),'open50packs':(season,50,10000,15)}
+    target={'play3':(today,5,2000,3,200),'win1':(today,3,3000,5,250),'score5goals':(today,10,4000,6,300),
+        'play20':(week,35,10000,12,400),'win10':(week,20,15000,18,500),
+        'play60month':(month,100,30000,30,700),'win20month':(month,40,40000,40,800),
+        'play100':(season,200,75000,60,1200),'win50':(season,100,100000,80,1500),'reach_khl':(season,1,25000,25,600),'open50packs':(season,100,50000,50,1000)}
     if key not in target: raise ValueError('Задание не найдено.')
-    period,need,reward_coins,reward_gems=target[key]
+    period,need,reward_coins,reward_gems,quest_xp=target[key]
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
     q=await session.scalar(select(QuestProgress).where(QuestProgress.user_id==user_id,QuestProgress.quest_key==key,QuestProgress.period_key==period).with_for_update())
     if not q or q.progress<need: raise ValueError('Задание ещё не выполнено.')
     if q.claimed: raise ValueError('Награда уже получена.')
     u.coins+=reward_coins; u.gems+=reward_gems; q.claimed=True
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
-    if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[]); session.add(bp)
-    quest_xp=100
-    bp.xp=min(10000,bp.xp+quest_xp); await session.commit(); return (reward_coins,reward_gems,quest_xp)
+    if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); session.add(bp)
+    ensure_bp_xp_curve(bp)
+    bp.xp=min(BP_MAX_XP,bp.xp+quest_xp); await session.commit(); return (reward_coins,reward_gems,quest_xp)
 
 async def claim_bp_reward(session,user_id,level,premium=False):
     if not 1<=level<=100: raise ValueError('Уровень должен быть от 1 до 100.')
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season_key()).with_for_update())
     if not bp: raise ValueError('Сначала сыграйте матч, чтобы начать Battle Pass.')
-    current=min(100,bp.xp//100)
+    ensure_bp_xp_curve(bp)
+    current=bp_level_from_xp(bp.xp)
     if current<level: raise ValueError('Этот уровень ещё не достигнут.')
     if premium and not bp.premium: raise ValueError('Premium-линия не активирована.')
     claimed=list(bp.claimed_premium if premium else bp.claimed_free)
@@ -580,9 +606,9 @@ async def claim_bp_reward(session,user_id,level,premium=False):
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Пак «{pack_name}»: {card.player_name} · {card.ovr} OVR · {card.rarity}'
     elif premium:
-        gems=2+level//10; u.gems+=gems; reward_text=f'{gems} 💎'
+        gems=5+level//5; u.gems+=gems; reward_text=f'{gems} 💎'
     else:
-        coins=250+level*25; u.coins+=coins; reward_text=f'{coins} 🪙'
+        coins=500+level*100; u.coins+=coins; reward_text=f'{coins} 🪙'
     claimed.append(level)
     if premium: bp.claimed_premium=claimed
     else: bp.claimed_free=claimed
