@@ -52,7 +52,7 @@ def auction_duration(value):
     if raw.isdigit():
         minutes=int(raw)*60
     else:
-        match=re.fullmatch(r'(?:(\\d+)ч)?(?:(\\d+)м)?',raw)
+        match=re.fullmatch(r'(?:(\d+)ч)?(?:(\d+)м)?',raw)
         if not match or not any(match.groups()):
             raise ValueError('Укажите срок как 2ч, 90м или 1ч30м.')
         minutes=int(match.group(1) or 0)*60+int(match.group(2) or 0)
