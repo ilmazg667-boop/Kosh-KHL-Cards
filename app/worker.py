@@ -415,7 +415,7 @@ async def award_pack_card(session,user_id,pack_name):
 async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
     """Pay final standings, publish results, then remove tournament data."""
     from .models import TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry
-    entries=(await session.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tournament.id).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc(),TournamentEntry.user_id))).all()
+    entries=(await session.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tournament.id,TournamentEntry.games>0).order_by(TournamentEntry.points.desc(),TournamentEntry.wins.desc(),TournamentEntry.goals.desc(),TournamentEntry.user_id))).all()
     defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
     ranked=[]
     for place,entry in enumerate(entries,1):
@@ -503,7 +503,7 @@ async def close_old_tournaments(session,bot):
             next_event=DailyTournament(tournament_date=str(int(current_time.timestamp())),title='',status='open')
             session.add(next_event)
             await session.flush()
-            users=(await session.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
+            users=(await session.scalars(select(User.id))).all()
             await audit_worker(session,next_event.id,'tournament_auto_started_2030',today_key)
             await session.commit()
             for uid in users:
