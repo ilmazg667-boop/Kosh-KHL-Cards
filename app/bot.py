@@ -253,7 +253,7 @@ async def main():
             await s.commit()
             if u.is_banned: await m.answer('Ваш аккаунт заблокирован.'); return
             welcome='Добро пожаловать в Kosh KHL Cards!\nСтартовый набор: 20 💎 · 5000 🪙 · команда из 6 карточек.' if new else 'С возвращением в Kosh KHL Cards!'
-            await send_main_menu(m,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\n🪙 Баланс: {u.coins} монет · 💎 {u.gems} алмазов\n\nВыберите раздел в меню.',reply_markup=keyboard())
+            await send_main_menu(m,f'🏒 KOSH KHL CARDS\n\n{welcome}\n\nВыберите раздел в меню.',reply_markup=keyboard())
 
 
     support_steps={}
@@ -2245,7 +2245,7 @@ async def main():
                 await audit(s,c.from_user.id,'tournament_early_finish',tid,t.tournament_date)
                 await finalize_daily_tournament(s,t,c.bot,c.from_user.id)
             admin_steps.pop(c.from_user.id,None)
-            await c.message.answer(f'🏁 Турнир «{title}» завершён. Итоговая таблица отправлена участникам, награды начислены, данные турнира удалены.',reply_markup=admin_back_keyboard())
+            await c.message.answer(f'🏁 Турнир «{title}» завершён. Итоговая таблица отправлена участникам, награды начислены. Запись турнира сохранена в админ-панели со статусом «завершён».',reply_markup=admin_back_keyboard())
         elif action[1]=='tournament_apply':
             tid=int(action[2]); mode=action[3]
             async with Session() as s:
@@ -3100,18 +3100,12 @@ async def main():
                     reply_markup=reply_markup,parse_mode=parse_mode
                 )
 
-            async def wallet_line():
-                async with Session() as wallet_session:
-                    wallet_user=await wallet_session.get(User,c.from_user.id)
-                    return f'🪙 {wallet_user.coins} монет · 💎 {wallet_user.gems} алмазов' if wallet_user else ''
             async def proxy_answer(*args,**kwargs):
                 kwargs=add_player_back(kwargs)
                 text_value=args[0] if args else kwargs.pop('text',None)
                 if text_value is None: text_value=kwargs.pop('caption','')
                 parse_mode=kwargs.pop('parse_mode',None)
                 reply_markup=kwargs.pop('reply_markup',None)
-                wallet=await wallet_line()
-                if wallet and wallet not in str(text_value): text_value=f'{wallet}\n\n{text_value}'
                 return await update_menu_text(text_value,reply_markup,parse_mode)
 
             async def proxy_answer_photo(*args,**kwargs):
@@ -3119,9 +3113,7 @@ async def main():
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
                 kwargs=add_player_back(kwargs)
-                wallet=await wallet_line()
                 caption=caption or ''
-                if wallet and wallet not in caption: caption=f'{wallet}\n\n{caption}'
                 return await c.bot.send_photo(
                     c.from_user.id,photo=photo,caption=caption,
                     reply_markup=kwargs.get('reply_markup'),
@@ -3132,8 +3124,7 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                wallet=await wallet_line()
-                caption=f'🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\n{wallet}\n\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
+                caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
                 try:
                     from aiogram.types import BufferedInputFile
                     photo=BufferedInputFile(await telegram_post_photo(),filename='main-menu.jpg')
