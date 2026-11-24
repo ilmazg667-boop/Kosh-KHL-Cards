@@ -1075,8 +1075,15 @@ async def main():
         except ValueError: await c.answer('Лот не найден.',show_alert=True); return
         async with Session() as s:
             try:
-                user=await active_user(s,c.from_user); oc=await buy_market_listing(s,user,lid); card=await s.get(Card,oc.card_id)
-                await c.message.answer(f'✅ Куплено: {card.player_name} · {card.ovr} OVR. Карточка добавлена в коллекцию.')
+                user=await active_user(s,c.from_user)
+                listing=await s.get(MarketListing,lid)
+                if not listing or listing.status!='active': raise ValueError('Лот уже недоступен.')
+                seller_id=listing.seller_id; paid=listing.price
+                oc=await buy_market_listing(s,user,lid); card=await s.get(Card,oc.card_id)
+                await c.message.answer(f'✅ Покупка успешна!\nКарточка: {card.player_name} · {card.ovr} OVR.\nСписано: {paid} 🪙. Карточка добавлена в коллекцию.')
+                try:
+                    await c.bot.send_message(seller_id,f'🎉 Вашу карточку купили!\n{card.player_name} · {card.ovr} OVR продана за {paid} 🪙. Монеты зачислены на ваш баланс.')
+                except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Покупка успешна.')
 
@@ -1101,8 +1108,15 @@ async def main():
         except: await m.answer('Формат: /buy LISTING_ID'); return
         async with Session() as s:
             try:
-                u=await active_user(s,m.from_user); oc=await buy_market_listing(s,u,lid)
-                c=await s.get(Card,oc.card_id); await m.answer(f'✅ Куплено: {c.player_name} · {c.ovr} OVR. Карточка #{oc.id}.')
+                u=await active_user(s,m.from_user)
+                listing=await s.get(MarketListing,lid)
+                if not listing or listing.status!='active': raise ValueError('Лот уже недоступен.')
+                seller_id=listing.seller_id; paid=listing.price
+                oc=await buy_market_listing(s,u,lid)
+                card=await s.get(Card,oc.card_id)
+                await m.answer(f'✅ Покупка успешна!\n{card.player_name} · {card.ovr} OVR. Карточка #{oc.id}.\nСписано: {paid} 🪙.')
+                try: await m.bot.send_message(seller_id,f'🎉 Вашу карточку купили!\n{card.player_name} · {card.ovr} OVR продана за {paid} 🪙. Монеты зачислены на ваш баланс.')
+                except Exception: pass
             except ValueError as e: await m.answer(str(e))
     trade_target_steps={}
     trade_input_steps={}
@@ -2462,7 +2476,13 @@ async def main():
                     setattr(target,field,getattr(target,field)+amount)
                     await audit(s,m.from_user.id,kind,state['uid'],str(amount)); await s.commit()
                 admin_steps.pop(m.from_user.id,None)
-                await m.answer(f'✅ Баланс обновлён: {amount:+} {"🪙" if kind=="givecoins" else "💎"}.',reply_markup=admin_keyboard())
+                currency='монет' if kind=='givecoins' else 'алмазов'
+                emoji='🪙' if kind=='givecoins' else '💎'
+                action='начислила' if amount>0 else 'списала'
+                try:
+                    await m.bot.send_message(state['uid'],f'🎁 Администрация {action} вам {abs(amount)} {currency} {emoji}.')
+                except Exception: pass
+                await m.answer(f'✅ Баланс обновлён: {amount:+} {emoji}.',reply_markup=admin_keyboard())
             elif step=='card':
                 cid=int(m.text.strip())
                 async with Session() as s:
@@ -2516,6 +2536,10 @@ async def main():
             if not u or amount==0: await m.answer('Игрок не найден или сумма равна нулю.'); return
             if u.coins+amount<0: await m.answer('Операция приведёт к отрицательному балансу.'); return
             u.coins+=amount; await audit(s,m.from_user.id,'givecoins',uid,str(amount)); await s.commit()
+        try:
+            action='начислила' if amount>0 else 'списала'
+            await m.bot.send_message(uid,f'🎁 Администрация {action} вам {abs(amount)} монет 🪙.')
+        except Exception: pass
         await m.answer('Баланс монет изменён.')
 
     @dp.message(Command('givegems'))
@@ -2528,6 +2552,10 @@ async def main():
             if not u or amount==0: await m.answer('Игрок не найден или сумма равна нулю.'); return
             if u.gems+amount<0: await m.answer('Операция приведёт к отрицательному балансу.'); return
             u.gems+=amount; await audit(s,m.from_user.id,'givegems',uid,str(amount)); await s.commit()
+        try:
+            action='начислила' if amount>0 else 'списала'
+            await m.bot.send_message(uid,f'🎁 Администрация {action} вам {abs(amount)} алмазов 💎.')
+        except Exception: pass
         await m.answer('Баланс алмазов изменён.')
 
     @dp.message(Command('givecard'))
