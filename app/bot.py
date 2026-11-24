@@ -2138,7 +2138,7 @@ async def main():
             lines=['🏆 УПРАВЛЕНИЕ ТУРНИРАМИ','Запуск и завершение контролируются администраторами. В 20:00 МСК придёт напоминание, в 20:30 открытый турнир завершится автоматически. Название можно изменить в любой момент.','\nПоследние турниры:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\n{t.title or 'Без названия'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else '⚪ не запущен')} · ID {t.id}")
+                lines.append(f"\n{t.title or 'Без названия'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else ('🚫 отменён' if t.status=='cancelled' else '⚪ не запущен'))} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
             kb.button(text='➕ Создать турнир / найти по дате',callback_data='adm:tournament_date')
@@ -2176,12 +2176,12 @@ async def main():
             if t.status=='open': kb.button(text='🔴 Завершить турнир',callback_data=f'adm:tournament_finish:{tid}')
             else:
                 kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
-                if not t.rewarded_at: kb.button(text='🎁 Начислить награды',callback_data=f'adm:tournament_reward:{tid}')
+                if not t.rewarded_at and t.status!='cancelled': kb.button(text='🎁 Начислить награды',callback_data=f'adm:tournament_reward:{tid}')
             kb.button(text='✏️ Изменить название',callback_data=f'adm:tournament_rename:{tid}')
             kb.button(text='⏰ Изменить время окончания',callback_data=f'adm:tournament_end:{tid}')
             kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 {t.title or "Без названия"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else "⚪ не запущен / закрыт")}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Без названия"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else ("🚫 отменён" if t.status=="cancelled" else "⚪ не запущен / закрыт"))}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
         elif action[1]=='tournament_end':
             tid=int(action[2])
             async with Session() as s:
