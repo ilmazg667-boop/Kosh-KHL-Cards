@@ -979,15 +979,23 @@ async def main():
         async with Session() as s:
             try: await active_user(s,c.from_user)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
-            if action=='sell':
-                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
+            if action.startswith('sell'):
+                try: page=max(0,int(action.split(':',1)[1])) if ':' in action else 0
+                except ValueError: page=0
+                page_size=8
+                cond=(OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False))
+                total=await s.scalar(select(func.count(OwnedCard.id)).where(*cond)) or 0
+                pages=max(1,(total+page_size-1)//page_size); page=min(page,pages-1)
+                cards=(await s.scalars(select(OwnedCard).where(*cond).order_by(OwnedCard.id.desc()).offset(page*page_size).limit(page_size))).all()
                 kb=InlineKeyboardBuilder(); count=0
                 for oc in cards:
                     card=await s.get(Card,oc.card_id)
                     if card:
                         kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}',callback_data=f'marketcard:{oc.id}'); count+=1
+                if page>0: kb.button(text='⬅️ Предыдущая',callback_data=f'market:sell:{page-1}')
+                if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'market:sell:{page+1}')
                 kb.button(text='⬅️ Назад',callback_data='market:home'); kb.adjust(1)
-                await c.message.answer('Выберите свободную карточку для выставления на рынок:' if count else 'Нет свободных карточек. Сначала снимите карточку с позиции в меню «Моя команда».',reply_markup=kb.as_markup())
+                await c.message.answer(f'Выберите свободную карточку для выставления на рынок · страница {page+1}/{pages}:' if count else 'Нет свободных карточек. Сначала снимите карточку с позиции в меню «Моя команда».',reply_markup=kb.as_markup())
             elif action.startswith('current'):
                 try: page=max(0,int(action.split(':',1)[1])) if ':' in action else 0
                 except ValueError: page=0
@@ -1280,21 +1288,29 @@ async def main():
         action=c.data.split(':',1)[1]
         async with Session() as s:
             await active_user(s,c.from_user)
-            if action=='start':
-                cards=(await s.scalars(select(OwnedCard).where(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False)).order_by(OwnedCard.id.desc()).limit(100))).all()
+            if action.startswith('start'):
+                try: page=max(0,int(action.split(':',1)[1])) if ':' in action else 0
+                except ValueError: page=0
+                page_size=8
+                cond=(OwnedCard.user_id==c.from_user.id,OwnedCard.locked.is_(False))
+                total=await s.scalar(select(func.count(OwnedCard.id)).where(*cond)) or 0
+                pages=max(1,(total+page_size-1)//page_size); page=min(page,pages-1)
+                cards=(await s.scalars(select(OwnedCard).where(*cond).order_by(OwnedCard.id.desc()).offset(page*page_size).limit(page_size))).all()
                 kb=InlineKeyboardBuilder()
                 for oc in cards:
                     card=await s.get(Card,oc.card_id)
                     if card: kb.button(text=f'{card.player_name} · {card.ovr} OVR · {card.position}'+(f' · в составе {oc.slot}' if oc.slot else ''),callback_data=f'auctioncard:{oc.id}')
+                if page>0: kb.button(text='⬅️ Предыдущая',callback_data=f'auctionmenu:start:{page-1}')
+                if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'auctionmenu:start:{page+1}')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
-                await c.message.answer('Шаг 1 из 2. Выберите карточку. Если она стоит в составе, при выставлении автоматически освободится её позиция.',reply_markup=kb.as_markup()) if cards else await c.message.answer('У вас пока нет карточек для аукциона. Откройте пак или получите карточку, затем вернитесь сюда.',reply_markup=auction_menu_keyboard())
+                await c.message.answer(f'Шаг 1 из 2. Выберите карточку · страница {page+1}/{pages}. Если карточка стоит в составе, позиция освободится автоматически.' if cards else 'У вас пока нет карточек для аукциона. Откройте пак или получите карточку, затем вернитесь сюда.',reply_markup=kb.as_markup() if cards else auction_menu_keyboard())
             elif action=='current':
                 rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
                 lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ']; kb=InlineKeyboardBuilder()
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
                     if card:
-                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {a.ends_at:%d.%m %H:%M} МСК')
+                        lines.append(f'\n{card.player_name} · {card.ovr} OVR\nСтавка: {a.highest_bid or a.start_price} 🪙 · шаг {a.bid_step}\nДо: {format_msk(a.ends_at,naive_is_utc=True)[:-3]} МСК')
                         kb.button(text=f'💰 Сделать ставку · {card.player_name}',callback_data=f'auctionbid:{a.id}')
                 if not rows: lines.append('\nПока нет активных аукционов.')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
@@ -2973,7 +2989,13 @@ async def main():
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
                 caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
-                await c.bot.send_message(c.from_user.id,caption,reply_markup=keyboard(),parse_mode='HTML')
+                try:
+                    from aiogram.types import BufferedInputFile
+                    photo=BufferedInputFile(await telegram_post_photo(),filename='main-menu.jpg')
+                    await c.bot.send_photo(c.from_user.id,photo=photo,caption=caption,reply_markup=keyboard(),parse_mode='HTML')
+                except Exception as e:
+                    print(f'Не удалось показать фото главного меню: {e}')
+                    await c.bot.send_message(c.from_user.id,caption,reply_markup=keyboard(),parse_mode='HTML')
             else:
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
