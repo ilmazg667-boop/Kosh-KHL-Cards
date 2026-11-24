@@ -235,7 +235,6 @@ async def finish_match(match_id,bot):
             # and to clan competitions for any participant who belongs to a clan.
             match_dt=m.created_at or now()
             if match_dt.tzinfo is None: match_dt=match_dt.replace(tzinfo=timezone.utc)
-            tournament_day=match_dt.astimezone(MOSCOW).date().isoformat()
             t=await s.scalar(select(DailyTournament).where(DailyTournament.status=='open').order_by(DailyTournament.id.desc()))
             participants=[
                 (m.home_user_id, winner==m.home_user_id, m.home_score),
@@ -437,7 +436,7 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
     for place,entry,user,coins,gems in ranked:
         name=(user.first_name or f'Игрок {entry.user_id}') if user else f'Игрок {entry.user_id}'
         table.append(f'{place}. {name} — {entry.points} очк. · {entry.wins} побед · {entry.goals} голов')
-    title=tournament.title or 'Ежедневный турнир'
+    title=tournament.title or 'Без названия'
     header=f'🏁 Турнир «{title}» завершён!\n\n🏆 ИТОГОВАЯ ТУРНИРНАЯ ТАБЛИЦА\n'+('\n'.join(table) if table else 'Участников нет.')
     for place,entry,user,coins,gems in ranked:
         if user and not user.is_banned:
