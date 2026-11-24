@@ -110,7 +110,7 @@ async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None
         print(f'Не удалось показать фото раздела: {e}')
         await m.answer(caption,reply_markup=reply_markup,parse_mode=parse_mode)
 
-PHOTO_ARENA=TELEGRAM_POST_URL
+PHOTO_ARENA='https://images.pexels.com/photos/1634278/pexels-photo-1634278.jpeg'
 PHOTO_GOALIE='https://images.pexels.com/photos/6468596/pexels-photo-6468596.jpeg'
 PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
