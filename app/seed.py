@@ -19,6 +19,44 @@ def read_csv_cards(path):
                 active=r.get('active','true').strip().lower() not in ('0','false','no','off')))
     return rows
 
+def _card_seed_identity(card):
+    """Match a particular card edition, not every edition of one player."""
+    edition = (
+        (card.season or '').strip(),
+        (card.club or '').strip().casefold(),
+        (card.league or '').strip().casefold(),
+        (card.position or '').strip().upper(),
+        (card.rarity or '').strip().casefold(),
+        int(card.ovr),
+        (card.image_url or '').strip(),
+    )
+    player_key = (card.player_key or '').strip().casefold()
+    if player_key:
+        return ('key', player_key, *edition)
+    return ('name', (card.player_name or '').strip().casefold(), *edition)
+
+def _sync_seed_cards(legacy_cards, existing_cards, session):
+    """Idempotently sync exact editions while preserving a player's other editions."""
+    existing_by_identity = {_card_seed_identity(card): card for card in existing_cards}
+    for card in legacy_cards:
+        identity = _card_seed_identity(card)
+        current = existing_by_identity.get(identity)
+        if current is None:
+            session.add(card)
+            existing_by_identity[identity] = card
+        else:
+            current.player_name = card.player_name
+            current.player_key = card.player_key
+            current.position = card.position
+            current.ovr = card.ovr
+            current.rarity = card.rarity
+            current.country = card.country
+            current.club = card.club
+            current.league = card.league
+            current.season = card.season
+            current.image_url = card.image_url
+            current.active = card.active
+
 async def seed_cards(session):
     """Import the real player catalogue and remove all artificial demo cards."""
     # Keep old demo rows for existing collection references, but make them inactive.
@@ -29,20 +67,5 @@ async def seed_cards(session):
         existing_cards = (await session.scalars(
             select(Card).where(Card.source=='legacy116')
         )).all()
-        existing_by_key = {card.player_key: card for card in existing_cards}
-        for card in legacy_cards:
-            current = existing_by_key.get(card.player_key)
-            if current is None:
-                session.add(card)
-            else:
-                current.player_name = card.player_name
-                current.position = card.position
-                current.ovr = card.ovr
-                current.rarity = card.rarity
-                current.country = card.country
-                current.club = card.club
-                current.league = card.league
-                current.season = card.season
-                current.image_url = card.image_url
-                current.active = card.active
+        _sync_seed_cards(legacy_cards, existing_cards, session)
     await session.commit()
