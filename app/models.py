@@ -41,6 +41,7 @@ class Card(Base):
     image_url: Mapped[str] = mapped_column(String(500), default='')
     source: Mapped[str] = mapped_column(String(120), default='demo')
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    rating_boosted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (CheckConstraint('ovr >= 50 AND ovr <= 100'), CheckConstraint("position IN ('LW','C','RW','LD','RD','G')"))
 
@@ -113,6 +114,9 @@ class TradeOffer(Base):
     receiver_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sender_message_id: Mapped[int] = mapped_column(Integer, default=0)
+    receiver_message_id: Mapped[int] = mapped_column(Integer, default=0)
 
 class Auction(Base):
     __tablename__ = 'auctions'
