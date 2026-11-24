@@ -1215,9 +1215,12 @@ async def main():
         async with Session() as s:
             try:
                 await active_user(s,m.from_user); o=await create_trade(s,m.from_user.id,target)
-                try: await m.bot.send_message(target,f'🤝 Игрок {m.from_user.full_name} предлагает обмен. На принятие — 2 минуты.',reply_markup=trade_keyboard(o.id))
+                try: invite=await m.bot.send_message(target,f'🤝 Игрок {m.from_user.full_name} предлагает обмен. На принятие — 2 минуты.',reply_markup=trade_keyboard(o.id))
                 except Exception: o.status='cancelled'; await s.commit(); await m.answer('Не удалось доставить приглашение.'); return
-                await m.answer(f'Приглашение отправлено игроку {target}.')
+                o.receiver_message_id=invite.message_id
+                ack=await m.answer(f'Приглашение отправлено игроку {target}. Ожидаем ответа.')
+                o.sender_message_id=ack.message_id
+                await s.commit()
             except ValueError as e: await m.answer(str(e))
     @dp.callback_query(F.data.startswith(('tradeyes:','tradeno:')))
     async def trade_response(c:CallbackQuery):
@@ -1229,13 +1232,19 @@ async def main():
                     o.receiver_message_id=c.message.message_id
                     try: await c.message.edit_text(await trade_text(s,o,o.receiver_id),reply_markup=trade_edit_keyboard(oid))
                     except Exception: pass
-                    sent=await c.bot.send_message(o.sender_id,await trade_text(s,o,o.sender_id),reply_markup=trade_edit_keyboard(oid))
-                    o.sender_message_id=sent.message_id; await s.commit()
+                    try:
+                        await c.bot.edit_message_text(await trade_text(s,o,o.sender_id),chat_id=o.sender_id,message_id=o.sender_message_id,reply_markup=trade_edit_keyboard(oid))
+                    except Exception:
+                        sent=await c.bot.send_message(o.sender_id,await trade_text(s,o,o.sender_id),reply_markup=trade_edit_keyboard(oid))
+                        o.sender_message_id=sent.message_id
+                    await s.commit()
                 else:
                     try: await c.message.edit_text('❌ Приглашение отклонено.')
                     except Exception: pass
-                    try: await c.bot.send_message(o.sender_id,'❌ Игрок отклонил приглашение.')
-                    except Exception: pass
+                    for uid,mid in ((o.sender_id,o.sender_message_id),(o.receiver_id,o.receiver_message_id)):
+                        if mid:
+                            try: await c.bot.edit_message_text('❌ Обмен отклонён.',chat_id=uid,message_id=mid)
+                            except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
     @dp.callback_query(F.data.startswith('trade:'))
@@ -1314,7 +1323,11 @@ async def main():
                     for cid in (o.give_card_ids or [])+(o.receive_card_ids or []):
                         oc=await s.get(OwnedCard,cid)
                         if oc: oc.locked=False
-                    o.status='cancelled'; await s.commit(); await refresh_trade(c.bot,s,o)
+                    o.status='cancelled'; await s.commit()
+                    for uid,mid in ((o.sender_id,o.sender_message_id),(o.receiver_id,o.receiver_message_id)):
+                        if mid:
+                            try: await c.bot.edit_message_text('❌ Обмен отменён.',chat_id=uid,message_id=mid)
+                            except Exception: pass
                 elif action=='open':
                     if c.from_user.id==o.sender_id: o.sender_message_id=c.message.message_id
                     else: o.receiver_message_id=c.message.message_id
