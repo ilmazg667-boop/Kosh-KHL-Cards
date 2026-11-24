@@ -1073,7 +1073,8 @@ async def main():
             try:
                 u=await active_user(s,m.from_user); oc=await buy_market_listing(s,u,lid)
                 c=await s.get(Card,oc.card_id); await m.answer(f'✅ Куплено: {c.player_name} · {c.ovr} OVR. Карточка #{oc.id}.')
-             trade_target_steps={}
+            except ValueError as e: await m.answer(str(e))
+    trade_target_steps={}
     trade_input_steps={}
     def trade_keyboard(offer_id):
         kb=InlineKeyboardBuilder(); kb.button(text='✅ Принять приглашение',callback_data=f'tradeyes:{offer_id}'); kb.button(text='❌ Отклонить',callback_data=f'tradeno:{offer_id}'); kb.adjust(1); return kb.as_markup()
