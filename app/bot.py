@@ -2147,7 +2147,7 @@ async def main():
         elif action[1]=='tournament_prizes':
             defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
             async with Session() as s:
-                lines=['🎁 НАГРАДЫ ЕЖЕДНЕВНОГО ТУРНИРА']
+                lines=['🎁 НАГРАДЫ ТУРНИРА']
                 kb=InlineKeyboardBuilder()
                 for place,(coins,gems) in defaults.items():
                     cfg=await s.get(TournamentPrizeConfig,place)
@@ -2255,6 +2255,11 @@ async def main():
                 t=await s.get(DailyTournament,tid)
                 if not t:
                     await c.answer('Турнир не найден.',show_alert=True); return
+                if mode=='open':
+                    other=await s.scalar(select(DailyTournament).where(DailyTournament.status=='open',DailyTournament.id!=tid).order_by(DailyTournament.id.desc()))
+                    if other:
+                        await c.answer(f'Сначала завершите текущий турнир «{other.title or "Без названия"}». Одновременно может идти только один турнир.',show_alert=True)
+                        return
                 t.status=mode
                 if mode=='open' and (now().hour>20 or (now().hour==20 and now().minute>=30)):
                     await audit(s,c.from_user.id,'tournament_started_after_2030',tid,now().date().isoformat())
