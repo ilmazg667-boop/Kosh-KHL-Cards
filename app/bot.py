@@ -2855,23 +2855,7 @@ async def main():
                 return None
 
             async def update_menu_text(text_value, reply_markup=None, parse_mode=None):
-                try:
-                    if c.message and c.message.photo:
-                        return await c.message.edit_caption(
-                            caption=str(text_value or ''),
-                            reply_markup=reply_markup,
-                            parse_mode=parse_mode
-                        )
-                    if c.message and c.message.text is not None:
-                        return await c.message.edit_text(
-                            str(text_value or ''),
-                            reply_markup=reply_markup,
-                            parse_mode=parse_mode
-                        )
-                except Exception as e:
-                    if 'message is not modified' in str(e).lower():
-                        return c.message
-                    print(f'Не удалось изменить сообщение меню, отправляю новое: {e}')
+                # Never edit the main-menu message: every section is a new message.
                 return await c.bot.send_message(
                     c.from_user.id,str(text_value or ''),
                     reply_markup=reply_markup,parse_mode=parse_mode
@@ -2886,29 +2870,22 @@ async def main():
                 return await update_menu_text(text_value,reply_markup,parse_mode)
 
             async def proxy_answer_photo(*args,**kwargs):
-                from aiogram.types import InputMediaPhoto
                 photo=kwargs.pop('photo',args[0] if args else None)
                 caption=kwargs.pop('caption',None)
                 if caption is None and len(args)>1: caption=args[1]
                 kwargs=add_player_back(kwargs)
-                markup=kwargs.get('reply_markup')
-                if c.message and c.message.photo and photo is not None:
-                    try:
-                        return await c.message.edit_media(
-                            media=InputMediaPhoto(media=photo,caption=caption or '',parse_mode=kwargs.get('parse_mode')),
-                            reply_markup=markup
-                        )
-                    except Exception as e:
-                        if 'message is not modified' in str(e).lower(): return c.message
-                        print(f'Не удалось заменить фото раздела, отправляю новое: {e}')
-                return await c.bot.send_photo(c.from_user.id,photo=photo,caption=caption or '',reply_markup=markup,parse_mode=kwargs.get('parse_mode'))
+                return await c.bot.send_photo(
+                    c.from_user.id,photo=photo,caption=caption or '',
+                    reply_markup=kwargs.get('reply_markup'),
+                    parse_mode=kwargs.get('parse_mode')
+                )
             from types import SimpleNamespace
             menu_text={'clans':'🛡 Кланы','battlepass':'🎟 Battle Pass','tournament':'⚔️ Турнир','quests':'📋 Задания'}.get(action,'')
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
                 caption='🏒 <b>KOSH KHL CARDS</b>\\n━━━━━━━━━━━━━━\\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
-                await update_menu_text(caption,keyboard(), 'HTML')
+                await c.bot.send_message(c.from_user.id,caption,reply_markup=keyboard(),parse_mode='HTML')
             else:
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
