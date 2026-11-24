@@ -602,28 +602,27 @@ async def claim_bp_reward(session,user_id,level,premium=False):
         milestone_rarities={10:'Эпический',20:'Мифический',30:'Мифический',40:'Легендарный',50:'Легендарный',60:'Хроматический',70:'Хроматический',80:'Легенда',90:'Легенда',100:'Икона'}
         target_rarity=milestone_rarities.get(level,'Эпический')
         excluded=pack_card_exclusion()
-        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,Card.source!='demo',excluded))).all()
-        cards=unique_player_cards(cards)
+        catalogue=(await session.scalars(select(Card).where(Card.active.is_(True),excluded))).all()
+        catalogue=unique_player_cards(catalogue)
+        cards=[card for card in catalogue if card.rarity==target_rarity and card.source!='demo']
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,excluded))).all()
-            cards=unique_player_cards(cards)
+            cards=[card for card in catalogue if card.rarity==target_rarity]
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',excluded))).all()
-            cards=unique_player_cards(cards)
+            cards=[card for card in catalogue if card.source!='demo']
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),excluded))).all()
-            cards=unique_player_cards(cards)
+            cards=catalogue
         if not cards: raise ValueError('Бонусная карточка пока недоступна: в базе нет активных карточек.')
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Бонусная карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}'
     elif (premium and level%5==0) or (not premium and level%10==0):
         pack_name='Премиум' if premium else 'Обычный'
         odds=adjust_pack_odds(pack_name, PACKS[pack_name]['odds']); rarity=rarity_pick(odds)
-        cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
-        cards=unique_player_cards(cards)
+        catalogue=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo'))).all()
+        catalogue=unique_player_cards(catalogue)
+        cards=[card for card in catalogue if card.rarity==rarity]
         if not cards:
-            cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
-            cards=unique_player_cards(cards)
+            demo_cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
+            cards=unique_player_cards(demo_cards)
         if not cards: raise ValueError(f'Награда-пак «{pack_name}» пока недоступна: нет карточек редкости {rarity}.')
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Пак «{pack_name}»: {card.player_name} · {card.ovr} OVR · {card.rarity}'
