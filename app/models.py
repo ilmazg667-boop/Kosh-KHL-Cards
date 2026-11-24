@@ -215,6 +215,7 @@ class BattlePassProgress(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     season: Mapped[str] = mapped_column(String(20), index=True)
     xp: Mapped[int] = mapped_column(Integer, default=0)
+    xp_curve: Mapped[bool] = mapped_column(Boolean, default=True)
     premium: Mapped[bool] = mapped_column(Boolean, default=False)
     claimed_free: Mapped[list] = mapped_column(JSON, default=list)
     claimed_premium: Mapped[list] = mapped_column(JSON, default=list)
