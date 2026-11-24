@@ -42,10 +42,15 @@ async def get_or_create_user(session, tg_user):
     return user, True
 
 async def ensure_daily_tournament(session):
-    day=now().date().isoformat()
-    t=await session.scalar(select(DailyTournament).where(DailyTournament.tournament_date==day))
-    if not t:
-        t=DailyTournament(tournament_date=day,title='',status='closed'); session.add(t); await session.commit()
+    # One continuous event: the legacy date column is only a unique internal key.
+    t=await session.scalar(select(DailyTournament).where(DailyTournament.status=='open').order_by(DailyTournament.id.desc()))
+    if t:
+        return t
+    t=await session.scalar(select(DailyTournament).order_by(DailyTournament.id.desc()))
+    if t:
+        return t
+    t=DailyTournament(tournament_date=str(int(now().timestamp())),title='',status='closed')
+    session.add(t); await session.commit()
     return t
 
 async def ensure_season(session):
@@ -398,7 +403,7 @@ async def expire_trade_offers(session):
     return expired
 
 async def ensure_daily_tournament_participants(session):
-    """Every existing, non-banned bot player is included in today's tournament automatically."""
+    """Every existing, non-banned bot player is included in the current open tournament automatically."""
     t=await ensure_daily_tournament(session)
     if t.status!='open':
         return t
