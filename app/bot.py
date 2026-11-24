@@ -1566,7 +1566,7 @@ async def main():
             try: await active_user(s,c.from_user)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
             if action=='table':
-                t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==now().date().isoformat(),DailyTournament.status=='open'))
+                t=await s.scalar(select(DailyTournament).where(DailyTournament.status=='open').order_by(DailyTournament.id.desc()))
                 if not t:
                     await c.message.answer('🏆 Текущий турнир пока не создан. Пишите админу.')
                     await c.answer(); return
