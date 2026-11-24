@@ -393,7 +393,7 @@ async def expire_trade_offers(session):
         for cid in (offer.give_card_ids or [])+(offer.receive_card_ids or []):
             oc=await session.get(OwnedCard,cid)
             if oc: oc.locked=False
-        expired.append((offer.id,offer.sender_id,offer.receiver_id,offer.status)); offer.status='expired'
+        expired.append((offer.id,offer.sender_id,offer.receiver_id,offer.status,offer.sender_message_id,offer.receiver_message_id)); offer.status='expired'
     if offers: await session.commit()
     return expired
 
