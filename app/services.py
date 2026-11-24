@@ -125,6 +125,39 @@ async def open_pack(session,user,pack_name):
     session.add(owned); await progress_pack_quest(session,user.id); await session.commit(); await session.refresh(owned)
     return owned,card
 
+async def auto_best_lineup(session,user_id):
+    """Fill every position with the highest-OVR available owned card."""
+    owned=(await session.scalars(select(OwnedCard).where(OwnedCard.user_id==user_id).with_for_update())).all()
+    cards_by_id={}
+    for oc in owned:
+        card=await session.get(Card,oc.card_id)
+        if card:
+            cards_by_id[oc.id]=card
+    fixed={oc.slot:oc for oc in owned if oc.slot in POSITIONS and oc.locked}
+    chosen={}
+    for pos in POSITIONS:
+        if pos in fixed:
+            chosen[pos]=fixed[pos]
+            continue
+        candidates=[oc for oc in owned if not oc.locked and cards_by_id.get(oc.id) and cards_by_id[oc.id].position==pos]
+        if candidates:
+            chosen[pos]=max(candidates,key=lambda oc:(cards_by_id[oc.id].ovr,oc.id))
+    if len(chosen)!=len(POSITIONS):
+        missing=[pos for pos in POSITIONS if pos not in chosen]
+        raise ValueError('Не хватает карточек для полного состава. Нет позиций: '+', '.join(missing)+'.')
+    changed=False
+    for oc in owned:
+        target=next((pos for pos,item in chosen.items() if item.id==oc.id),'')
+        if oc.slot!=target:
+            if oc.locked:
+                raise ValueError('Нельзя изменить состав: одна из карточек заблокирована.')
+            oc.slot=target
+            changed=True
+    if changed:
+        await session.commit()
+    return changed
+
+
 async def equip_card(session,user_id,owned_id,slot):
     if slot not in POSITIONS: raise ValueError('Неизвестная позиция.')
     oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
