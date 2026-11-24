@@ -2135,15 +2135,15 @@ async def main():
         elif action[1]=='tournaments':
             async with Session() as s:
                 rows=(await s.scalars(select(DailyTournament).order_by(DailyTournament.tournament_date.desc()).limit(10))).all()
-            lines=['🏆 УПРАВЛЕНИЕ ЕЖЕДНЕВНЫМИ ТУРНИРАМИ','Выберите существующий турнир для просмотра или управления:']
+            lines=['🏆 УПРАВЛЕНИЕ ТУРНИРАМИ','Открытые турниры принимают участников. Завершённые и черновики доступны для просмотра и редактирования.','\nПоследние турниры:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
+                lines.append(f"\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else '⚪ не запущен')} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
-            kb.button(text='➕ Управлять по дате',callback_data='adm:tournament_date')
+            kb.button(text='➕ Создать турнир / найти по дате',callback_data='adm:tournament_date')
             kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
-            await c.message.answer(''.join(lines),reply_markup=kb.as_markup())
+            await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         elif action[1]=='tournament_prizes':
             defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
             async with Session() as s:
@@ -2164,7 +2164,7 @@ async def main():
             await c.message.answer(f'Введите награду за {place} место в формате: МОНЕТЫ АЛМАЗЫ. Например: 12000 25. Отмена: /canceladmin')
         elif action[1]=='tournament_date':
             admin_steps[c.from_user.id]={'kind':'tournament','step':'date'}
-            await c.message.answer('🏆 Введите дату существующего или нового ежедневного турнира в формате ГГГГ-ММ-ДД.\nШаг 1 из 2. Затем выберете: начать или завершить. Отмена: /canceladmin')
+            await c.message.answer('➕ СОЗДАНИЕ ТУРНИРА\nВведите дату турнира в формате ГГГГ-ММ-ДД. Если турнир на эту дату уже существует, откроются его настройки. Если нет — будет создан новый турнир в статусе «не запущен».\nШаг 1 из 2. Отмена: /canceladmin')
         elif action[1]=='tournament_view':
             tid=int(action[2])
             async with Session() as s:
@@ -2181,7 +2181,7 @@ async def main():
             kb.button(text='⏰ Изменить время окончания',callback_data=f'adm:tournament_end:{tid}')
             kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\nДата: {t.tournament_date}\nСтатус: {"открыт" if t.status=="open" else "завершён"}\nУчастников: {count}\nID: {tid}',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else "⚪ не запущен / закрыт")}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
         elif action[1]=='tournament_end':
             tid=int(action[2])
             async with Session() as s:
@@ -2236,7 +2236,7 @@ async def main():
             kb=InlineKeyboardBuilder()
             kb.button(text='✅ Подтвердить',callback_data=f'adm:tournament_apply:{tid}:{mode}')
             kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f"Подтвердите {'открытие' if mode=='open' else 'завершение'} турнира {t.tournament_date}.",reply_markup=kb.as_markup())
+            await c.message.answer(f"Подтвердите {'запуск турнира и открытие приёма участников' if mode=='open' else 'завершение турнира и подведение итогов'} на дату {t.tournament_date}.",reply_markup=kb.as_markup())
         elif action[1]=='tournament_apply' and action[3]=='closed':
             tid=int(action[2])
             from .worker import finalize_daily_tournament
@@ -2282,7 +2282,7 @@ async def main():
                 try:
                     await c.bot.send_message(uid,f'🏁 Турнир {t.tournament_date} завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
                 except Exception: pass
-            await c.message.answer(f"✅ Турнир {t.tournament_date} {'открыт' if mode=='open' else 'завершён'}. Награды начислены: {len(notices)} игрокам.",reply_markup=admin_back_keyboard())
+            await c.message.answer(f"✅ Турнир на {t.tournament_date} {'запущен: приём участников открыт' if mode=='open' else 'завершён'}. Игроков, которым отправлено уведомление о результатах: {len(notices)}.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
@@ -2511,10 +2511,10 @@ async def main():
                     tid=t.id
                 admin_steps.pop(m.from_user.id,None)
                 kb=InlineKeyboardBuilder()
-                kb.button(text='🟢 Начать / открыть',callback_data=f'adm:tournament_start:{tid}')
-                kb.button(text='🔴 Завершить / закрыть',callback_data=f'adm:tournament_finish:{tid}')
+                kb.button(text='🟢 Запустить турнир',callback_data=f'adm:tournament_start:{tid}')
+                kb.button(text='🔴 Завершить турнир',callback_data=f'adm:tournament_finish:{tid}')
                 kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
-                await m.answer(f'Шаг 2 из 2. Турнир {raw} найден/создан. Выберите действие:',reply_markup=kb.as_markup())
+                await m.answer(f'Шаг 2 из 2. Турнир на {raw} найден или создан.\n\n«Начать / открыть» — запустить приём участников. «Завершить / закрыть» — завершить турнир и обработать результаты, если он уже проводился.\n\nВыберите действие:',reply_markup=kb.as_markup())
                 return
             if kind=='support_reply' and step=='reply':
                 reply_text=m.text.strip()
