@@ -457,7 +457,7 @@ async def main():
             if rarity: conditions.append(Card.rarity==rarity)
             query=select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(*conditions)
             total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(*conditions)) or 0
-            cards=(await s.scalars(query.order_by(OwnedCard.id.desc()).offset(page*12).limit(12))).all()
+            cards=(await s.scalars(query.order_by(OwnedCard.id.desc()).offset(page*8).limit(8))).all()
             active=[]
             if league: active.append(f'лига: {league}')
             if position: active.append(f'позиция: {position}')
@@ -471,7 +471,7 @@ async def main():
                 if not oc.locked: kb.button(text=f'🃏 {card.player_name} · {card.ovr}',callback_data=f'cardmenu:{oc.id}')
             kb.button(text='🔎 Фильтр',callback_data='collection:filter')
             if page>0: kb.button(text='⬅️ Назад',callback_data=f'collection:page:{page-1}')
-            if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:page:{page+1}')
+            if (page+1)*8<total: kb.button(text='Вперёд ➡️',callback_data=f'collection:page:{page+1}')
             kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
             await target.answer('\n'.join(lines),reply_markup=kb.as_markup())
 
