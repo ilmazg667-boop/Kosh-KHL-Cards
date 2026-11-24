@@ -1262,7 +1262,7 @@ async def main():
                 await c.message.edit_text('\n'.join(lines),reply_markup=kb.as_markup())
             else:
                 oid=int(p[2]); o=await s.get(TradeOffer,oid)
-                if not o or c.from_user.id not in (o.sender_id,o.receiver_id) or o.status!='negotiating':
+                if not o or c.from_user.id not in (o.sender_id,o.receiver_id) or (o.status!='negotiating' and not (action=='cancel' and o.status in ('pending','negotiating'))):
                     await c.answer('Обмен недоступен или время истекло.',show_alert=True); return
                 if action=='card':
                     await render_trade_cards(c.message,s,o,c.from_user.id)
@@ -1316,6 +1316,9 @@ async def main():
                         if oc: oc.locked=False
                     o.status='cancelled'; await s.commit(); await refresh_trade(c.bot,s,o)
                 elif action=='open':
+                    if c.from_user.id==o.sender_id: o.sender_message_id=c.message.message_id
+                    else: o.receiver_message_id=c.message.message_id
+                    await s.commit()
                     await c.message.edit_text(await trade_text(s,o,c.from_user.id),reply_markup=trade_edit_keyboard(oid))
             await c.answer()
     @dp.message(lambda m: m.from_user and m.from_user.id in trade_input_steps and m.text and not m.text.startswith('/'))
