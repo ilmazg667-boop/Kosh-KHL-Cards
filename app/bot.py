@@ -2720,7 +2720,7 @@ async def main():
             p=[x.strip() for x in raw.split('|')]
             name,pos,ovr,rarity,country,club,league=p[:7]
             if pos not in POSITIONS or rarity not in RARITY_RANGES or not 50<=int(ovr)<=100: raise ValueError('Позиция/редкость/OVR указаны неверно (OVR 50–100).')
-            card=Card(player_name=name,player_key=p[8] if len(p)>8 else '',position=pos,ovr=int(ovr),rarity=rarity,country=country,club=club,league=league,image_url=p[7] if len(p)>7 else '',source='admin')
+            card=Card(player_name=name,player_key=p[8] if len(p)>8 else '',position=pos,ovr=min(100,int(ovr)+2) if league=='КХЛ' and not (name=='Семён Кошелев' and int(ovr) in (95,99)) else int(ovr),rarity=rarity,country=country,club=club,league=league,image_url=p[7] if len(p)>7 else '',source='admin',rating_boosted=(league=='КХЛ' and not (name=='Семён Кошелев' and int(ovr) in (95,99))))
         except Exception as e:
             await m.answer(f'Ошибка: {e}\nФормат: name|position|ovr|rarity|country|club|league|image_url|player_key'); return
         async with Session() as s:
