@@ -2135,10 +2135,10 @@ async def main():
         elif action[1]=='tournaments':
             async with Session() as s:
                 rows=(await s.scalars(select(DailyTournament).order_by(DailyTournament.tournament_date.desc()).limit(10))).all()
-            lines=['🏆 УПРАВЛЕНИЕ ТУРНИРАМИ','Открытые турниры принимают участников. Завершённые и черновики доступны для просмотра и редактирования.','\nПоследние турниры:']
+            lines=['🏆 УПРАВЛЕНИЕ ТУРНИРАМИ','Запуск и завершение контролируются администраторами. В 20:00 МСК придёт напоминание, в 20:30 открытый турнир завершится автоматически. Название можно изменить в любой момент.','\nПоследние турниры:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else '⚪ не запущен')} · ID {t.id}")
+                lines.append(f"\n{t.title or 'Без названия'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else '⚪ не запущен')} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
             kb.button(text='➕ Создать турнир / найти по дате',callback_data='adm:tournament_date')
@@ -2181,7 +2181,7 @@ async def main():
             kb.button(text='⏰ Изменить время окончания',callback_data=f'adm:tournament_end:{tid}')
             kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else "⚪ не запущен / закрыт")}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Без названия"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else "⚪ не запущен / закрыт")}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
         elif action[1]=='tournament_end':
             tid=int(action[2])
             async with Session() as s:
@@ -2198,7 +2198,7 @@ async def main():
             if not t:
                 await c.answer('Турнир не найден.',show_alert=True); return
             admin_steps[c.from_user.id]={'kind':'tournament_rename','step':'title','tournament_id':tid}
-            await c.message.answer(f'Введите новое название турнира (до 100 символов). Сейчас: {t.title or "Ежедневный турнир"}. Отмена: /canceladmin')
+            await c.message.answer(f'Введите новое название турнира (до 100 символов). Сейчас: {t.title or "Без названия"}. Название можно изменить и после автоматического запуска. Отмена: /canceladmin')
         elif action[1]=='tournament_delete':
             tid=int(action[2])
             async with Session() as s:
@@ -2209,7 +2209,7 @@ async def main():
             kb=InlineKeyboardBuilder()
             kb.button(text='⚠️ Да, удалить',callback_data=f'adm:tournament_delete_apply:{tid}')
             kb.button(text='❌ Отмена',callback_data=f'adm:tournament_view:{tid}'); kb.adjust(1)
-            await c.message.answer(f'Удалить турнир «{t.title or "Ежедневный турнир"}» от {t.tournament_date}? Будут удалены сведения о турнире и {count} записей участников. Уже начисленные награды с балансов не списываются.',reply_markup=kb.as_markup())
+            await c.message.answer(f'Удалить турнир «{t.title or "Без названия"}» от {t.tournament_date}? Будут удалены сведения о турнире и {count} записей участников. Уже начисленные награды с балансов не списываются.',reply_markup=kb.as_markup())
         elif action[1]=='tournament_delete_apply':
             tid=int(action[2])
             async with Session() as s:
@@ -2244,7 +2244,7 @@ async def main():
                 t=await s.get(DailyTournament,tid)
                 if not t:
                     await c.answer('Турнир уже удалён.',show_alert=True); return
-                title=t.title or 'Ежедневный турнир'
+                title=t.title or 'Без названия'
                 await audit(s,c.from_user.id,'tournament_early_finish',tid,t.tournament_date)
                 await finalize_daily_tournament(s,t,c.bot,c.from_user.id)
             admin_steps.pop(c.from_user.id,None)
