@@ -160,6 +160,7 @@ async def auto_best_lineup(session,user_id):
 
 async def equip_card(session,user_id,owned_id,slot):
     if slot not in POSITIONS: raise ValueError('Неизвестная позиция.')
+    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на обмен истекло.')
     oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
     if not oc or oc.user_id!=user_id: raise ValueError('Карточка не найдена в вашей коллекции.')
     if oc.locked: raise ValueError('Карточка заблокирована торговой операцией.')
@@ -252,7 +253,7 @@ async def create_trade(session,sender_id,receiver_id):
     if sender_id==receiver_id: raise ValueError('Нельзя обмениваться с самим собой.')
     receiver=await session.get(User,receiver_id)
     if not receiver or receiver.is_banned: raise ValueError('Игрок не найден или заблокирован. Он должен хотя бы раз запустить бота.')
-    offer=TradeOffer(sender_id=sender_id,receiver_id=receiver_id,status='pending')
+    offer=TradeOffer(sender_id=sender_id,receiver_id=receiver_id,status='pending',expires_at=now()+timedelta(minutes=2))
     session.add(offer); await session.commit(); await session.refresh(offer); return offer
 
 async def set_trade_card(session,offer_id,user_id,owned_id):
@@ -270,6 +271,7 @@ async def set_trade_currency(session,offer_id,user_id,kind,amount):
     if kind not in ('coins','gems') or amount<0: raise ValueError('Некорректная сумма.')
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на обмен истекло.')
     user=await session.scalar(select(User).where(User.id==user_id).with_for_update())
     if amount>getattr(user,kind): raise ValueError(f'Недостаточно {"монет" if kind=="coins" else "алмазов"}.')
     prefix='sender' if user_id==offer.sender_id else 'receiver'
@@ -280,6 +282,7 @@ async def set_trade_currency(session,offer_id,user_id,kind,amount):
 async def confirm_trade(session,offer_id,user_id):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на обмен истекло.')
     if user_id==offer.sender_id: offer.sender_confirmed=True
     else: offer.receiver_confirmed=True
     if not (offer.sender_confirmed and offer.receiver_confirmed):
@@ -308,7 +311,8 @@ async def confirm_trade(session,offer_id,user_id):
 async def resolve_trade(session,offer_id,receiver_id,accept):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='pending' or offer.receiver_id!=receiver_id: raise ValueError('Предложение недоступно.')
-    offer.status='negotiating' if accept else 'declined'
+    if accept: offer.status='negotiating'; offer.expires_at=now()+timedelta(minutes=5)
+    else: offer.status='declined'
     await session.commit(); return offer
 
 async def submit_auction_card(session,user_id,owned_id):
@@ -382,14 +386,15 @@ async def settle_auction(session,a):
     auction.status='completed'; await session.commit(); return True
 
 async def expire_trade_offers(session):
-    cutoff=now().astimezone(UTC)-timedelta(days=7)
-    offers=(await session.scalars(select(TradeOffer).where(TradeOffer.status=='pending',TradeOffer.created_at<cutoff))).all()
+    offers=(await session.scalars(select(TradeOffer).where(TradeOffer.status.in_(['pending','negotiating']),TradeOffer.expires_at.is_not(None),TradeOffer.expires_at<=now()).with_for_update())).all()
+    expired=[]
     for offer in offers:
-        for cid in offer.give_card_ids+offer.receive_card_ids:
+        for cid in (offer.give_card_ids or [])+(offer.receive_card_ids or []):
             oc=await session.get(OwnedCard,cid)
             if oc: oc.locked=False
-        offer.status='expired'
+        expired.append((offer.id,offer.sender_id,offer.receiver_id,offer.status)); offer.status='expired'
     if offers: await session.commit()
+    return expired
 
 async def ensure_daily_tournament_participants(session):
     """Every existing, non-banned bot player is included in today's tournament automatically."""
