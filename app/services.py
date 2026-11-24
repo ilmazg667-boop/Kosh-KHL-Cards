@@ -160,7 +160,6 @@ async def auto_best_lineup(session,user_id):
 
 async def equip_card(session,user_id,owned_id,slot):
     if slot not in POSITIONS: raise ValueError('Неизвестная позиция.')
-    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на обмен истекло.')
     oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
     if not oc or oc.user_id!=user_id: raise ValueError('Карточка не найдена в вашей коллекции.')
     if oc.locked: raise ValueError('Карточка заблокирована торговой операцией.')
@@ -259,6 +258,7 @@ async def create_trade(session,sender_id,receiver_id):
 async def set_trade_card(session,offer_id,user_id,owned_id):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='negotiating' or user_id not in (offer.sender_id,offer.receiver_id): raise ValueError('Обмен сейчас недоступен.')
+    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на обмен истекло.')
     oc=await session.scalar(select(OwnedCard).where(OwnedCard.id==owned_id).with_for_update())
     if not oc or oc.user_id!=user_id or oc.slot or oc.locked: raise ValueError('Карточка недоступна: нужна свободная карточка.')
     mine=offer.give_card_ids if user_id==offer.sender_id else offer.receive_card_ids
@@ -311,6 +311,7 @@ async def confirm_trade(session,offer_id,user_id):
 async def resolve_trade(session,offer_id,receiver_id,accept):
     offer=await session.scalar(select(TradeOffer).where(TradeOffer.id==offer_id).with_for_update())
     if not offer or offer.status!='pending' or offer.receiver_id!=receiver_id: raise ValueError('Предложение недоступно.')
+    if offer.expires_at and offer.expires_at.replace(tzinfo=offer.expires_at.tzinfo or UTC)<=now(): raise ValueError('Время на принятие приглашения истекло.')
     if accept: offer.status='negotiating'; offer.expires_at=now()+timedelta(minutes=5)
     else: offer.status='declined'
     await session.commit(); return offer
