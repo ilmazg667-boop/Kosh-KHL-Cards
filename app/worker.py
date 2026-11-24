@@ -459,16 +459,16 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
     extra=''
     if ranked and ranked[0][2] and not ranked[0][2].is_banned:
         card=await award_pack_card(session,ranked[0][2].id,'Элитный')
-        if card: extra=f'\\n🎁 Дополнительный пак «Элитный»: {card.player_name} · {card.ovr} OVR.'
+        if card: extra=f'\n🎁 Дополнительный пак «Элитный»: {card.player_name} · {card.ovr} OVR.'
     table=[]
     for place,entry,user,coins,gems in ranked:
         name=(user.first_name or f'Игрок {entry.user_id}') if user else f'Игрок {entry.user_id}'
         table.append(f'{place}. {name} — {entry.points} очк. · {entry.wins} побед · {entry.goals} голов')
     title=tournament.title or 'Ежедневный турнир'
-    header=f'🏁 Турнир «{title}» ({tournament.tournament_date}) завершён!\\n\\n🏆 ИТОГОВАЯ ТУРНИРНАЯ ТАБЛИЦА\\n'+('\\n'.join(table) if table else 'Участников нет.')
+    header=f'🏁 Турнир «{title}» ({tournament.tournament_date}) завершён!\n\n🏆 ИТОГОВАЯ ТУРНИРНАЯ ТАБЛИЦА\n'+('\n'.join(table) if table else 'Участников нет.')
     for place,entry,user,coins,gems in ranked:
         if user and not user.is_banned:
-            message=header+f'\\n\\n🎉 Ваше место: {place}.\\n🎁 Награда: {coins} 🪙 и {gems} 💎.'
+            message=header+f'\n\n🎉 Ваше место: {place}.\n🎁 Награда: {coins} 🪙 и {gems} 💎.'
             if coins or gems: message+=' Награда начислена на баланс.'
             if place==1: message+=extra
             await send(bot,user.id,message)
