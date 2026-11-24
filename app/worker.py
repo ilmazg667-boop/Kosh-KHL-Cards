@@ -460,7 +460,7 @@ async def close_old_tournaments(session,bot):
     today_key=today.date().isoformat()
     current=await session.scalar(select(DailyTournament).where(DailyTournament.tournament_date==today_key))
     if current and current.status=='open':
-        if today.hour>=20 and today.hour<20 or (today.hour==20 and today.minute>=0 and today.minute<30):
+        if today.hour==20 and today.minute<30:
             from .models import AuditLog
             reminded=await session.scalar(select(AuditLog.id).where(
                 AuditLog.action=='tournament_reminder_20',AuditLog.target_id==current.id
@@ -494,7 +494,7 @@ async def close_old_tournaments(session,bot):
                     f'🟢 Автоматически открыт новый турнир на {tomorrow_key}. '
                     'Название можно задать или изменить позже в админ-панели.')
     # Respect any explicitly configured end time and clean up missed previous-day events.
-    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.status=='open')).all()
+    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.status=='open'))).all()
     for old in olds:
         if old.tournament_date==today_key: continue
         deadline=old.ends_at
