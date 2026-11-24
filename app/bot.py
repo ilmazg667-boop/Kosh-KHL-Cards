@@ -1360,9 +1360,16 @@ async def main():
                 kb.adjust(1)
                 await c.message.answer(detail_text,reply_markup=kb.as_markup())
             elif action.startswith('current'):
-                refresh=action.endswith(':refresh')
-                rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at).limit(20))).all()
-                lines=['🔥 ТЕКУЩИЕ АУКЦИОНЫ','Выберите игрока, чтобы посмотреть карточку и условия аукциона:']; kb=InlineKeyboardBuilder()
+                parts=action.split(':')
+                refresh='refresh' in parts
+                try: page=max(0,int(next((part for part in parts[1:] if part!='refresh'),0)))
+                except (ValueError,StopIteration): page=0
+                page_size=5
+                total=await s.scalar(select(func.count(Auction.id)).where(Auction.status=='active')) or 0
+                pages=max(1,(total+page_size-1)//page_size)
+                page=min(page,pages-1)
+                rows=(await s.scalars(select(Auction).where(Auction.status=='active').order_by(Auction.ends_at,Auction.id).offset(page*page_size).limit(page_size))).all()
+                lines=[f'🔥 ТЕКУЩИЕ АУКЦИОНЫ · Страница {page+1}/{pages}','Выберите игрока, чтобы посмотреть карточку и условия аукциона:']; kb=InlineKeyboardBuilder()
                 count=0
                 for a in rows:
                     oc=await s.get(OwnedCard,a.owned_card_id); card=await s.get(Card,oc.card_id) if oc else None
@@ -1371,7 +1378,9 @@ async def main():
                         kb.button(text=card.player_name[:60],callback_data=f'auctionmenu:detail:{a.id}')
                         count+=1
                 if not count: lines.append('\nПока нет активных аукционов.')
-                kb.button(text='🔄 Обновить список',callback_data='auctionmenu:current:refresh')
+                if page>0: kb.button(text='⬅️ Предыдущая',callback_data=f'auctionmenu:current:{page-1}')
+                if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'auctionmenu:current:{page+1}')
+                kb.button(text='🔄 Обновить список',callback_data=f'auctionmenu:current:{page}:refresh')
                 kb.button(text='⬅️ Назад',callback_data='auctionmenu:home'); kb.adjust(1)
                 text_value='\n'.join(lines)
                 if refresh:
