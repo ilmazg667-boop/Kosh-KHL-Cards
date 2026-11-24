@@ -540,7 +540,7 @@ async def progress_after_match(session,user_id,won,goals=0,rating=0):
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
     if not bp: bp=BattlePassProgress(user_id=user_id,season=season,xp=0,premium=False,claimed_free=[],claimed_premium=[],xp_curve=True); session.add(bp)
     ensure_bp_xp_curve(bp)
-    bp.xp=min(BP_MAX_XP,bp.xp+100)
+    bp.xp=min(BP_MAX_XP,bp.xp+(200 if won else 50))
 
 async def progress_pack_quest(session,user_id):
     await _increment_quest(session,user_id,'open100packs',season_key(),1,100)
