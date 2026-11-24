@@ -27,7 +27,7 @@ def _card_seed_identity(card):
         (card.league or '').strip().casefold(),
         (card.position or '').strip().upper(),
         (card.rarity or '').strip().casefold(),
-        int(card.ovr),
+        (int(card.ovr)-2 if getattr(card,'rating_boosted',False) and card.league=='КХЛ' else int(card.ovr)),
         (card.image_url or '').strip(),
     )
     player_key = (card.player_key or '').strip().casefold()
