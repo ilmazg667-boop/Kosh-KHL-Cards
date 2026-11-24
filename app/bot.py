@@ -2498,23 +2498,18 @@ async def main():
                 await m.answer(f'✅ Время окончания турнира изменено: {parsed:%d.%m.%Y %H:%M} МСК.',reply_markup=admin_keyboard())
                 return
             if kind=='tournament' and step=='date':
-                raw=m.text.strip()
-                try:
-                    parsed=date.fromisoformat(raw)
-                    if parsed.isoformat()!=raw: raise ValueError()
-                except ValueError:
-                    await m.answer('Введите корректную дату в формате ГГГГ-ММ-ДД.'); return
+                title=m.text.strip()
+                if not title or len(title)>100:
+                    await m.answer('Название должно содержать от 1 до 100 символов.'); return
                 async with Session() as s:
-                    t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==raw))
-                    if not t:
-                        t=DailyTournament(tournament_date=raw,status='closed'); s.add(t); await s.commit(); await s.refresh(t)
+                    t=DailyTournament(tournament_date=str(int(now().timestamp())),title=title,status='closed')
+                    s.add(t); await s.commit(); await s.refresh(t)
                     tid=t.id
                 admin_steps.pop(m.from_user.id,None)
                 kb=InlineKeyboardBuilder()
                 kb.button(text='🟢 Запустить турнир',callback_data=f'adm:tournament_start:{tid}')
-                kb.button(text='🔴 Завершить турнир',callback_data=f'adm:tournament_finish:{tid}')
                 kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
-                await m.answer(f'Шаг 2 из 2. Турнир на {raw} найден или создан.\n\n«Начать / открыть» — запустить приём участников. «Завершить / закрыть» — завершить турнир и обработать результаты, если он уже проводился.\n\nВыберите действие:',reply_markup=kb.as_markup())
+                await m.answer(f'Новый турнир «{title}» создан. Он не привязан к календарной дате. Нажмите «Запустить турнир», чтобы открыть приём матчей.',reply_markup=kb.as_markup())
                 return
             if kind=='support_reply' and step=='reply':
                 reply_text=m.text.strip()
