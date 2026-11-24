@@ -94,11 +94,13 @@ async def send_main_menu(m, caption, reply_markup):
         await m.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
 
 async def send_section_photo(m, url, caption, reply_markup=None, parse_mode=None):
-    # Use the same verified Telegram post artwork for direct commands too.
+    # Use the image explicitly assigned to this section; never reuse the main-menu artwork.
     try:
         from aiogram.types import BufferedInputFile
-        photo_bytes=await telegram_post_photo()
-        photo=BufferedInputFile(photo_bytes,filename='main-menu.jpg')
+        if url == TELEGRAM_POST_URL:
+            photo=BufferedInputFile(await telegram_post_photo(),filename='section.jpg')
+        else:
+            photo=url
         if len(str(caption))<=1024:
             await m.answer_photo(photo=photo,caption=caption,reply_markup=reply_markup,parse_mode=parse_mode)
         else:
