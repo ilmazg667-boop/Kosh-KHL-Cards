@@ -152,7 +152,7 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     ch=await chemistry(session,cards)
     image_bytes=render_team_art_image(rows,strength,ch,team_name)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
-    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\\nСостав обновляется автоматически после каждой замены карточки.'
+    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\nСостав обновляется автоматически после каждой замены карточки.'
     if bot is not None:
         if getattr(target, 'photo', None):
             try:
@@ -1987,7 +1987,7 @@ async def main():
             lines=['🏆 УПРАВЛЕНИЕ ЕЖЕДНЕВНЫМИ ТУРНИРАМИ','Выберите существующий турнир для просмотра или управления:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
+                lines.append(f"\n{t.title or 'Ежедневный турнир'} · {t.tournament_date} · {'🟢 открыт' if t.status=='open' else '🔴 завершён'} · ID {t.id}")
                 kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
             kb.button(text='➕ Управлять по дате',callback_data='adm:tournament_date')
@@ -2013,7 +2013,7 @@ async def main():
             await c.message.answer(f'Введите награду за {place} место в формате: МОНЕТЫ АЛМАЗЫ. Например: 12000 25. Отмена: /canceladmin')
         elif action[1]=='tournament_date':
             admin_steps[c.from_user.id]={'kind':'tournament','step':'date'}
-            await c.message.answer('🏆 Введите дату существующего или нового ежедневного турнира в формате ГГГГ-ММ-ДД.\\nШаг 1 из 2. Затем выберете: начать или завершить. Отмена: /canceladmin')
+            await c.message.answer('🏆 Введите дату существующего или нового ежедневного турнира в формате ГГГГ-ММ-ДД.\nШаг 1 из 2. Затем выберете: начать или завершить. Отмена: /canceladmin')
         elif action[1]=='tournament_view':
             tid=int(action[2])
             async with Session() as s:
@@ -2030,7 +2030,7 @@ async def main():
             kb.button(text='⏰ Изменить время окончания',callback_data=f'adm:tournament_end:{tid}')
             kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\\nДата: {t.tournament_date}\\nСтатус: {"открыт" if t.status=="open" else "завершён"}\\nУчастников: {count}\\nID: {tid}',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Ежедневный турнир"}\nДата: {t.tournament_date}\nСтатус: {"открыт" if t.status=="open" else "завершён"}\nУчастников: {count}\nID: {tid}',reply_markup=kb.as_markup())
         elif action[1]=='tournament_end':
             tid=int(action[2])
             async with Session() as s:
@@ -2972,7 +2972,7 @@ async def main():
             player_message=SimpleNamespace(from_user=c.from_user,bot=c.bot,text=menu_text,
                 answer=proxy_answer,answer_photo=proxy_answer_photo)
             if action=='home':
-                caption='🏒 <b>KOSH KHL CARDS</b>\\n━━━━━━━━━━━━━━\\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
+                caption='🏒 <b>KOSH KHL CARDS</b>\n━━━━━━━━━━━━━━\nВыбери раздел игры — команда, карточки, матчи, турниры и развитие клуба ждут тебя!'
                 await c.bot.send_message(c.from_user.id,caption,reply_markup=keyboard(),parse_mode='HTML')
             else:
                 await handler(player_message)
