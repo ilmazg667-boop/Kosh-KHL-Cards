@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, func
 from aiogram import Bot
-from .config import BOT_TOKEN, REDIS_URL
+from .config import BOT_TOKEN, REDIS_URL, ADMIN_IDS
 from .db import Session, init_db
 from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger, PackConfig
 from .game import simulate, team_power, chemistry, league_for_rating, PACKS, rarity_pick
@@ -199,23 +199,6 @@ async def finish_match(match_id,bot):
                         reason='pve_match_win' if won else 'pve_match_loss',reference_id=m.id))
                     if won and not is_ot: home.gems+=3
                     await progress_after_match(s,home.id,won,len(m.home_goals or []),home.rating)
-                    # PvE matches against the bot count for the daily tournament too.
-                    tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
-                    t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
-                    if t and t.status=='open':
-                        entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==home.id))
-                        if not entry:
-                            entry=TournamentEntry(tournament_id=t.id,user_id=home.id)
-                            s.add(entry)
-                        entry.points=_counter(entry.points)
-                        entry.wins=_counter(entry.wins)
-                        entry.goals=_counter(entry.goals)
-                        if won:
-                            entry.points+=2
-                            entry.wins+=1
-                        elif m.shootout:
-                            entry.points+=1
-                        entry.goals+=_counter(m.home_score)
             else:
                 if home: home.games+=1; home.wins+=int(winner==home.id); home.losses+=int(winner!=home.id)
                 if away: away.games+=1; away.wins+=int(winner==away.id); away.losses+=int(winner!=away.id)
@@ -248,64 +231,54 @@ async def finish_match(match_id,bot):
                                 clan.rating=max(0,_counter(clan.rating)+(10 if pts else -2))
                 if home: await progress_after_match(s,home.id,winner==home.id,len(m.home_goals or []),home.rating)
                 if away: await progress_after_match(s,away.id,winner==away.id,len(m.away_goals or []),away.rating)
-                tournament_day=(m.created_at.replace(tzinfo=timezone.utc).astimezone(MOSCOW).date().isoformat() if m.created_at and m.created_at.tzinfo is None else (m.created_at.astimezone(MOSCOW).date().isoformat() if m.created_at else now().date().isoformat()))
-                t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
-                # Tournament standings are frozen as soon as an admin closes
-                # the event. Do not silently recreate a missing/closed tournament.
-                if t and t.status=='open':
-                    for uid,win,score,opp in [(m.home_user_id,winner==m.home_user_id,m.home_score,m.away_score),(m.away_user_id,winner==m.away_user_id,m.away_score,m.home_score)]:
-                        if not uid: continue
-                        entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
-                        if not entry:
-                            entry=TournamentEntry(tournament_id=t.id,user_id=uid)
-                            s.add(entry)
-                        entry.points=_counter(entry.points)
-                        entry.wins=_counter(entry.wins)
-                        entry.goals=_counter(entry.goals)
-                        if win: entry.points+=2; entry.wins+=1
-                        elif m.shootout: entry.points+=1
-                        entry.goals+=_counter(score)
-                # Ranked matches also contribute to the weekly clan championship.
-                if m.mode=='ranked':
-                    match_dt=m.created_at or now()
-                    if match_dt.tzinfo is None: match_dt=match_dt.replace(tzinfo=timezone.utc)
-                    iso=match_dt.astimezone(MOSCOW).date().isocalendar()
-                    week_key=f'{iso.year}-W{iso.week:02d}'
-                    weekly=await s.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==week_key))
-                    if not weekly:
-                        weekly=WeeklyClanTournament(week_key=week_key,status='open')
-                        s.add(weekly); await s.flush()
-                    if weekly.status=='open':
-                        for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
-                            if not uid: continue
-                            member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
-                            if not member: continue
-                            entry=await s.scalar(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==weekly.id,WeeklyClanTournamentEntry.clan_id==member.clan_id))
-                            if not entry:
-                                entry=WeeklyClanTournamentEntry(tournament_id=weekly.id,clan_id=member.clan_id)
-                                s.add(entry)
-                            entry.points=_counter(entry.points)
-                            entry.wins=_counter(entry.wins)
-                            entry.goals=_counter(entry.goals)
-                            if win: entry.points+=2; entry.wins+=1
-                            elif m.shootout or m.overtime: entry.points+=1
-                            entry.goals+=_counter(score)
-                # Clan standings aggregate each member's completed PvP result.
-                if m.mode not in ('pve','tournament') and t:
-                    for uid,win,score in [(m.home_user_id,winner==m.home_user_id,m.home_score),(m.away_user_id,winner==m.away_user_id,m.away_score)]:
-                        if not uid: continue
-                        member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
-                        if not member: continue
-                        entry=await s.scalar(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id,ClanTournamentEntry.clan_id==member.clan_id))
-                        if not entry:
-                            entry=ClanTournamentEntry(tournament_id=t.id,clan_id=member.clan_id)
-                            s.add(entry)
-                        entry.points=_counter(entry.points)
-                        entry.wins=_counter(entry.wins)
-                        entry.goals=_counter(entry.goals)
-                        if win: entry.points+=2; entry.wins+=1
-                        elif m.shootout or m.overtime: entry.points+=1
-                        entry.goals+=_counter(score)
+            # Every completed match contributes to the daily individual tournament
+            # and to clan competitions for any participant who belongs to a clan.
+            match_dt=m.created_at or now()
+            if match_dt.tzinfo is None: match_dt=match_dt.replace(tzinfo=timezone.utc)
+            tournament_day=match_dt.astimezone(MOSCOW).date().isoformat()
+            t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tournament_day))
+            participants=[
+                (m.home_user_id, winner==m.home_user_id, m.home_score),
+                (m.away_user_id, winner==m.away_user_id, m.away_score),
+            ]
+            participants=[item for item in participants if item[0]]
+            if t and t.status=='open':
+                for uid,won,score in participants:
+                    entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
+                    if not entry:
+                        entry=TournamentEntry(tournament_id=t.id,user_id=uid); s.add(entry)
+                    entry.points=_counter(entry.points); entry.wins=_counter(entry.wins); entry.goals=_counter(entry.goals)
+                    if won: entry.points+=2; entry.wins+=1
+                    elif m.shootout or m.overtime: entry.points+=1
+                    entry.goals+=_counter(score)
+                # Daily clan standings mirror the results of each clan member.
+                for uid,won,score in participants:
+                    member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
+                    if not member: continue
+                    entry=await s.scalar(select(ClanTournamentEntry).where(ClanTournamentEntry.tournament_id==t.id,ClanTournamentEntry.clan_id==member.clan_id))
+                    if not entry:
+                        entry=ClanTournamentEntry(tournament_id=t.id,clan_id=member.clan_id); s.add(entry)
+                    entry.points=_counter(entry.points); entry.wins=_counter(entry.wins); entry.goals=_counter(entry.goals)
+                    if won: entry.points+=2; entry.wins+=1
+                    elif m.shootout or m.overtime: entry.points+=1
+                    entry.goals+=_counter(score)
+            # Weekly clan battle receives all match modes, not only ranked matches.
+            iso=match_dt.astimezone(MOSCOW).date().isocalendar()
+            week_key=f'{iso.year}-W{iso.week:02d}'
+            weekly=await s.scalar(select(WeeklyClanTournament).where(WeeklyClanTournament.week_key==week_key))
+            if not weekly:
+                weekly=WeeklyClanTournament(week_key=week_key,status='open'); s.add(weekly); await s.flush()
+            if weekly.status=='open':
+                for uid,won,score in participants:
+                    member=await s.scalar(select(ClanMember).where(ClanMember.user_id==uid))
+                    if not member: continue
+                    entry=await s.scalar(select(WeeklyClanTournamentEntry).where(WeeklyClanTournamentEntry.tournament_id==weekly.id,WeeklyClanTournamentEntry.clan_id==member.clan_id))
+                    if not entry:
+                        entry=WeeklyClanTournamentEntry(tournament_id=weekly.id,clan_id=member.clan_id); s.add(entry)
+                    entry.points=_counter(entry.points); entry.wins=_counter(entry.wins); entry.goals=_counter(entry.goals)
+                    if won: entry.points+=2; entry.wins+=1
+                    elif m.shootout or m.overtime: entry.points+=1
+                    entry.goals+=_counter(score)
             await s.commit()
         # Send results separately from settlement; failures are retried by the worker without re-awarding.
         home_ok = await send(bot,m.home_user_id,format_result(m,home,away,for_home=True),parse_mode='HTML')
@@ -482,17 +455,62 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
 
 
 async def close_old_tournaments(session,bot):
+    """Remind admins at 20:00 MSK, auto-finish at 20:30 and prepare tomorrow's event."""
     today=now()
-    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.status=='open'))).all()
+    today_key=today.date().isoformat()
+    current=await session.scalar(select(DailyTournament).where(DailyTournament.tournament_date==today_key))
+    if current and current.status=='open':
+        if today.hour>=20 and today.hour<20 or (today.hour==20 and today.minute>=0 and today.minute<30):
+            from .models import AuditLog
+            reminded=await session.scalar(select(AuditLog.id).where(
+                AuditLog.action=='tournament_reminder_20',AuditLog.target_id==current.id
+            ).limit(1))
+            if not reminded:
+                for admin_id in ADMIN_IDS:
+                    await send(bot,admin_id,
+                        f'⏰ Напоминание: турнир «{current.title or "Без названия"}» ещё открыт. '
+                        'Завершите его в админ-панели до 20:30 МСК.')
+                await audit_worker(session,current.id,'tournament_reminder_20',today_key)
+        if today.hour>20 or (today.hour==20 and today.minute>=30):
+            await finalize_daily_tournament(session,current,bot)
+            for admin_id in ADMIN_IDS:
+                await send(bot,admin_id,
+                    f'🤖 Турнир «{current.title or "Без названия"}» автоматически завершён в 20:30 МСК: '
+                    'администратор не закрыл его вовремя. Итоги и награды обработаны.')
+    # If the next day's event does not exist, create it and open registration automatically.
+    if today.hour>20 or (today.hour==20 and today.minute>=30):
+        tomorrow_key=(today.date()+timedelta(days=1)).isoformat()
+        next_event=await session.scalar(select(DailyTournament).where(DailyTournament.tournament_date==tomorrow_key))
+        if not next_event:
+            next_event=DailyTournament(tournament_date=tomorrow_key,title='',status='open')
+            session.add(next_event)
+            await session.flush()
+            users=(await session.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
+            for uid in users:
+                session.add(TournamentEntry(tournament_id=next_event.id,user_id=uid))
+            await session.commit()
+            for admin_id in ADMIN_IDS:
+                await send(bot,admin_id,
+                    f'🟢 Автоматически открыт новый турнир на {tomorrow_key}. '
+                    'Название можно задать или изменить позже в админ-панели.')
+    # Respect any explicitly configured end time and clean up missed previous-day events.
+    olds=(await session.scalars(select(DailyTournament).where(DailyTournament.status=='open')).all()
     for old in olds:
-        if old.ends_at:
-            deadline=old.ends_at
+        if old.tournament_date==today_key: continue
+        deadline=old.ends_at
+        if deadline:
             if deadline.tzinfo is None: deadline=deadline.replace(tzinfo=timezone.utc)
             expired=deadline<=today.astimezone(timezone.utc)
         else:
-            expired=old.tournament_date<today.date().isoformat()
-        if not expired: continue
-        await finalize_daily_tournament(session,old,bot)
+            expired=old.tournament_date<today_key
+        if expired:
+            await finalize_daily_tournament(session,old,bot)
+
+async def audit_worker(session,target_id,action,details=''):
+    from .models import AuditLog
+    session.add(AuditLog(actor_id=0,action=action,target_id=target_id,details=str(details)))
+    await session.commit()
+
 
 async def close_old_clan_tournaments(session,bot):
     current_date=now().date()
