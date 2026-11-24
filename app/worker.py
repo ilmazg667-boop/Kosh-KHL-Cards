@@ -490,7 +490,7 @@ async def close_old_tournaments(session,bot):
     if current and (current_time.hour>20 or (current_time.hour==20 and current_time.minute>=30)):
         from .models import AuditLog
         auto_started_today=await session.scalar(select(AuditLog.id).where(
-            AuditLog.action=='tournament_auto_started_2030',
+            AuditLog.action.in_(['tournament_auto_started_2030','tournament_started_after_2030']),
             AuditLog.target_id==current.id,
             AuditLog.details==today_key
         ).limit(1))
