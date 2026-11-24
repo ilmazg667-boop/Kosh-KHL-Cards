@@ -472,12 +472,13 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
             if coins or gems: message+=' Награда начислена на баланс.'
             if place==1: message+=extra
             await send(bot,user.id,message)
-    await session.execute(TournamentEntry.__table__.delete().where(TournamentEntry.tournament_id==tournament.id))
-    await session.execute(ClanTournamentEntry.__table__.delete().where(ClanTournamentEntry.tournament_id==tournament.id))
+    # Keep the tournament and its standings for the admin panel/history.
+    # Marking it closed prevents ensure_daily_tournament() from recreating it as open.
+    tournament.status='closed'
+    tournament.rewarded_at=now()
     tid=tournament.id
-    await session.delete(tournament)
     await session.commit()
-    logger.info('Daily tournament %s finalized, rewards paid, standings announced and data deleted',tid)
+    logger.info('Daily tournament %s finalized, rewards paid and standings announced; record retained as closed',tid)
 
 
 async def close_old_tournaments(session,bot):
