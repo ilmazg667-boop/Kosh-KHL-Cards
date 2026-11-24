@@ -2398,7 +2398,7 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         state=admin_steps.get(c.from_user.id)
-        if not state or state.get('kind') not in ('givecard','promo') or (state.get('kind')=='promo' and state.get('step') not in ('cards','team','player','exclusive_player')):
+        if not state or state.get('kind') not in ('givecard','promo') or (state.get('kind')=='promo' and state.get('step') not in ('cards','league','team','player','exclusive_player')):
             await c.answer('Начните выбор карточек заново из админ-меню.',show_alert=True); return
         parts=c.data.split(':')
         action=parts[1] if len(parts)>1 else ''
