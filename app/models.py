@@ -296,6 +296,7 @@ class PromoCode(Base):
     reward_gems: Mapped[int] = mapped_column(Integer, default=0)
     reward_xp: Mapped[int] = mapped_column(Integer, default=0)
     reward_premium: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_card_ids: Mapped[list] = mapped_column(JSON, default=list)
     max_uses: Mapped[int] = mapped_column(Integer, default=0)  # 0 = unlimited
     uses_count: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
