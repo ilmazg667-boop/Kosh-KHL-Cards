@@ -403,19 +403,8 @@ async def expire_trade_offers(session):
     return expired
 
 async def ensure_daily_tournament_participants(session):
-    """Every existing, non-banned bot player is included in the current open tournament automatically."""
-    t=await ensure_daily_tournament(session)
-    if t.status!='open':
-        return t
-    users=(await session.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
-    existing=set((await session.scalars(
-        select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==t.id)
-    )).all())
-    for user_id in users:
-        if user_id not in existing:
-            session.add(TournamentEntry(tournament_id=t.id,user_id=user_id))
-    await session.flush()
-    return t
+    """Ensure the tournament exists; players enter the standings after their first completed match."""
+    return await ensure_daily_tournament(session)
 
 async def save_pack_config(session,name,price,currency,odds):
     if name not in PACKS: raise ValueError('Неизвестный тип пака.')

@@ -1570,7 +1570,7 @@ async def main():
                 if not t:
                     await c.message.answer('🏆 Текущий турнир пока не создан. Пишите админу.')
                     await c.answer(); return
-                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
+                rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.games>0).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
                 lines=[f'🏆 {t.title or "ТУРНИР"}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
                 defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                 prizes={}
@@ -1579,7 +1579,7 @@ async def main():
                     prizes[place]=(cfg.coins,cfg.gems) if cfg else (coins,gems)
                 for i,row in enumerate(rows,1):
                     user=await s.get(User,row.user_id)
-                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.wins} побед · {row.goals} голов')
+                    lines.append(f'{i}. {user.first_name or "Игрок" if user else "Игрок"} — {row.points} очк. · {row.games} матч. · {row.wins} побед · {row.goals} голов')
                 if len(rows)==0: lines.append('Пока нет участников.')
                 elif rows:
                     lead=rows[0]
@@ -2169,7 +2169,7 @@ async def main():
             tid=int(action[2])
             async with Session() as s:
                 t=await s.get(DailyTournament,tid)
-                count=await s.scalar(select(func.count(TournamentEntry.id)).where(TournamentEntry.tournament_id==tid)) if t else 0
+                count=await s.scalar(select(func.count(TournamentEntry.id)).where(TournamentEntry.tournament_id==tid,TournamentEntry.games>0)) if t else 0
             if not t:
                 await c.answer('Турнир не найден.',show_alert=True); return
             kb=InlineKeyboardBuilder()
@@ -2266,9 +2266,6 @@ async def main():
                 notices=[]
                 if mode=='open':
                     users=(await s.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
-                    existing=set((await s.scalars(select(TournamentEntry.user_id).where(TournamentEntry.tournament_id==tid))).all())
-                    for uid in users:
-                        if uid not in existing: s.add(TournamentEntry(tournament_id=tid,user_id=uid))
                 elif mode=='closed' and not t.rewarded_at:
                     rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==tid).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id))).all()
                     defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
@@ -2285,11 +2282,23 @@ async def main():
                 await audit(s,c.from_user.id,'tournament_status',tid,mode)
                 await s.commit()
             admin_steps.pop(c.from_user.id,None)
-            for uid,place,coins,gems in notices:
-                try:
-                    await c.bot.send_message(uid,f'🏁 Турнир «{t.title or "Без названия"}» завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
-                except Exception: pass
-            await c.message.answer(f"✅ Турнир «{t.title or 'Без названия'}» {'запущен: приём участников открыт' if mode=='open' else 'завершён'}. Игроков, которым отправлено уведомление о результатах: {len(notices)}.",reply_markup=admin_back_keyboard())
+            if mode=='open':
+                sent_count=0
+                for uid in users:
+                    try:
+                        await c.bot.send_message(uid,
+                            f'🏆 Начался новый турнир «{t.title or "ТУРНИР"}»! '
+                            'Сыграйте матч, чтобы попасть в турнирную таблицу и побороться за призы.')
+                        sent_count+=1
+                    except Exception:
+                        pass
+            else:
+                for uid,place,coins,gems in notices:
+                    try:
+                        await c.bot.send_message(uid,f'🏁 Турнир «{t.title or "Без названия"}» завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
+                    except Exception: pass
+                sent_count=len(notices)
+            await c.message.answer(f"✅ Турнир «{t.title or 'Без названия'}» {'запущен: уведомления отправлены: ' + str(sent_count) if mode=='open' else 'завершён'}.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')

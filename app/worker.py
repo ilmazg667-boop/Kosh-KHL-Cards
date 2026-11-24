@@ -246,7 +246,7 @@ async def finish_match(match_id,bot):
                     entry=await s.scalar(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id,TournamentEntry.user_id==uid))
                     if not entry:
                         entry=TournamentEntry(tournament_id=t.id,user_id=uid); s.add(entry)
-                    entry.points=_counter(entry.points); entry.wins=_counter(entry.wins); entry.goals=_counter(entry.goals)
+                    entry.points=_counter(entry.points); entry.wins=_counter(entry.wins); entry.goals=_counter(entry.goals); entry.games=_counter(entry.games)+1
                     if won: entry.points+=2; entry.wins+=1
                     elif m.shootout or m.overtime: entry.points+=1
                     entry.goals+=_counter(score)
@@ -435,7 +435,7 @@ async def finalize_daily_tournament(session, tournament, bot, actor_id=0):
     table=[]
     for place,entry,user,coins,gems in ranked:
         name=(user.first_name or f'Игрок {entry.user_id}') if user else f'Игрок {entry.user_id}'
-        table.append(f'{place}. {name} — {entry.points} очк. · {entry.wins} побед · {entry.goals} голов')
+        table.append(f'{place}. {name} — {entry.points} очк. · {entry.games} матч. · {entry.wins} побед · {entry.goals} голов')
     title=tournament.title or 'Без названия'
     header=f'🏁 Турнир «{title}» завершён!\n\n🏆 ИТОГОВАЯ ТУРНИРНАЯ ТАБЛИЦА\n'+('\n'.join(table) if table else 'Участников нет.')
     for place,entry,user,coins,gems in ranked:
@@ -504,10 +504,12 @@ async def close_old_tournaments(session,bot):
             session.add(next_event)
             await session.flush()
             users=(await session.scalars(select(User.id).where(User.is_banned.is_(False)))).all()
-            for uid in users:
-                session.add(TournamentEntry(tournament_id=next_event.id,user_id=uid))
             await audit_worker(session,next_event.id,'tournament_auto_started_2030',today_key)
             await session.commit()
+            for uid in users:
+                await send(bot,uid,
+                    f'🏆 Начался новый турнир «{next_event.title or "ТУРНИР"}»! '
+                    'Сыграйте матч, чтобы попасть в турнирную таблицу и побороться за призы.')
             for admin_id in ADMIN_IDS:
                 await send(bot,admin_id,
                     '🟢 Автоматически начат новый турнир. Название можно задать или изменить '

@@ -29,6 +29,7 @@ async def init_db():
                 'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'battlepass_progress': {'xp_curve': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'daily_tournaments': {'title': "VARCHAR(100) NOT NULL DEFAULT ''", 'ends_at': 'DATETIME'},
+                'tournament_entries': {'games': 'INTEGER NOT NULL DEFAULT 0'},
                 'trade_offers': {'sender_coins': 'INTEGER NOT NULL DEFAULT 0', 'sender_gems': 'INTEGER NOT NULL DEFAULT 0', 'receiver_coins': 'INTEGER NOT NULL DEFAULT 0', 'receiver_gems': 'INTEGER NOT NULL DEFAULT 0', 'sender_confirmed': 'BOOLEAN NOT NULL DEFAULT 0', 'receiver_confirmed': 'BOOLEAN NOT NULL DEFAULT 0', 'expires_at': 'DATETIME', 'sender_message_id': 'INTEGER NOT NULL DEFAULT 0', 'receiver_message_id': 'INTEGER NOT NULL DEFAULT 0'},
                 'cards': {'rating_boosted': 'BOOLEAN NOT NULL DEFAULT 0'},
             }.items():
@@ -39,6 +40,7 @@ async def init_db():
                         await conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
                         if table == 'matches' and name == 'result_sent':
                             await conn.exec_driver_sql("UPDATE matches SET result_sent=1 WHERE status='completed' AND finished_at < datetime('now','-1 hour')")
+            await conn.exec_driver_sql("UPDATE tournament_entries SET games=(SELECT COUNT(*) FROM matches m JOIN daily_tournaments t ON t.id=tournament_entries.tournament_id WHERE m.status='completed' AND m.created_at>=t.created_at AND m.created_at<=COALESCE(t.rewarded_at,CURRENT_TIMESTAMP) AND (m.home_user_id=tournament_entries.user_id OR m.away_user_id=tournament_entries.user_id)) WHERE games=0")
             await conn.exec_driver_sql("UPDATE cards SET ovr=MIN(ovr+2,100), rating_boosted=1 WHERE league='КХЛ' AND rating_boosted=0 AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
             await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN datetime(created_at,'+2 minutes') ELSE datetime(created_at,'+5 minutes') END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
         else:
@@ -53,6 +55,7 @@ async def init_db():
                 'ALTER TABLE battlepass_progress ADD COLUMN IF NOT EXISTS xp_curve BOOLEAN NOT NULL DEFAULT FALSE',
                 "ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS title VARCHAR(100) NOT NULL DEFAULT ''",
                 'ALTER TABLE daily_tournaments ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ',
+                'ALTER TABLE tournament_entries ADD COLUMN IF NOT EXISTS games INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_coins INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS sender_gems INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE trade_offers ADD COLUMN IF NOT EXISTS receiver_coins INTEGER NOT NULL DEFAULT 0',
@@ -66,5 +69,6 @@ async def init_db():
                 "UPDATE matches SET result_sent=TRUE WHERE status='completed' AND finished_at < NOW() - INTERVAL '1 hour'"
             ):
                 await conn.exec_driver_sql(statement)
+            await conn.exec_driver_sql("UPDATE tournament_entries e SET games=(SELECT COUNT(*) FROM matches m JOIN daily_tournaments t ON t.id=e.tournament_id WHERE m.status='completed' AND m.created_at>=t.created_at AND m.created_at<=COALESCE(t.rewarded_at,NOW()) AND (m.home_user_id=e.user_id OR m.away_user_id=e.user_id)) WHERE e.games=0")
             await conn.exec_driver_sql("UPDATE cards SET ovr=LEAST(ovr+2,100), rating_boosted=TRUE WHERE league='КХЛ' AND rating_boosted=FALSE AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
             await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN created_at + INTERVAL '2 minutes' ELSE created_at + INTERVAL '5 minutes' END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")

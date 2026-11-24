@@ -166,6 +166,7 @@ class TournamentEntry(Base):
     points: Mapped[int] = mapped_column(Integer, default=0)
     wins: Mapped[int] = mapped_column(Integer, default=0)
     goals: Mapped[int] = mapped_column(Integer, default=0)
+    games: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (UniqueConstraint('tournament_id', 'user_id'),)
 
 class Clan(Base):
