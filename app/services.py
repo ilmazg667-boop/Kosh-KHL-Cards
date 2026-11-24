@@ -534,7 +534,7 @@ async def progress_after_match(session,user_id,won,goals=0,rating=0):
         ('play3',today,1,5),('win1',today,1 if won else 0,3),('score5goals',today,goals,10),
         ('play20',week,1,35),('win10',week,1 if won else 0,20),
         ('play60month',month,1,100),('win20month',month,1 if won else 0,40),
-        ('play100',season,1,200),('win50',season,1 if won else 0,100),
+        ('play200',season,1,200),('win100',season,1 if won else 0,100),
         ('reach_khl',season,1 if rating>=3001 else 0,1)]:
         if amount: await _increment_quest(session,user_id,key,period,amount,cap)
     bp=await session.scalar(select(BattlePassProgress).where(BattlePassProgress.user_id==user_id,BattlePassProgress.season==season))
@@ -543,14 +543,14 @@ async def progress_after_match(session,user_id,won,goals=0,rating=0):
     bp.xp=min(BP_MAX_XP,bp.xp+100)
 
 async def progress_pack_quest(session,user_id):
-    await _increment_quest(session,user_id,'open50packs',season_key(),1,100)
+    await _increment_quest(session,user_id,'open100packs',season_key(),1,100)
 
 async def claim_quest(session,user_id,key):
     today=now().date().isoformat(); week=f'{now().date().isocalendar().year}-W{now().date().isocalendar().week}'; month=now().strftime('%Y-%m'); season=season_key()
     target={'play3':(today,5,2000,3,200),'win1':(today,3,3000,5,250),'score5goals':(today,10,4000,6,300),
         'play20':(week,35,10000,12,400),'win10':(week,20,15000,18,500),
         'play60month':(month,100,30000,30,700),'win20month':(month,40,40000,40,800),
-        'play100':(season,200,75000,60,1200),'win50':(season,100,100000,80,1500),'reach_khl':(season,1,25000,25,600),'open50packs':(season,100,50000,50,1000)}
+        'play200':(season,200,75000,60,1200),'win100':(season,100,100000,80,1500),'reach_khl':(season,1,25000,25,600),'open100packs':(season,100,50000,50,1000)}
     if key not in target: raise ValueError('Задание не найдено.')
     period,need,reward_coins,reward_gems,quest_xp=target[key]
     u=await session.scalar(select(User).where(User.id==user_id).with_for_update())
