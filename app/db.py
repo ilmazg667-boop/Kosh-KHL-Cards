@@ -27,7 +27,7 @@ async def init_db():
         if DATABASE_URL.startswith('sqlite'):
             for table, columns in {
                 'users': {'last_name': "VARCHAR(128) NOT NULL DEFAULT ''", 'team_name': "VARCHAR(40) NOT NULL DEFAULT 'Моя команда'"},
-                'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0'},
+                'promo_codes': {'reward_xp': 'INTEGER NOT NULL DEFAULT 0', 'reward_premium': 'BOOLEAN NOT NULL DEFAULT 0', 'reward_card_ids': "JSON NOT NULL DEFAULT '[]'"},
                 'promo_redemptions': {'xp_awarded': 'INTEGER NOT NULL DEFAULT 0', 'premium_awarded': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'matches': {'result_sent': 'BOOLEAN NOT NULL DEFAULT 0'},
                 'battlepass_progress': {'xp_curve': 'BOOLEAN NOT NULL DEFAULT 0'},
@@ -53,6 +53,7 @@ async def init_db():
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_name VARCHAR(40) NOT NULL DEFAULT 'Моя команда'",
                 'ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_xp INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_premium BOOLEAN NOT NULL DEFAULT FALSE',
+                "ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS reward_card_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS xp_awarded INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS premium_awarded BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_sent BOOLEAN NOT NULL DEFAULT FALSE',
