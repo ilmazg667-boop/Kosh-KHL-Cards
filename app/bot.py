@@ -1553,11 +1553,11 @@ async def main():
     @dp.message(F.text=='⚔️ Турнир')
     async def tournament(m):
         async with Session() as s:
-            t=await s.scalar(select(DailyTournament).where(DailyTournament.tournament_date==now().date().isoformat(),DailyTournament.status=='open'))
+            t=await s.scalar(select(DailyTournament).where(DailyTournament.status=='open').order_by(DailyTournament.id.desc()))
             if not t:
                 await m.answer('🏆 Текущий турнир пока не создан. Пишите админу.')
                 return
-            await m.answer(f'⚔️ {t.title or "ЕЖЕДНЕВНЫЙ ТУРНИР"} · {t.tournament_date}\n🟢 Турнир идёт\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллетах — 1. Призы получают места 1–5.\nОкончание: {format_msk(t.ends_at) if t.ends_at else "по окончании дня"} МСК',reply_markup=tournament_keyboard())
+            await m.answer(f'⚔️ {t.title or "ТУРНИР"}\n🟢 Турнир идёт\nВсе игроки бота участвуют автоматически — отдельная регистрация не нужна. Очки начисляются за сыгранные матчи. Победа — 2 очка, поражение в OT/буллетах — 1. Призы получают места 1–5.\nЗавершение: по решению администратора или автоматически в 20:30 МСК.',reply_markup=tournament_keyboard())
 
     @dp.callback_query(F.data.startswith('tournament:'))
     async def tournament_action(c:CallbackQuery):
@@ -1571,7 +1571,7 @@ async def main():
                     await c.message.answer('🏆 Текущий турнир пока не создан. Пишите админу.')
                     await c.answer(); return
                 rows=(await s.scalars(select(TournamentEntry).where(TournamentEntry.tournament_id==t.id).order_by(desc(TournamentEntry.points),desc(TournamentEntry.wins),desc(TournamentEntry.goals),TournamentEntry.user_id).limit(10))).all()
-                lines=[f'🏆 {t.title or "ЕЖЕДНЕВНЫЙ ТУРНИР"} · {t.tournament_date}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
+                lines=[f'🏆 {t.title or "ТУРНИР"}',f'Статус: {"🟢 идёт" if t.status=="open" else "🔴 завершён"}','']
                 defaults={1:(10000,20),2:(7000,15),3:(5000,10),4:(3000,7),5:(2000,5)}
                 prizes={}
                 for place,(coins,gems) in defaults.items():
@@ -2134,14 +2134,14 @@ async def main():
             await c.message.answer(prompt+'\n'+('Шаг 1 из 1.' if kind=='ban' else 'Шаг 1 из 4.' if kind=='givecard' else 'Шаг 1 из 2.')+' Отмена: /canceladmin')
         elif action[1]=='tournaments':
             async with Session() as s:
-                rows=(await s.scalars(select(DailyTournament).order_by(DailyTournament.tournament_date.desc()).limit(10))).all()
+                rows=(await s.scalars(select(DailyTournament).order_by(DailyTournament.id.desc()).limit(10))).all()
             lines=['🏆 УПРАВЛЕНИЕ ТУРНИРАМИ','Запуск и завершение контролируются администраторами. В 20:00 МСК придёт напоминание, в 20:30 открытый турнир завершится автоматически. Название можно изменить в любой момент.','\nПоследние турниры:']
             kb=InlineKeyboardBuilder()
             for t in rows:
-                lines.append(f"\n{t.title or 'Без названия'} · {t.tournament_date} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else ('🚫 отменён' if t.status=='cancelled' else '⚪ не запущен'))} · ID {t.id}")
-                kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.tournament_date}",callback_data=f'adm:tournament_view:{t.id}')
+                lines.append(f"\n{t.title or 'Без названия'} · {'🟢 идёт' if t.status=='open' else ('🏁 завершён' if t.rewarded_at else ('🚫 отменён' if t.status=='cancelled' else '⚪ не запущен'))} · ID {t.id}")
+                kb.button(text=f"{'🟢' if t.status=='open' else '🔴'} {t.title or ('Турнир #'+str(t.id))}",callback_data=f'adm:tournament_view:{t.id}')
             kb.button(text='🎁 Награды за места',callback_data='adm:tournament_prizes')
-            kb.button(text='➕ Создать турнир / найти по дате',callback_data='adm:tournament_date')
+            kb.button(text='➕ Создать новый турнир',callback_data='adm:tournament_date')
             kb.button(text='⬅️ Назад',callback_data='adm:home'); kb.adjust(1)
             await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
         elif action[1]=='tournament_prizes':
@@ -2164,7 +2164,7 @@ async def main():
             await c.message.answer(f'Введите награду за {place} место в формате: МОНЕТЫ АЛМАЗЫ. Например: 12000 25. Отмена: /canceladmin')
         elif action[1]=='tournament_date':
             admin_steps[c.from_user.id]={'kind':'tournament','step':'date'}
-            await c.message.answer('➕ СОЗДАНИЕ ТУРНИРА\nВведите дату турнира в формате ГГГГ-ММ-ДД. Если турнир на эту дату уже существует, откроются его настройки. Если нет — будет создан новый турнир в статусе «не запущен».\nШаг 1 из 2. Отмена: /canceladmin')
+            await c.message.answer('➕ СОЗДАНИЕ ТУРНИРА\nВведите название нового турнира (до 100 символов). Турнир не привязан к календарной дате.\nШаг 1 из 2. Отмена: /canceladmin')
         elif action[1]=='tournament_view':
             tid=int(action[2])
             async with Session() as s:
@@ -2178,10 +2178,10 @@ async def main():
                 kb.button(text='🟢 Открыть турнир',callback_data=f'adm:tournament_start:{tid}')
                 if not t.rewarded_at and t.status!='cancelled': kb.button(text='🎁 Начислить награды',callback_data=f'adm:tournament_reward:{tid}')
             kb.button(text='✏️ Изменить название',callback_data=f'adm:tournament_rename:{tid}')
-            kb.button(text='⏰ Изменить время окончания',callback_data=f'adm:tournament_end:{tid}')
+            
             kb.button(text='🗑 Удалить турнир',callback_data=f'adm:tournament_delete:{tid}')
             kb.button(text='⬅️ К списку',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f'🏆 {t.title or "Без названия"}\nДата: {t.tournament_date}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else ("🚫 отменён" if t.status=="cancelled" else "⚪ не запущен / закрыт"))}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
+            await c.message.answer(f'🏆 {t.title or "Без названия"}\nСтатус: {"🟢 идёт, приём участников открыт" if t.status=="open" else ("🏁 завершён" if t.rewarded_at else ("🚫 отменён" if t.status=="cancelled" else "⚪ не запущен / закрыт"))}\nУчастников: {count}\nID: {tid}\n\nВыберите действие:',reply_markup=kb.as_markup())
         elif action[1]=='tournament_end':
             tid=int(action[2])
             async with Session() as s:
@@ -2209,7 +2209,7 @@ async def main():
             kb=InlineKeyboardBuilder()
             kb.button(text='⚠️ Да, удалить',callback_data=f'adm:tournament_delete_apply:{tid}')
             kb.button(text='❌ Отмена',callback_data=f'adm:tournament_view:{tid}'); kb.adjust(1)
-            await c.message.answer(f'Удалить турнир «{t.title or "Без названия"}» от {t.tournament_date}? Будут удалены сведения о турнире и {count} записей участников. Уже начисленные награды с балансов не списываются.',reply_markup=kb.as_markup())
+            await c.message.answer(f'Удалить турнир «{t.title or "Без названия"}»? Будут удалены сведения о турнире и {count} записей участников. Уже начисленные награды с балансов не списываются.',reply_markup=kb.as_markup())
         elif action[1]=='tournament_delete_apply':
             tid=int(action[2])
             async with Session() as s:
@@ -2219,7 +2219,7 @@ async def main():
                 # Remove both individual and clan standings before deleting the parent row.
                 await s.execute(ClanTournamentEntry.__table__.delete().where(ClanTournamentEntry.tournament_id==tid))
                 await s.execute(TournamentEntry.__table__.delete().where(TournamentEntry.tournament_id==tid))
-                await audit(s,c.from_user.id,'tournament_deleted',tid,f'{t.tournament_date}:{t.title}')
+                await audit(s,c.from_user.id,'tournament_deleted',tid,str(t.title))
                 await s.delete(t)
                 await s.commit()
             await c.answer('Турнир удалён.')
@@ -2236,7 +2236,7 @@ async def main():
             kb=InlineKeyboardBuilder()
             kb.button(text='✅ Подтвердить',callback_data=f'adm:tournament_apply:{tid}:{mode}')
             kb.button(text='❌ Отмена',callback_data='adm:tournaments'); kb.adjust(1)
-            await c.message.answer(f"Подтвердите {'запуск турнира и открытие приёма участников' if mode=='open' else 'завершение турнира и подведение итогов'} на дату {t.tournament_date}.",reply_markup=kb.as_markup())
+            await c.message.answer(f"Подтвердите {'запуск турнира и открытие приёма участников' if mode=='open' else 'завершение турнира и подведение итогов'}.",reply_markup=kb.as_markup())
         elif action[1]=='tournament_apply' and action[3]=='closed':
             tid=int(action[2])
             from .worker import finalize_daily_tournament
@@ -2245,7 +2245,7 @@ async def main():
                 if not t:
                     await c.answer('Турнир уже удалён.',show_alert=True); return
                 title=t.title or 'Без названия'
-                await audit(s,c.from_user.id,'tournament_early_finish',tid,t.tournament_date)
+                await audit(s,c.from_user.id,'tournament_early_finish',tid,str(t.title))
                 await finalize_daily_tournament(s,t,c.bot,c.from_user.id)
             admin_steps.pop(c.from_user.id,None)
             await c.message.answer(f'🏁 Турнир «{title}» завершён. Итоговая таблица отправлена участникам, награды начислены. Запись турнира сохранена в админ-панели со статусом «завершён».',reply_markup=admin_back_keyboard())
@@ -2280,9 +2280,9 @@ async def main():
             admin_steps.pop(c.from_user.id,None)
             for uid,place,coins,gems in notices:
                 try:
-                    await c.bot.send_message(uid,f'🏁 Турнир {t.tournament_date} завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
+                    await c.bot.send_message(uid,f'🏁 Турнир «{t.title or "Без названия"}» завершён!\n\n🎉 Ваше место: {place}.\n🎁 Ваши награды: {coins} 🪙 и {gems} 💎.'+( '\nНаграды начислены на баланс.' if coins or gems else '\nВ этот раз вы не попали в призовую пятёрку. Удачи в следующем турнире!'))
                 except Exception: pass
-            await c.message.answer(f"✅ Турнир на {t.tournament_date} {'запущен: приём участников открыт' if mode=='open' else 'завершён'}. Игроков, которым отправлено уведомление о результатах: {len(notices)}.",reply_markup=admin_back_keyboard())
+            await c.message.answer(f"✅ Турнир «{t.title or 'Без названия'}» {'запущен: приём участников открыт' if mode=='open' else 'завершён'}. Игроков, которым отправлено уведомление о результатах: {len(notices)}.",reply_markup=admin_back_keyboard())
         elif action[1]=='auctions':
             kb=InlineKeyboardBuilder()
             kb.button(text='📋 Заявки на аукцион',callback_data='adm:auction_queue')
