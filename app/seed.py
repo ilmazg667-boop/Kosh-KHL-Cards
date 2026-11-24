@@ -27,7 +27,6 @@ def _card_seed_identity(card):
         (card.league or '').strip().casefold(),
         (card.position or '').strip().upper(),
         (card.rarity or '').strip().casefold(),
-        (int(card.ovr)-2 if getattr(card,'rating_boosted',False) and card.league=='КХЛ' else int(card.ovr)),
         (card.image_url or '').strip(),
     )
     player_key = (card.player_key or '').strip().casefold()
@@ -51,11 +50,12 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.player_name = card.player_name
             current.player_key = card.player_key
             current.position = card.position
-            if not current.rating_boosted:
+            if card.league == 'КХЛ' and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
+                current.ovr = min(100, card.ovr + 2)
+                current.rating_boosted = True
+            else:
                 current.ovr = card.ovr
-                if card.league == 'КХЛ' and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
-                    current.ovr = min(100, current.ovr + 2)
-                    current.rating_boosted = True
+                current.rating_boosted = False
             current.rarity = card.rarity
             current.country = card.country
             current.club = card.club
