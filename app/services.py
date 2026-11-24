@@ -98,6 +98,20 @@ def pack_card_exclusion():
     return ~((Card.player_name=='Семён Кошелев') & Card.ovr.in_([95,99]))
 
 
+def unique_player_cards(cards):
+    """Keep only the strongest active card for each player in a random reward pool."""
+    strongest={}
+    for card in cards:
+        name=' '.join((card.player_name or '').casefold().split())
+        identity=('name',name) if name else ('key',(card.player_key or '').strip().casefold())
+        if not identity[1]:
+            identity=('card',card.id)
+        current=strongest.get(identity)
+        if current is None or (int(card.ovr or 0),-int(card.id or 0)) > (int(current.ovr or 0),-int(current.id or 0)):
+            strongest[identity]=card
+    return list(strongest.values())
+
+
 async def open_pack(session,user,pack_name):
     if pack_name not in PACKS: raise ValueError('Неизвестный тип пака.')
     user=await session.scalar(select(User).where(User.id==user.id).with_for_update())
@@ -108,12 +122,16 @@ async def open_pack(session,user,pack_name):
     adjusted_odds=adjust_pack_odds(pack_name, data['odds'])
     rarity=rarity_pick(adjusted_odds)
     excluded=pack_card_exclusion()
-    cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo',excluded))).all()
+    # Deduplicate the entire catalogue before filtering by rarity, so a player
+    # with several editions has only one chance and only their highest OVR edition can drop.
+    catalogue=(await session.scalars(select(Card).where(
+        Card.active.is_(True), Card.source!='demo', excluded
+    ))).all()
+    catalogue=unique_player_cards(catalogue)
+    cards=[card for card in catalogue if card.rarity==rarity]
     if not cards:
         # Never issue artificial DEMO cards: use the nearest real rarity available.
-        available=(await session.scalars(select(Card.rarity).where(
-            Card.active.is_(True), Card.source!='demo', excluded
-        ).distinct())).all()
+        available=list({card.rarity for card in catalogue})
         if not available:
             raise ValueError('В базе пока нет подходящих карточек для паков. Эксклюзивные карточки выдаются отдельно.')
         target=RARITY_RANGES[rarity]
@@ -121,9 +139,7 @@ async def open_pack(session,user,pack_name):
         nearest=min(available, key=lambda value: abs(
             (RARITY_RANGES.get(value, target)[0]+RARITY_RANGES.get(value, target)[1])/2-target_mid
         ))
-        cards=(await session.scalars(select(Card).where(
-            Card.active.is_(True), Card.rarity==nearest, Card.source!='demo', excluded
-        ))).all()
+        cards=[card for card in catalogue if card.rarity==nearest]
     card=random.choice(cards)
     setattr(user,currency,getattr(user,currency)-price)
     owned=OwnedCard(user_id=user.id,card_id=card.id,slot='')
@@ -587,12 +603,16 @@ async def claim_bp_reward(session,user_id,level,premium=False):
         target_rarity=milestone_rarities.get(level,'Эпический')
         excluded=pack_card_exclusion()
         cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,Card.source!='demo',excluded))).all()
+        cards=unique_player_cards(cards)
         if not cards:
             cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==target_rarity,excluded))).all()
+            cards=unique_player_cards(cards)
         if not cards:
             cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',excluded))).all()
+            cards=unique_player_cards(cards)
         if not cards:
             cards=(await session.scalars(select(Card).where(Card.active.is_(True),excluded))).all()
+            cards=unique_player_cards(cards)
         if not cards: raise ValueError('Бонусная карточка пока недоступна: в базе нет активных карточек.')
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Бонусная карточка: {card.player_name} · {card.ovr} OVR · {card.rarity}'
@@ -600,8 +620,10 @@ async def claim_bp_reward(session,user_id,level,premium=False):
         pack_name='Премиум' if premium else 'Обычный'
         odds=adjust_pack_odds(pack_name, PACKS[pack_name]['odds']); rarity=rarity_pick(odds)
         cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source!='demo'))).all()
+        cards=unique_player_cards(cards)
         if not cards:
             cards=(await session.scalars(select(Card).where(Card.active.is_(True),Card.rarity==rarity,Card.source=='demo'))).all()
+            cards=unique_player_cards(cards)
         if not cards: raise ValueError(f'Награда-пак «{pack_name}» пока недоступна: нет карточек редкости {rarity}.')
         card=random.choice(cards); session.add(OwnedCard(user_id=user_id,card_id=card.id,slot=''))
         reward_text=f'🎴 Пак «{pack_name}»: {card.player_name} · {card.ovr} OVR · {card.rarity}'
