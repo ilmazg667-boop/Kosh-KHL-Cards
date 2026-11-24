@@ -1156,31 +1156,57 @@ async def main():
             except ValueError as e: await m.answer(str(e))
     trade_target_steps={}
     trade_input_steps={}
-    def trade_keyboard(offer_id):
-        kb=InlineKeyboardBuilder(); kb.button(text='✅ Принять приглашение',callback_data=f'tradeyes:{offer_id}'); kb.button(text='❌ Отклонить',callback_data=f'tradeno:{offer_id}'); kb.adjust(1); return kb.as_markup()
-    def trade_edit_keyboard(offer_id):
+    def trade_keyboard(oid):
+        kb=InlineKeyboardBuilder(); kb.button(text='✅ Принять приглашение',callback_data=f'tradeyes:{oid}'); kb.button(text='❌ Отклонить',callback_data=f'tradeno:{oid}'); kb.adjust(1); return kb.as_markup()
+    def trade_edit_keyboard(oid):
         kb=InlineKeyboardBuilder()
-        kb.button(text='➕ Добавить карточку по ID',callback_data=f'trade:card:{offer_id}')
-        kb.button(text='🪙 Указать монеты',callback_data=f'trade:coins:{offer_id}')
-        kb.button(text='💎 Указать алмазы',callback_data=f'trade:gems:{offer_id}')
-        kb.button(text='🔒 Подтвердить обмен',callback_data=f'trade:confirm:{offer_id}')
-        kb.button(text='❌ Отменить обмен',callback_data=f'trade:cancel:{offer_id}')
-        kb.adjust(1); return kb.as_markup()
-    async def trade_edit_text(s,offer,uid):
-        mine=offer.give_card_ids if uid==offer.sender_id else offer.receive_card_ids
-        other=offer.receive_card_ids if uid==offer.sender_id else offer.give_card_ids
-        prefix='sender' if uid==offer.sender_id else 'receiver'; op='receiver' if prefix=='sender' else 'sender'
-        lines=[f'🔁 ОБМЕН #{offer.id}',f'Ваши карточки: {len(mine)} · карточки партнёра: {len(other)}',
-            f'Ваш вклад: {getattr(offer,prefix+"_coins")} 🪙 · {getattr(offer,prefix+"_gems")} 💎',
-            f'Вклад партнёра: {getattr(offer,op+"_coins")} 🪙 · {getattr(offer,op+"_gems")} 💎',
-            f'Подтверждение: {"да" if getattr(offer,prefix+"_confirmed") else "нет"}']
-        for cid in mine:
-            oc=await s.get(OwnedCard,cid); lines.append('• '+(await owned_card_text(s,oc) if oc else f'Карточка #{cid}'))
+        kb.button(text='➕ Добавить карточку',callback_data=f'trade:card:{oid}')
+        kb.button(text='🪙 Указать монеты',callback_data=f'trade:coins:{oid}')
+        kb.button(text='💎 Указать алмазы',callback_data=f'trade:gems:{oid}')
+        kb.button(text='🔒 Подтвердить обмен',callback_data=f'trade:confirm:{oid}')
+        kb.button(text='❌ Отменить обмен',callback_data=f'trade:cancel:{oid}'); kb.adjust(1); return kb.as_markup()
+    async def trade_text(s,o,uid):
+        a=await s.get(User,o.sender_id); b=await s.get(User,o.receiver_id)
+        me=a if uid==o.sender_id else b; other=b if uid==o.sender_id else a
+        p='sender' if uid==o.sender_id else 'receiver'; q='receiver' if p=='sender' else 'sender'
+        n=lambda u: (u.first_name or ('@'+u.username if u.username else f'Игрок {u.id}')) if u else 'Игрок'
+        left=max(0,int(((o.expires_at.replace(tzinfo=o.expires_at.tzinfo or UTC) if o.expires_at else now())-now().astimezone(UTC)).total_seconds()))
+        lines=[f'🔁 ОБМЕН #{o.id}',f'👤 Вы: {n(me)}',f'🤝 Партнёр: {n(other)}',f'⏳ Осталось: {left//60}:{left%60:02d}']
+        for label,ids in ((n(me),o.give_card_ids if p=='sender' else o.receive_card_ids),(n(other),o.receive_card_ids if p=='sender' else o.give_card_ids)):
+            lines.append(f'🃏 Карточки {label}:')
+            for cid in ids:
+                oc=await s.get(OwnedCard,cid); card=await s.get(Card,oc.card_id) if oc else None
+                if card: lines.append(f' • {card.player_name} · {card.ovr} OVR · {card.position}')
+            if not ids: lines.append(' • —')
+        lines.extend([f'🪙 {n(me)}: {getattr(o,p+"_coins")} монет · {getattr(o,p+"_gems")} 💎',f'🪙 {n(other)}: {getattr(o,q+"_coins")} монет · {getattr(o,q+"_gems")} 💎',
+          f'🔐 Подтверждение {n(me)}: {"✅" if getattr(o,p+"_confirmed") else "⌛"}',f'🔐 Подтверждение {n(other)}: {"✅" if getattr(o,q+"_confirmed") else "⌛"}'])
         return '\n'.join(lines)
+    async def refresh_trade(bot_obj,s,o):
+        for uid,mid in ((o.sender_id,o.sender_message_id),(o.receiver_id,o.receiver_message_id)):
+            if mid:
+                try: await bot_obj.edit_message_text(await trade_text(s,o,uid),chat_id=uid,message_id=mid,reply_markup=trade_edit_keyboard(o.id))
+                except Exception: pass
+    async def render_trade_cards(message,s,o,uid,page=0,league=None,pos=None,rarity=None):
+        cond=[OwnedCard.user_id==uid,OwnedCard.locked.is_(False),OwnedCard.slot=='']
+        if league: cond.append(Card.league==league)
+        if pos: cond.append(Card.position==pos)
+        if rarity: cond.append(Card.rarity==rarity)
+        total=await s.scalar(select(func.count(OwnedCard.id)).join(Card,Card.id==OwnedCard.card_id).where(*cond)) or 0
+        rows=(await s.scalars(select(OwnedCard).join(Card,Card.id==OwnedCard.card_id).where(*cond).order_by(OwnedCard.id.desc()).offset(page*12).limit(12))).all()
+        kb=InlineKeyboardBuilder(); lines=[f'🃏 ВЫБОР КАРТОЧКИ · стр. {page+1} · всего {total}',f'Фильтры: {league or "все лиги"} · {pos or "все позиции"} · {rarity_label(rarity) if rarity else "все редкости"}']
+        for oc in rows:
+            card=await s.get(Card,oc.card_id)
+            if card:
+                lines.append(f'{card.player_name} · {card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}')
+                kb.button(text=f'➕ {card.player_name} · {card.ovr}',callback_data=f'trade:pick:{o.id}:{oc.id}')
+        kb.button(text='🔎 Фильтр',callback_data=f'trade:filters:{o.id}')
+        if page: kb.button(text='⬅️ Назад',callback_data=f'trade:cards:{o.id}:{page-1}:{league or "-"}:{pos or "-"}:{rarity or "-"}')
+        if (page+1)*12<total: kb.button(text='Вперёд ➡️',callback_data=f'trade:cards:{o.id}:{page+1}:{league or "-"}:{pos or "-"}:{rarity or "-"}')
+        kb.button(text='⬅️ К обмену',callback_data=f'trade:open:{o.id}'); kb.adjust(1)
+        await message.edit_text('\n'.join(lines),reply_markup=kb.as_markup())
     @dp.message(Command('trade'))
     async def trade(m):
-        trade_target_steps[m.from_user.id]=True
-        await m.answer('Отправьте Telegram ID игрока. Карточки и ресурсы выберете после принятия приглашения.')
+        trade_target_steps[m.from_user.id]=True; await m.answer('Отправьте Telegram ID игрока. После принятия приглашения карточки выбираются кнопками.')
     @dp.message(lambda m: m.from_user and m.from_user.id in trade_target_steps and m.text and not m.text.startswith('/'))
     async def trade_target_input(m):
         trade_target_steps.pop(m.from_user.id,None)
@@ -1188,80 +1214,110 @@ async def main():
         except ValueError: await m.answer('Введите числовой Telegram ID.'); return
         async with Session() as s:
             try:
-                await active_user(s,m.from_user); offer=await create_trade(s,m.from_user.id,target)
-                try: await m.bot.send_message(target,f'🤝 Игрок {m.from_user.full_name} предлагает начать обмен #{offer.id}. Примите приглашение, чтобы выбрать карточки, монеты и алмазы.',reply_markup=trade_keyboard(offer.id))
-                except Exception:
-                    offer.status='cancelled'; await s.commit(); await m.answer('Не удалось доставить приглашение. Проверьте ID и запущен ли бот у игрока.'); return
-                await m.answer(f'Приглашение #{offer.id} отправлено игроку {target}.')
+                await active_user(s,m.from_user); o=await create_trade(s,m.from_user.id,target)
+                try: await m.bot.send_message(target,f'🤝 Игрок {m.from_user.full_name} предлагает обмен. На принятие — 2 минуты.',reply_markup=trade_keyboard(o.id))
+                except Exception: o.status='cancelled'; await s.commit(); await m.answer('Не удалось доставить приглашение.'); return
+                await m.answer(f'Приглашение отправлено игроку {target}.')
             except ValueError as e: await m.answer(str(e))
     @dp.callback_query(F.data.startswith(('tradeyes:','tradeno:')))
     async def trade_response(c:CallbackQuery):
         accept=c.data.startswith('tradeyes:'); oid=int(c.data.split(':')[1])
         async with Session() as s:
             try:
-                await active_user(s,c.from_user); offer=await resolve_trade(s,oid,c.from_user.id,accept)
+                await active_user(s,c.from_user); o=await resolve_trade(s,oid,c.from_user.id,accept)
                 if accept:
-                    for uid in (offer.sender_id,offer.receiver_id):
-                        try: await c.bot.send_message(uid,f'🤝 Приглашение принято! Обмен #{oid} открыт. Добавляйте карточки, монеты и алмазы:',reply_markup=trade_edit_keyboard(oid))
-                        except Exception: pass
-                    await c.message.answer('Приглашение принято. Обмен открыт.')
+                    o.receiver_message_id=c.message.message_id
+                    try: await c.message.edit_text(await trade_text(s,o,o.receiver_id),reply_markup=trade_edit_keyboard(oid))
+                    except Exception: pass
+                    sent=await c.bot.send_message(o.sender_id,await trade_text(s,o,o.sender_id),reply_markup=trade_edit_keyboard(oid))
+                    o.sender_message_id=sent.message_id; await s.commit()
                 else:
-                    await c.message.answer('Приглашение отклонено.')
-                    try: await c.bot.send_message(offer.sender_id,f'Приглашение #{oid} отклонено.')
+                    try: await c.message.edit_text('❌ Приглашение отклонено.')
+                    except Exception: pass
+                    try: await c.bot.send_message(o.sender_id,'❌ Игрок отклонил приглашение.')
                     except Exception: pass
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer()
     @dp.callback_query(F.data.startswith('trade:'))
     async def trade_menu_action(c:CallbackQuery):
-        parts=c.data.split(':'); action=parts[1]
+        p=c.data.split(':'); action=p[1]
         async with Session() as s:
             try: await active_user(s,c.from_user)
             except ValueError as e: await c.answer(str(e),show_alert=True); return
             if action=='players':
                 trade_target_steps[c.from_user.id]=True
-                await c.message.answer('Введите Telegram ID игрока, которому отправить приглашение.')
-            elif action in ('card','coins','gems'):
-                oid=int(parts[2]); offer=await s.scalar(select(TradeOffer).where(TradeOffer.id==oid,TradeOffer.status=='negotiating'))
-                if not offer or c.from_user.id not in (offer.sender_id,offer.receiver_id): await c.answer('Обмен недоступен.',show_alert=True); return
-                trade_input_steps[c.from_user.id]=(oid,action)
-                await c.message.answer('Введите ID своей свободной карточки:' if action=='card' else 'Введите количество монет:' if action=='coins' else 'Введите количество алмазов:')
-            elif action=='confirm':
-                oid=int(parts[2])
-                try:
-                    done=await confirm_trade(s,oid,c.from_user.id); offer=await s.get(TradeOffer,oid)
-                    if done:
-                        for uid in (offer.sender_id,offer.receiver_id):
-                            try: await c.bot.send_message(uid,f'✅ Обмен #{oid} завершён! Карточки и ресурсы переданы.')
-                            except Exception: pass
-                    else: await c.message.answer('Подтверждение сохранено. Ждём вторую сторону.',reply_markup=trade_edit_keyboard(oid))
-                except ValueError as e: await c.answer(str(e),show_alert=True); return
-            elif action=='cancel':
-                oid=int(parts[2]); offer=await s.get(TradeOffer,oid)
-                if not offer or c.from_user.id not in (offer.sender_id,offer.receiver_id) or offer.status not in ('pending','negotiating'): await c.answer('Обмен недоступен.',show_alert=True); return
-                for cid in (offer.give_card_ids or [])+(offer.receive_card_ids or []):
-                    oc=await s.get(OwnedCard,cid)
-                    if oc: oc.locked=False
-                offer.status='cancelled'; await s.commit()
-                for uid in (offer.sender_id,offer.receiver_id):
-                    try: await c.bot.send_message(uid,f'Обмен #{oid} отменён.')
-                    except Exception: pass
+                await c.message.edit_text('Введите Telegram ID игрока, которому отправить приглашение.')
             elif action in ('incoming','outgoing'):
-                field=TradeOffer.receiver_id if action=='incoming' else TradeOffer.sender_id
-                rows=(await s.scalars(select(TradeOffer).where(field==c.from_user.id).order_by(TradeOffer.id.desc()).limit(15))).all()
-                lines=['📨 ОБМЕНЫ' if action=='incoming' else '📤 ИСХОДЯЩИЕ ОБМЕНЫ']; kb=InlineKeyboardBuilder()
-                for offer in rows:
-                    lines.append(f'#{offer.id} · игрок {offer.sender_id} → {offer.receiver_id} · {offer.status}')
-                    if offer.status=='pending' and action=='incoming':
-                        kb.button(text=f'Принять #{offer.id}',callback_data=f'tradeyes:{offer.id}'); kb.button(text=f'Отклонить #{offer.id}',callback_data=f'tradeno:{offer.id}')
-                    if offer.status=='negotiating' and c.from_user.id in (offer.sender_id,offer.receiver_id): kb.button(text=f'Открыть обмен #{offer.id}',callback_data=f'trade:open:{offer.id}')
-                    if offer.status=='pending' and action=='outgoing': kb.button(text=f'Отменить #{offer.id}',callback_data=f'trade:cancel:{offer.id}')
+                incoming=action=='incoming'; col=TradeOffer.receiver_id if incoming else TradeOffer.sender_id
+                rows=(await s.scalars(select(TradeOffer).where(col==c.from_user.id).order_by(TradeOffer.id.desc()).limit(20))).all()
+                lines=['📨 ВХОДЯЩИЕ ОТ ИГРОКОВ' if incoming else '📤 ИСХОДЯЩИЕ К ИГРОКАМ']; kb=InlineKeyboardBuilder()
+                for o in rows:
+                    pid=o.sender_id if incoming else o.receiver_id; u=await s.get(User,pid); nick=(u.first_name or '@'+u.username if u else f'Игрок {pid}')
+                    lines.append(f'\n👤 {nick} · '+('⏳ ожидает' if o.status=='pending' else '🔁 идёт обмен' if o.status=='negotiating' else '✅ завершён' if o.status=='accepted' else 'закрыт'))
+                    if o.status=='pending' and incoming:
+                        kb.button(text=f'✅ Принять · {nick}',callback_data=f'tradeyes:{o.id}'); kb.button(text=f'❌ Отклонить · {nick}',callback_data=f'tradeno:{o.id}')
+                    elif o.status=='negotiating': kb.button(text=f'🔁 Открыть · {nick}',callback_data=f'trade:open:{o.id}')
+                    elif o.status=='pending': kb.button(text=f'❌ Отменить · {nick}',callback_data=f'trade:cancel:{o.id}')
                 kb.button(text='⬅️ Назад',callback_data='player:trades'); kb.adjust(1)
-                await c.message.answer('\n'.join(lines),reply_markup=kb.as_markup())
-            elif action=='open':
-                oid=int(parts[2]); offer=await s.get(TradeOffer,oid)
-                if not offer or offer.status!='negotiating' or c.from_user.id not in (offer.sender_id,offer.receiver_id): await c.answer('Обмен недоступен.',show_alert=True); return
-                await c.message.answer(await trade_edit_text(s,offer,c.from_user.id),reply_markup=trade_edit_keyboard(oid))
-        await c.answer()
+                await c.message.edit_text('\n'.join(lines),reply_markup=kb.as_markup())
+            else:
+                oid=int(p[2]); o=await s.get(TradeOffer,oid)
+                if not o or c.from_user.id not in (o.sender_id,o.receiver_id) or o.status!='negotiating':
+                    await c.answer('Обмен недоступен или время истекло.',show_alert=True); return
+                if action=='card':
+                    await render_trade_cards(c.message,s,o,c.from_user.id)
+                elif action=='filters':
+                    kb=InlineKeyboardBuilder()
+                    for k,label in [('league','🏒 Лиги'),('position','📍 Позиции'),('rarity','💎 Редкости')]: kb.button(text=label,callback_data=f'trade:filter:{oid}:{k}')
+                    kb.button(text='♻️ Сбросить',callback_data=f'trade:cards:{oid}:0:-:-:-'); kb.button(text='⬅️ К обмену',callback_data=f'trade:open:{oid}'); kb.adjust(1)
+                    await c.message.edit_text('🔎 ФИЛЬТР КАРТОЧЕК',reply_markup=kb.as_markup())
+                elif action=='filter':
+                    kind=p[3]
+                    col={'league':Card.league,'position':Card.position,'rarity':Card.rarity}[kind]
+                    cond=[OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)]
+                    vals=list((await s.scalars(select(col).join(OwnedCard,OwnedCard.card_id==Card.id).where(*cond,col!='' if kind=='league' else col.is_not(None)).distinct().order_by(col))).all())
+                    kb=InlineKeyboardBuilder()
+                    for i,v in enumerate(vals): kb.button(text=rarity_label(v) if kind=='rarity' else v,callback_data=f'trade:filtervalue:{oid}:{kind}:{i}')
+                    kb.button(text='⬅️ К фильтрам',callback_data=f'trade:filters:{oid}'); kb.adjust(1)
+                    await c.message.edit_text('Выберите значение фильтра:',reply_markup=kb.as_markup())
+                elif action=='filtervalue':
+                    kind=p[3]; idx=int(p[4]); col={'league':Card.league,'position':Card.position,'rarity':Card.rarity}[kind]
+                    cond=[OwnedCard.user_id==c.from_user.id,OwnedCard.slot=='',OwnedCard.locked.is_(False)]
+                    vals=list((await s.scalars(select(col).join(OwnedCard,OwnedCard.card_id==Card.id).where(*cond,col!='' if kind=='league' else col.is_not(None)).distinct().order_by(col))).all())
+                    if idx>=len(vals): await c.answer('Фильтр не найден.',show_alert=True); return
+                    f={'league':None,'position':None,'rarity':None}; f[kind]=vals[idx]
+                    await render_trade_cards(c.message,s,o,c.from_user.id,0,f['league'],f['position'],f['rarity'])
+                elif action=='cards':
+                    page=int(p[3]); vals=[None if x=='-' else x for x in p[4:7]]
+                    await render_trade_cards(c.message,s,o,c.from_user.id,page,*vals)
+                elif action=='pick':
+                    await set_trade_card(s,oid,c.from_user.id,int(p[3])); o=await s.get(TradeOffer,oid); await refresh_trade(c.bot,s,o)
+                elif action in ('coins','gems'):
+                    trade_input_steps[c.from_user.id]=(oid,action); await c.message.edit_text('Введите количество монет:' if action=='coins' else 'Введите количество алмазов:')
+                elif action=='confirm':
+                    snapshot={}
+                    for uid,ids in ((o.sender_id,o.give_card_ids),(o.receiver_id,o.receive_card_ids)):
+                        u=await s.get(User,uid); names=[]
+                        for cid in ids:
+                            oc=await s.get(OwnedCard,cid); card=await s.get(Card,oc.card_id) if oc else None
+                            if card: names.append(f'{card.player_name} ({card.ovr} OVR)')
+                        snapshot[uid]=(u.first_name or '@'+u.username or f'Игрок {uid}',names)
+                    done=await confirm_trade(s,oid,c.from_user.id); o=await s.get(TradeOffer,oid)
+                    if done:
+                        a,ac=snapshot[o.sender_id]; b,bc=snapshot[o.receiver_id]
+                        summary=f'✅ ОБМЕН ЗАВЕРШЁН\n👤 {a} получил: {", ".join(bc) if bc else "ничего"}\n👤 {b} получил: {", ".join(ac) if ac else "ничего"}\n🪙 {a} получил {o.receiver_coins} монет и {o.receiver_gems} 💎\n🪙 {b} получил {o.sender_coins} монет и {o.sender_gems} 💎'
+                        for uid,mid in ((o.sender_id,o.sender_message_id),(o.receiver_id,o.receiver_message_id)):
+                            try: await c.bot.edit_message_text(summary,chat_id=uid,message_id=mid)
+                            except Exception: pass
+                    else: await refresh_trade(c.bot,s,o)
+                elif action=='cancel':
+                    for cid in (o.give_card_ids or [])+(o.receive_card_ids or []):
+                        oc=await s.get(OwnedCard,cid)
+                        if oc: oc.locked=False
+                    o.status='cancelled'; await s.commit(); await refresh_trade(c.bot,s,o)
+                elif action=='open':
+                    await c.message.edit_text(await trade_text(s,o,c.from_user.id),reply_markup=trade_edit_keyboard(oid))
+            await c.answer()
     @dp.message(lambda m: m.from_user and m.from_user.id in trade_input_steps and m.text and not m.text.startswith('/'))
     async def trade_value_input(m):
         oid,kind=trade_input_steps.pop(m.from_user.id)
@@ -1269,12 +1325,7 @@ async def main():
         except ValueError: await m.answer('Введите целое неотрицательное число.'); return
         async with Session() as s:
             try:
-                if kind=='card': await set_trade_card(s,oid,m.from_user.id,value)
-                else: await set_trade_currency(s,oid,m.from_user.id,kind,value)
-                offer=await s.get(TradeOffer,oid); await m.answer(await trade_edit_text(s,offer,m.from_user.id),reply_markup=trade_edit_keyboard(oid))
-                other=offer.receiver_id if m.from_user.id==offer.sender_id else offer.sender_id
-                try: await m.bot.send_message(other,f'Условия обмена #{oid} обновлены.',reply_markup=trade_edit_keyboard(oid))
-                except Exception: pass
+                await set_trade_currency(s,oid,m.from_user.id,kind,value); o=await s.get(TradeOffer,oid); await refresh_trade(m.bot,s,o)
             except ValueError as e: await m.answer(str(e))
     @dp.message(Command('trades'))
     @dp.message(F.text=='🔁 Обмены')
@@ -1282,7 +1333,7 @@ async def main():
         kb=InlineKeyboardBuilder(); kb.button(text='🤝 Предложить обмен по Telegram ID',callback_data='trade:players')
         kb.button(text='📨 Входящие приглашения',callback_data='trade:incoming'); kb.button(text='📤 Исходящие приглашения',callback_data='trade:outgoing')
         kb.button(text='⬅️ Главное меню',callback_data='player:home'); kb.adjust(1)
-        await m.answer('🔁 ОБМЕНЫ\nУкажите Telegram ID. После принятия обе стороны смогут добавить несколько карточек, монеты и алмазы. Обмен завершается после подтверждения обеими сторонами.',reply_markup=kb.as_markup())
+        await m.answer('🔁 ОБМЕНЫ\nНа принятие приглашения даётся 2 минуты, на согласование условий — 5 минут.',reply_markup=kb.as_markup())
     @dp.message(Command('auction_submit'))
     async def auction_submit(m):
         try: oid=int(m.text.split()[1])
@@ -2317,7 +2368,7 @@ async def main():
         action=parts[1] if len(parts)>1 else ''
         if action=='cancel':
             admin_steps.pop(c.from_user.id,None); await c.message.answer('Выдача карточки отменена.',reply_markup=admin_keyboard()); await c.answer(); return
-        league_map={'KHL':'КХЛ','NHL':'НХЛ'}
+        league_map={'KHL':'КХЛ','NHL':'НХЛ','LEGENDS':'Легенды'}
         if action=='league':
             code=parts[2] if len(parts)>2 else ''
             if code not in league_map: await c.answer('Лига не найдена.',show_alert=True); return
@@ -2332,7 +2383,7 @@ async def main():
             await c.message.answer(f'Шаг 3 из 4. Лига: {league}. Выберите команду:',reply_markup=kb.as_markup())
         elif action=='back' and len(parts)>2 and parts[2]=='league':
             state['step']='league'
-            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
             await c.message.answer('Выберите лигу карточки:',reply_markup=kb.as_markup())
         elif action=='team':
             code=parts[2] if len(parts)>2 else ''; idx=int(parts[3]) if len(parts)>3 else -1
@@ -2520,7 +2571,7 @@ async def main():
                     await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
                     state['step']='league'
-                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                     await m.answer('Шаг 2 из 4. Выберите лигу карточки:',reply_markup=kb.as_markup())
                 elif kind=='givepremium':
                     async with Session() as s:
