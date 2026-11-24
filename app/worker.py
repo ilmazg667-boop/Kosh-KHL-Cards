@@ -670,7 +670,11 @@ async def run_worker():
                     await ensure_season(s); await ensure_daily_tournament(s)
                     await expire_challenges(s,bot)
                     await expire_match_searches(s,bot)
-                    await expire_trade_offers(s)
+                    expired_trades=await expire_trade_offers(s)
+                    for oid,sender_id,receiver_id,old_status in expired_trades:
+                        reason='Приглашение не принято за 2 минуты.' if old_status=='pending' else 'Время на обмен (5 минут) истекло.'
+                        await send(bot,sender_id,f'⌛ Обмен #{oid} завершён: {reason} Карточки разблокированы.')
+                        await send(bot,receiver_id,f'⌛ Обмен #{oid} завершён: {reason} Карточки разблокированы.')
                     await close_old_tournaments(s,bot)
                     await close_old_clan_tournaments(s,bot)
                     expired=(await s.scalars(select(Auction).where(Auction.status=='active',Auction.ends_at<=now()))).all()
