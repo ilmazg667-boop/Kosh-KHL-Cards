@@ -22,7 +22,7 @@ from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip
     create_trade, resolve_trade, submit_auction_card, place_bid,
     create_clan, join_clan, ensure_daily_tournament, ensure_daily_tournament_participants, ensure_season, progress_after_match,
     claim_quest, claim_bp_reward, import_cards, import_chemistry, audit, now, season_key, save_pack_config,
-    create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member)
+    create_clan_invite, resolve_clan_invite, leave_clan, set_clan_role, transfer_clan_owner, kick_clan_member, auto_best_lineup)
 
 def keyboard():
     kb=InlineKeyboardBuilder()
@@ -181,6 +181,7 @@ def team_keyboard():
     kb=InlineKeyboardBuilder()
     # Team name action gets its own full-width row.
     kb.button(text='✏️ ИЗМЕНИТЬ НАЗВАНИЕ КОМАНДЫ',callback_data='teamrename:start')
+    kb.button(text='⚡ СДЕЛАТЬ ЛУЧШИЙ СОСТАВ',callback_data='team:auto')
     for pos in POSITIONS:
         # Add/remove actions for each position stay side by side.
         kb.button(text=f'➕ Поставить {pos}',callback_data=f'team:choose:{pos}')
@@ -384,6 +385,17 @@ async def main():
                 except Exception:
                     await c.message.answer(prompt,reply_markup=kb.as_markup())
         await c.answer()
+
+    @dp.callback_query(F.data=='team:auto')
+    async def team_auto_best(c:CallbackQuery):
+        async with Session() as s:
+            try:
+                u=await active_user(s,c.from_user)
+                changed=await auto_best_lineup(s,c.from_user.id)
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True,team_name=u.team_name)
+            except ValueError as e:
+                await c.answer(str(e),show_alert=True); return
+        await c.answer('Лучший состав выставлен.' if changed else 'Состав уже оптимален.')
 
     @dp.callback_query(F.data.startswith('teamequip:'))
     async def team_equip_selected(c:CallbackQuery):
