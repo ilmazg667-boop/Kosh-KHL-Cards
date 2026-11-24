@@ -2478,6 +2478,7 @@ async def main():
                     s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
                     await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
                 target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+                card_details='\\n'.join([f'📍 Позиция: {card.position}',f'🏒 Команда: {card.club}',f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
@@ -2487,7 +2488,7 @@ async def main():
                     state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
             else:
                 admin_steps.pop(c.from_user.id,None)
-                try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка: {player_name} · {ovr} OVR.')
+                try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка!\\n\\n🏒 {player_name} · {ovr} OVR\\n{card_details}')
                 except Exception: pass
                 await c.message.answer(f'✅ Эксклюзивная карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         elif action=='player':
@@ -2506,6 +2507,7 @@ async def main():
                     s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
                     await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
                 target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
+                card_details='\\n'.join([f'📍 Позиция: {card.position}',f'🏒 Команда: {card.club}',f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
@@ -2515,7 +2517,7 @@ async def main():
                     state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
             else:
                 admin_steps.pop(c.from_user.id,None)
-                try: await c.bot.send_message(target_id,f'🃏 Вам выдана карточка: {player_name} · {ovr} OVR.')
+                try: await c.bot.send_message(target_id,f'🃏 Вам выдана карточка!\\n\\n🏒 {player_name} · {ovr} OVR\\n{card_details}')
                 except Exception: pass
                 await c.message.answer(f'✅ Карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         await c.answer()
