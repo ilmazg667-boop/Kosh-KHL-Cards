@@ -2348,7 +2348,7 @@ async def main():
                 total=await s.scalar(select(func.count(PromoRedemption.id))) or 0
             lines=[f'📈 СТАТИСТИКА ПРОМОКОДОВ\nВсего активаций: {total}']
             for p in codes:
-                lines.append(f'\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎 · {p.reward_xp} XP · Premium: {"да" if p.reward_premium else "нет"}')
+                lines.append(f'\n🎟 {p.code} — {"🟢 активен" if p.active else "🔴 выключен"}\nАктиваций: {p.uses_count}'+(f'/{p.max_uses}' if p.max_uses else ' (без лимита)')+f'\nНаграда: {p.reward_coins} 🪙 · {p.reward_gems} 💎 · {p.reward_xp} XP · Premium: {"да" if p.reward_premium else "нет"} · Карточек: {len(p.reward_card_ids or [])}')
             if not codes: lines.append('Промокодов пока нет.')
             await c.message.answer(''.join(lines),reply_markup=admin_back_keyboard())
 
@@ -2606,22 +2606,22 @@ async def main():
                     async with Session() as s:
                         if await s.get(PromoCode,code): await m.answer('Такой промокод уже существует. Придумайте другой.'); return
                     data['code']=code; state['step']='coins'
-                    await m.answer('Шаг 2 из 6. Сколько монет выдавать? 0 — без монет.')
+                    await m.answer('Шаг 2 из 7. Сколько монет выдавать? 0 — без монет.')
                 elif step=='coins':
                     value=int(m.text.strip())
                     if value<0: raise ValueError()
                     data['coins']=value; state['step']='gems'
-                    await m.answer('Шаг 3 из 6. Сколько алмазов выдавать? 0 — без алмазов.')
+                    await m.answer('Шаг 3 из 7. Сколько алмазов выдавать? 0 — без алмазов.')
                 elif step=='gems':
                     value=int(m.text.strip())
                     if value<0: raise ValueError()
                     data['gems']=value; state['step']='xp'
-                    await m.answer('Шаг 4 из 6. Сколько XP Battle Pass начислить? 0 — без XP.')
+                    await m.answer('Шаг 4 из 7. Сколько XP Battle Pass начислить? 0 — без XP.')
                 elif step=='xp':
                     value=int(m.text.strip())
                     if value<0 or value>100000: raise ValueError()
                     data['xp']=value; state['step']='premium'
-                    await m.answer('Шаг 5 из 6. Подарить Premium Battle Pass? Ответьте да или нет.')
+                    await m.answer('Шаг 5 из 7. Подарить Premium Battle Pass? Ответьте да или нет.')
                 elif step=='premium':
                     value=m.text.strip().lower()
                     if value not in ('да','нет','yes','no'): await m.answer('Ответьте «да» или «нет».'); return
