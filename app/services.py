@@ -130,16 +130,21 @@ async def open_pack(session,user,pack_name):
     catalogue=unique_player_cards(catalogue)
     cards=[card for card in catalogue if card.rarity==rarity]
     if not cards:
-        # Never issue artificial DEMO cards: use the nearest real rarity available.
-        available=list({card.rarity for card in catalogue})
-        if not available:
-            raise ValueError('В базе пока нет подходящих карточек для паков. Эксклюзивные карточки выдаются отдельно.')
-        target=RARITY_RANGES[rarity]
-        target_mid=(target[0]+target[1])/2
-        nearest=min(available, key=lambda value: abs(
-            (RARITY_RANGES.get(value, target)[0]+RARITY_RANGES.get(value, target)[1])/2-target_mid
-        ))
-        cards=[card for card in catalogue if card.rarity==nearest]
+        # Missing catalogue rarities must never upgrade a roll (e.g. a common
+        # roll must not turn into an Icon just because no common cards exist).
+        rarity_rank={value:index for index,value in enumerate(RARITIES)}
+        rolled_rank=rarity_rank[rarity]
+        lower_available=[
+            value for value in {card.rarity for card in catalogue}
+            if value in rarity_rank and rarity_rank[value] < rolled_rank
+        ]
+        if not lower_available:
+            raise ValueError(
+                f'Карточки редкости «{rarity}» пока не загружены. '
+                'Пак не списал валюту — попробуйте позже.'
+            )
+        fallback=max(lower_available,key=lambda value:rarity_rank[value])
+        cards=[card for card in catalogue if card.rarity==fallback]
     card=random.choice(cards)
     setattr(user,currency,getattr(user,currency)-price)
     owned=OwnedCard(user_id=user.id,card_id=card.id,slot='')
