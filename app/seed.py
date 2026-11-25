@@ -12,9 +12,15 @@ def read_csv_cards(path):
             ovr=int(r['ovr'])
             if not name or pos not in POSITIONS or rarity not in RARITY_RANGES or not 50 <= ovr <= 100:
                 raise ValueError(f'Invalid card row: {r}')
+            club=r.get('club','—').strip() or '—'
+            league=r.get('league','—').strip() or '—'
+            retired = league in ('Завершили карьеру','Завершил карьеру') or club == 'Завершил карьеру'
+            if retired:
+                club='—'
+                league='Завершил карьеру'
             rows.append(Card(player_name=name, player_key=r.get('player_key','').strip(), position=pos, ovr=ovr,
-                rarity=rarity, country=r.get('country','—').strip() or '—', club=r.get('club','—').strip() or '—',
-                league=r.get('league','—').strip() or '—', season=r.get('season','').strip(),
+                rarity=rarity, country=r.get('country','—').strip() or '—', club=club,
+                league=league, season=r.get('season','').strip(),
                 image_url=r.get('image_url','').strip(), source=r.get('source','import').strip() or 'import',
                 active=r.get('active','true').strip().lower() not in ('0','false','no','off')))
     return rows
