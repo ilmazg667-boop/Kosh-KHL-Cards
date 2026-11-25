@@ -28,6 +28,7 @@ def _card_seed_identity(card):
         (card.position or '').strip().upper(),
         (card.rarity or '').strip().casefold(),
         (card.image_url or '').strip(),
+        int(card.ovr),
     )
     player_key = (card.player_key or '').strip().casefold()
     if player_key:
