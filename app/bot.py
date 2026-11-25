@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, desc, func, or_
 from sqlalchemy.exc import IntegrityError
 from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
-from .db import Session, init_db
+from .db import Session, init_db, Base
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
@@ -2032,6 +2032,65 @@ async def main():
             kb.button(text=label,callback_data=data)
         kb.adjust(2)
         return kb.as_markup()
+
+    RESET_SUPERADMIN_ID=1205576607
+    RESET_PRESERVED_TABLES={'cards','pack_configs','tournament_prize_configs','seasons','promo_codes','audit_logs'}
+
+    async def reset_all_player_progress(session, actor_id):
+        # Keep the card catalogue and game/admin configuration; wipe every player,
+        # inventory, economy, match, market, tournament, clan and progression record.
+        from sqlalchemy import delete
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name in RESET_PRESERVED_TABLES:
+                continue
+            await session.execute(delete(table))
+        promo_table=Base.metadata.tables.get('promo_codes')
+        if promo_table is not None:
+            await session.execute(promo_table.update().values(uses_count=0))
+        session.add(AuditLog(actor_id=actor_id,action='reset_all_players',target_id=0,
+                             details='Полный сброс игровых данных игроков; каталог и настройки сохранены'))
+
+    @dp.message(Command('resetplayers'))
+    async def reset_players_command(m:Message):
+        if m.from_user.id != RESET_SUPERADMIN_ID:
+            return
+        kb=InlineKeyboardBuilder()
+        kb.button(text='🧹 Да, сбросить прогресс всех игроков',callback_data='superreset:confirm')
+        kb.button(text='❌ Отмена',callback_data='superreset:cancel')
+        kb.adjust(1)
+        await m.answer(
+            '⚠️ <b>СБРОС ИГРОВОГО ПРОГРЕССА</b>\n\n'
+            'Будут удалены аккаунты игроков, их карточки и составы, валюты, рейтинг, матчи, '
+            'рынок, аукционы, обмены, кланы, турниры, задания и прогресс Battle Pass.\n\n'
+            'Каталог карточек, паки, настройки наград, промокоды и настройки сезонов останутся. '
+            'Игроки начнут заново через /start и получат стартовую команду.',
+            reply_markup=kb.as_markup(),parse_mode='HTML')
+
+    @dp.callback_query(F.data.startswith('superreset:'))
+    async def superadmin_reset_callback(c:CallbackQuery):
+        if c.from_user.id != RESET_SUPERADMIN_ID:
+            await c.answer('⛔ Нет доступа.',show_alert=True)
+            return
+        action=c.data.split(':',1)[1]
+        if action=='cancel':
+            await c.message.edit_text('Сброс отменён.')
+            await c.answer()
+            return
+        if action!='confirm':
+            await c.answer('Неизвестное действие.',show_alert=True)
+            return
+        try:
+            async with Session() as session:
+                await reset_all_player_progress(session,c.from_user.id)
+                await session.commit()
+        except Exception as e:
+            print(f'Ошибка полного сброса игровых данных: {e}')
+            await c.answer('Ошибка сброса. Данные не подтверждены как удалённые.',show_alert=True)
+            return
+        await c.message.edit_text(
+            '✅ Игровой прогресс всех игроков сброшен. Каталог карточек и настройки сохранены. '
+            'Игроки могут заново открыть бота командой /start.')
+        await c.answer('Сброс выполнен.')
 
     def admin_back_keyboard():
         kb=InlineKeyboardBuilder()
