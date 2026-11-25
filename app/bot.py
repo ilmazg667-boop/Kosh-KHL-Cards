@@ -573,7 +573,7 @@ async def main():
             oc=await s.get(OwnedCard,owned_id)
             if not oc or oc.user_id!=m.from_user.id: await m.answer('Карточка не найдена.'); return
             c=await s.get(Card,oc.card_id)
-            caption=f'🏒 {c.player_name}\n{c.ovr} OVR · {c.position} · {c.rarity}\n{c.country} · {c.club} · {c.league}\nСезон: {c.season or "—"} · ID: #{oc.id}'
+            caption=f'🏒 {c.player_name}\n{c.ovr} OVR · {c.position} · {c.rarity}\n{c.country} · '+(f'{c.league}' if c.league in ('Завершил карьеру','Завершили карьеру') else f'{c.club} · {c.league}')+f'\nСезон: {c.season or "—"} · ID: #{oc.id}'
             await m.answer(caption)
 
     async def render_pack_carousel(target, index, uid, edit=False):
@@ -622,7 +622,7 @@ async def main():
         fields=[
             ('🌍 Страна',card.country or '—'),
             ('🏆 Лига',card.league or '—'),
-            ('🏒 Команда',card.club or '—'),
+            *([('🏒 Команда',card.club or '—')] if card.league not in ('Завершил карьеру','Завершили карьеру') else []),
             ('📍 Позиция',card.position),
             ('⭐ Рейтинг',f'{card.ovr} OVR'),
             ('💎 Редкость',rarity_label(card.rarity)),
@@ -2545,7 +2545,7 @@ async def main():
                     s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
                     await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
                 target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
-                card_details='\n'.join([f'📍 Позиция: {card.position}',f'🏒 Команда: {card.club}',f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
+                card_details='\n'.join([f'📍 Позиция: {card.position}']+([f'🏒 Команда: {card.club}'] if card.league not in ('Завершил карьеру','Завершили карьеру') else [])+[f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
