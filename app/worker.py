@@ -583,8 +583,8 @@ async def expire_match_searches(session,bot):
     cutoff=now().astimezone(timezone.utc)-timedelta(minutes=10)
     rows=(await session.scalars(select(Match).where(Match.status=='searching',Match.created_at<cutoff))).all()
     for match in rows:
-        match.status='cancelled'
-        await send(bot,match.home_user_id,f'⌛ Поиск соперника #{match.id} завершён без подбора за 10 минут. Попробуйте запустить поиск ещё раз.')
+        await send(bot,match.home_user_id,'⌛ Поиск соперника завершён без подбора за 10 минут. Матч не был создан — попробуйте запустить поиск ещё раз.')
+        await s.delete(match)
     if rows: await session.commit()
 
 async def matchmaking(bot=None):
