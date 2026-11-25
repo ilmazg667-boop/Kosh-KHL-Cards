@@ -2496,9 +2496,12 @@ async def main():
                     state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
             else:
                 admin_steps.pop(c.from_user.id,None)
-                try: await c.bot.send_message(target_id,f'💎 Вам выдана эксклюзивная карточка!\n\n🏒 {player_name} · {ovr} OVR\n{card_details}')
+                try:
+                    title='💎 Вам выдана эксклюзивная карточка!' if action=='exclusiveplayer' else '🏒 Вам выдана карточка игрока, завершившего карьеру!'
+                    await c.bot.send_message(target_id,f'{title}\n\n🏒 {player_name} · {ovr} OVR\n{card_details}')
                 except Exception: pass
-                await c.message.answer(f'✅ Эксклюзивная карточка {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
+                label='Эксклюзивная карточка' if action=='exclusiveplayer' else 'Карточка из лиги «Завершили карьеру»'
+                await c.message.answer(f'✅ {label}: {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         elif action=='player':
             try: cid=int(parts[2])
             except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
