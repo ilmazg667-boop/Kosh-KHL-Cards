@@ -47,8 +47,16 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
         identity = _card_seed_identity(card)
         current = existing_by_identity.get(identity)
         if current is None:
+            # If only the OVR changed, update the same legacy edition in place.
+            # This is especially important for corrections to an existing player's rating:
+            # otherwise the old card remains active and a duplicate is inserted.
+            if card.player_name == 'Илья Ковальчук':
+                wanted = _card_seed_identity(card)[:-1]
+                current = next((item for item in existing_cards
+                    if _card_seed_identity(item)[:-1] == wanted), None)
             # If only the league/category changed, update the existing card in place.
-            current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
+            if current is None:
+                current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
         if current is None:
             if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)) and card.player_name != 'Илья Ковальчук':
                 card.ovr = min(100, card.ovr + 2)
