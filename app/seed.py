@@ -49,7 +49,7 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             # If only the league/category changed, update the existing card in place.
             current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
         if current is None:
-            if card.league == 'КХЛ' and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
+            if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
                 card.ovr = min(100, card.ovr + 2)
                 card.rating_boosted = True
             session.add(card)
@@ -59,7 +59,7 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.player_name = card.player_name
             current.player_key = card.player_key
             current.position = card.position
-            if card.league == 'КХЛ' and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
+            if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
                 current.ovr = min(100, card.ovr + 2)
                 current.rating_boosted = True
             else:
