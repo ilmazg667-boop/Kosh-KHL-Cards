@@ -744,7 +744,7 @@ async def main():
             mt=await s.scalar(select(Match).where(Match.id==mid,Match.home_user_id==c.from_user.id,Match.status=='searching').with_for_update())
             if not mt:
                 await c.answer('Поиск уже завершён или отменён — соперник мог найтись.',show_alert=True); return
-            mt.status='cancelled'
+            await s.delete(mt)
             await s.commit()
             try:
                 u=await active_user(s,c.from_user)
