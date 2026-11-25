@@ -4,7 +4,20 @@ from sqlalchemy import select, or_, and_
 
 POSITIONS = ['LW','C','RW','LD','RD','G']
 RARITIES = ['Обычный','Редкий','Элитный','Сверхредкий','Эпический','Мифический','Легендарный','Хроматический','Легенда','Икона']
-RARITY_RANGES = {'Обычный':(70,80),'Редкий':(74,83),'Элитный':(78,85),'Сверхредкий':(78,87),'Эпический':(82,91),'Мифический':(86,94),'Легендарный':(90,97),'Хроматический':(94,99),'Легенда':(97,100),'Икона':(95,100)}
+# Non-overlapping OVR bands: rarity is determined by rating, never catalogue order.
+RARITY_RANGES = {'Обычный':(50,73),'Редкий':(74,77),'Элитный':(78,81),'Сверхредкий':(82,85),'Эпический':(86,89),'Мифический':(90,92),'Легендарный':(93,95),'Хроматический':(96,97),'Легенда':(98,99),'Икона':(100,100)}
+# Explicit one-off exception retained from the catalogue; add exceptional editions here.
+RARITY_OVR_OVERRIDES = {'legacy116:054':'Легендарный'}
+
+def rarity_for_ovr(ovr, player_key=''):
+    key = (player_key or '').strip()
+    if key in RARITY_OVR_OVERRIDES:
+        return RARITY_OVR_OVERRIDES[key]
+    rating = int(ovr)
+    for rarity, (low, high) in RARITY_RANGES.items():
+        if low <= rating <= high:
+            return rarity
+    raise ValueError(f'No rarity configured for OVR {rating}')
 PACKS = {
  'Обычный': {'price':6000,'currency':'coins','odds':[('Обычный',51.9),('Редкий',18),('Элитный',10),('Сверхредкий',7),('Эпический',5),('Мифический',4),('Легендарный',3),('Хроматический',1),('Легенда',0.1),('Икона',0)]},
  'Премиум': {'price':18000,'currency':'coins','odds':[('Редкий',45),('Элитный',22),('Сверхредкий',15),('Эпический',9),('Мифический',5),('Легендарный',2),('Хроматический',1),('Икона',1)]},

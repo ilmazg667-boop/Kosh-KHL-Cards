@@ -2,14 +2,14 @@ import csv
 from pathlib import Path
 from sqlalchemy import select, update
 from .models import Card
-from .game import POSITIONS, RARITY_RANGES
+from .game import POSITIONS, RARITY_RANGES, rarity_for_ovr
 
 def read_csv_cards(path):
     rows=[]
     with open(path, newline='', encoding='utf-8-sig') as f:
         for r in csv.DictReader(f):
-            name=r['player_name'].strip(); pos=r['position'].strip().upper(); rarity=r['rarity'].strip()
-            ovr=int(r['ovr'])
+            name=r['player_name'].strip(); pos=r['position'].strip().upper(); ovr=int(r['ovr'])
+            player_key=r.get('player_key','').strip(); rarity=rarity_for_ovr(ovr, player_key)
             if not name or pos not in POSITIONS or rarity not in RARITY_RANGES or not 50 <= ovr <= 100:
                 raise ValueError(f'Invalid card row: {r}')
             club=r.get('club','—').strip() or '—'
@@ -18,7 +18,7 @@ def read_csv_cards(path):
             if retired:
                 club='—'
                 league='Завершил карьеру'
-            rows.append(Card(player_name=name, player_key=r.get('player_key','').strip(), position=pos, ovr=ovr,
+            rows.append(Card(player_name=name, player_key=player_key, position=pos, ovr=ovr,
                 rarity=rarity, country=r.get('country','—').strip() or '—', club=club,
                 league=league, season=r.get('season','').strip(),
                 image_url=r.get('image_url','').strip(), source=r.get('source','import').strip() or 'import',
@@ -101,4 +101,8 @@ async def seed_cards(session):
             select(Card).where(Card.source=='legacy116')
         )).all()
         _sync_seed_cards(legacy_cards, existing_cards, session)
+    # Normalize every real catalogue card, including cards already in production.
+    all_real_cards = (await session.scalars(select(Card).where(Card.source != 'demo'))).all()
+    for card in all_real_cards:
+        card.rarity = rarity_for_ovr(card.ovr, card.player_key)
     await session.commit()

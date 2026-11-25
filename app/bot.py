@@ -14,7 +14,7 @@ from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, Aucti
     TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
-from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating, adjust_pack_odds
+from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating, adjust_pack_odds, rarity_for_ovr
 from .worker import run_worker, prepare_match
 from .team_art import render_team_art_image
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
@@ -2902,9 +2902,13 @@ async def main():
         raw=m.text.partition(' ')[2]
         try:
             p=[x.strip() for x in raw.split('|')]
-            name,pos,ovr,rarity,country,club,league=p[:7]
-            if pos not in POSITIONS or rarity not in RARITY_RANGES or not 50<=int(ovr)<=100: raise ValueError('Позиция/редкость/OVR указаны неверно (OVR 50–100).')
-            card=Card(player_name=name,player_key=p[8] if len(p)>8 else '',position=pos,ovr=min(100,int(ovr)+2) if league=='КХЛ' and not (name=='Семён Кошелев' and int(ovr) in (95,99)) else int(ovr),rarity=rarity,country=country,club=club,league=league,image_url=p[7] if len(p)>7 else '',source='admin',rating_boosted=(league=='КХЛ' and not (name=='Семён Кошелев' and int(ovr) in (95,99))))
+            name,pos,ovr,_rarity_input,country,club,league=p[:7]
+            player_key=p[8] if len(p)>8 else ''
+            base_ovr=int(ovr)
+            boosted=league=='КХЛ' and not (name=='Семён Кошелев' and base_ovr in (95,99))
+            final_ovr=min(100,base_ovr+2) if boosted else base_ovr
+            if pos not in POSITIONS or not 50<=base_ovr<=100: raise ValueError('Позиция/OVR указаны неверно (OVR 50–100).')
+            card=Card(player_name=name,player_key=player_key,position=pos,ovr=final_ovr,rarity=rarity_for_ovr(final_ovr,player_key),country=country,club=club,league=league,image_url=p[7] if len(p)>7 else '',source='admin',rating_boosted=boosted)
         except Exception as e:
             await m.answer(f'Ошибка: {e}\nФормат: name|position|ovr|rarity|country|club|league|image_url|player_key'); return
         async with Session() as s:
@@ -2921,7 +2925,7 @@ async def main():
             old=await s.get(Card,cid)
             if not old: await m.answer('Карточка не найдена.'); return
             new=Card(player_name=old.player_name,player_key=old.player_key,position=old.position,ovr=old.ovr,
-                rarity=old.rarity,country=old.country,club=club,league=league,season=season_value,
+                rarity=rarity_for_ovr(old.ovr,old.player_key),country=old.country,club=club,league=league,season=season_value,
                 image_url=old.image_url,source='team-transfer',active=True)
             old.active=False
             s.add(new); await audit(s,m.from_user.id,'transfercard',cid,f'{club}/{league}/{season_value}'); await s.commit(); await s.refresh(new)
@@ -2939,9 +2943,9 @@ async def main():
                 v=int(value)
                 if not 50<=v<=100: await m.answer('OVR: 50–100.'); return
                 c.ovr=v
+                c.rarity=rarity_for_ovr(v,c.player_key)
             elif field=='rarity':
-                if value not in RARITIES: await m.answer('Неизвестная редкость.'); return
-                c.rarity=value
+                await m.answer('Редкость теперь определяется автоматически по OVR. Измените рейтинг командой /editcard ID ovr НОВЫЙ_OVR.'); return
             elif field in ('country','image_url'): setattr(c,field,value[:500])
             else: await m.answer('Поле недоступно для редактирования.'); return
             await audit(s,m.from_user.id,'editcard',cid,f'{field}={value}'); await s.commit()
