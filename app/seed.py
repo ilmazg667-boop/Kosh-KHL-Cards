@@ -34,18 +34,27 @@ def _card_seed_identity(card):
         return ('key', player_key, *edition)
     return ('name', (card.player_name or '').strip().casefold(), *edition)
 
+def _card_seed_identity_without_league(card):
+    identity = _card_seed_identity(card)
+    return identity[:3] + identity[4:]
+
 def _sync_seed_cards(legacy_cards, existing_cards, session):
     """Idempotently sync exact editions while preserving a player's other editions."""
     existing_by_identity = {_card_seed_identity(card): card for card in existing_cards}
+    existing_by_player_edition = {_card_seed_identity_without_league(card): card for card in existing_cards}
     for card in legacy_cards:
         identity = _card_seed_identity(card)
         current = existing_by_identity.get(identity)
+        if current is None:
+            # If only the league/category changed, update the existing card in place.
+            current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
         if current is None:
             if card.league == 'КХЛ' and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)):
                 card.ovr = min(100, card.ovr + 2)
                 card.rating_boosted = True
             session.add(card)
             existing_by_identity[identity] = card
+            existing_by_player_edition[_card_seed_identity_without_league(card)] = card
         else:
             current.player_name = card.player_name
             current.player_key = card.player_key
@@ -63,6 +72,8 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.season = card.season
             current.image_url = card.image_url
             current.active = card.active
+            existing_by_identity[identity] = current
+            existing_by_player_edition[_card_seed_identity_without_league(card)] = current
 
 async def seed_cards(session):
     """Import the real player catalogue and remove all artificial demo cards."""
