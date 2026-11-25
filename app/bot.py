@@ -773,14 +773,14 @@ async def main():
                     await c.message.answer(f'✅ Соперник найден! Матч #{match.id} начинается.')
                 else:
                     kb=InlineKeyboardBuilder(); kb.button(text='❌ Отменить поиск',callback_data=f'match_cancel:{match.id}')
-                    status_msg=await c.message.answer(f'🔎 Ищем соперника: 30 сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                    status_msg=await c.message.answer(f'🔎 Ищем соперника: 30 сек.\nНомер матча появится после подбора соперника.',reply_markup=kb.as_markup())
                     async def countdown():
                         for left in (25,20,15,10,5,0):
                             await asyncio.sleep(5)
                             async with Session() as check:
                                 current=await check.get(Match,match.id)
                                 if not current or current.status!='searching': return
-                            try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nID матча #{match.id}',reply_markup=kb.as_markup())
+                            try: await status_msg.edit_text(f'🔎 Ищем соперника: {left} сек.\nНомер матча появится после подбора соперника.',reply_markup=kb.as_markup())
                             except Exception: pass
                         async with Session() as check:
                             current=await check.get(Match,match.id)
@@ -809,7 +809,7 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,m.from_user); match=await start_pvp_queue(s,u,False)
-                await m.answer(f'🔎 Поиск соперника запущен. ID поиска #{match.id}. Когда соперник найдётся, матч начнётся автоматически. /match')
+                await m.answer(f'🔎 Поиск соперника запущен. Номер матча появится только после подбора игрока или бота. Когда соперник найдётся, матч начнётся автоматически. /match')
             except ValueError as e: await m.answer(str(e))
 
     @dp.message(Command('ranked'))
@@ -817,7 +817,7 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,m.from_user); match=await start_pvp_queue(s,u,True)
-                await m.answer(f'🏆 Поиск рейтингового соперника запущен. Лига: {league_for_rating(u.rating)} · рейтинг {u.rating}. ID #{match.id}.')
+                await m.answer(f'🏆 Поиск рейтингового соперника запущен. Лига: {league_for_rating(u.rating)} · рейтинг {u.rating}. Номер матча появится после подбора соперника.')
             except ValueError as e: await m.answer(str(e))
 
     @dp.message(Command('challenge'))
@@ -908,8 +908,8 @@ async def main():
             mt=await s.scalar(select(Match).where(Match.id==mid,Match.home_user_id==c.from_user.id,Match.status=='searching').with_for_update())
             if not mt:
                 await c.answer('Этот поиск уже завершён или отменён.',show_alert=True); return
-            mt.status='cancelled'; await s.commit()
-        await c.message.edit_text(f'❌ Поиск матча #{mid} отменён.')
+            await s.delete(mt); await s.commit()
+        await c.message.edit_text('❌ Поиск отменён. Матч не создавался.')
         await c.answer('Поиск отменён.')
 
     @dp.message(Command('startmatch'))
@@ -938,7 +938,7 @@ async def main():
             except ValueError as e: await m.answer(str(e)); return
             mt=await get_match_for_user(s,m.from_user.id)
             if not mt: await m.answer('Матчей пока нет.'); return
-            if mt.status=='searching': await m.answer(f'🔎 Поиск соперника · матч #{mt.id}.'); return
+            if mt.status=='searching': await m.answer('🔎 Поиск соперника продолжается. Номер матча появится после подбора игрока или бота.'); return
             if mt.status=='challenge': await m.answer(f'⏳ Ожидается ответ на вызов #{mt.id}.'); return
             if mt.status in ('queued','running'):
                 events=mt.events or []; recent=events[max(0,mt.event_index-5):mt.event_index]
@@ -952,7 +952,7 @@ async def main():
         async with Session() as s:
             mt=await s.scalar(select(Match).where(Match.home_user_id==m.from_user.id,Match.status=='searching').order_by(Match.id.desc()))
             if not mt: await m.answer('Активного поиска нет.'); return
-            mt.status='cancelled'; await s.commit(); await m.answer('Поиск соперника отменён.')
+            await s.delete(mt); await s.commit(); await m.answer('Поиск отменён. Матч не создавался.')
 
     @dp.message(Command('sell'))
     async def sell(m):
