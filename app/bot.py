@@ -192,6 +192,38 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
         return await bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
     return await target.answer_photo(photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
 
+async def lineup_player_stats(session, cards):
+    """Career goals, assists and appearances for the players in the current lineup."""
+    from collections import defaultdict
+    keys={c.player_key for c in cards if c.player_key}
+    stats={key:{'games':0,'goals':0,'assists':0} for key in keys}
+    if not keys:
+        return stats
+    all_cards=(await session.scalars(select(Card))).all()
+    card_by_id={c.id:c for c in all_cards}
+    matches=(await session.scalars(select(Match).where(Match.status=='completed'))).all()
+    for match in matches:
+        home_roster=[card_by_id[cid] for cid in (match.home_card_ids or []) if cid in card_by_id]
+        away_roster=[card_by_id[cid] for cid in (match.away_card_ids or []) if cid in card_by_id]
+        home_names={c.player_name:c.player_key for c in home_roster if c.player_key in keys}
+        away_names={c.player_name:c.player_key for c in away_roster if c.player_key in keys}
+        appeared={key for key in home_names.values()} | {key for key in away_names.values()}
+        for key in appeared:
+            stats[key]['games']+=1
+        for goals, roster_names in ((match.home_goals or [],home_names),(match.away_goals or [],away_names)):
+            for goal in goals:
+                scorer=str(goal.get('scorer') or '').rsplit(' · ',1)[0]
+                key=roster_names.get(scorer)
+                if key:
+                    stats[key]['goals']+=1
+                for field in ('assist','assist2'):
+                    helper=str(goal.get(field) or '').rsplit(' · ',1)[0]
+                    key=roster_names.get(helper)
+                    if key:
+                        stats[key]['assists']+=1
+    return stats
+
+
 async def render_team(session,uid):
     rows=await lineup(session,uid); mapping={c.position:(o,c) for o,c in rows}
     lines=['🏒 МОЯ КОМАНДА']
