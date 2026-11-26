@@ -325,3 +325,10 @@ class SupportMessage(Base):
     status: Mapped[str] = mapped_column(String(20), default='new', index=True)
     admin_reply: Mapped[str] = mapped_column(Text, default='')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppSetting(Base):
+    __tablename__ = 'app_settings'
+    setting_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    setting_value: Mapped[str] = mapped_column(Text, default='')
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
