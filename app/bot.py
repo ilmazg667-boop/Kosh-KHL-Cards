@@ -1,4 +1,4 @@
-import asyncio, csv, os, random, shlex, html
+import asyncio, csv, os, random, shlex, html, time
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -75,6 +75,9 @@ def auction_countdown(value):
     return ' '.join(parts)
 
 def admin(uid): return uid in ADMIN_IDS
+
+_LINEUP_STATS_CACHE = {}
+_TEAM_PLACEHOLDER_CACHE = {}
 
 TELEGRAM_POST_URL='https://t.me/bullet_kings_forms/40'
 _TELEGRAM_POST_PHOTO_BYTES=None
@@ -191,9 +194,16 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
             setting = await session.get(AppSetting, 'team_card_placeholder')
             if setting and str(setting.setting_value or '').startswith('tgfile:'):
                 file_id = setting.setting_value.split(':', 1)[1]
-                telegram_file = await api_bot.get_file(file_id)
-                downloaded = await api_bot.download_file(telegram_file.file_path)
-                placeholder_image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+                cached_placeholder=_TEAM_PLACEHOLDER_CACHE.get(file_id)
+                if cached_placeholder:
+                    placeholder_image_bytes=cached_placeholder
+                else:
+                    telegram_file = await api_bot.get_file(file_id)
+                    downloaded = await api_bot.download_file(telegram_file.file_path)
+                    placeholder_image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+                    if placeholder_image_bytes:
+                        _TEAM_PLACEHOLDER_CACHE.clear()
+                        _TEAM_PLACEHOLDER_CACHE[file_id]=placeholder_image_bytes
         except Exception as e:
             print(f'Не удалось загрузить заглушку состава: {e}')
     image_bytes=render_team_art_image(rows,strength,ch,team_name,placeholder_image_bytes=placeholder_image_bytes)
@@ -212,11 +222,15 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
 
 async def lineup_player_stats(session, cards):
     """Career goals, assists and appearances for the players in the current lineup."""
-    from collections import defaultdict
     keys={c.player_key for c in cards if c.player_key}
     stats={key:{'games':0,'goals':0,'assists':0} for key in keys}
     if not keys:
         return stats
+    cache_key=tuple(sorted(keys))
+    cached=_LINEUP_STATS_CACHE.get(cache_key)
+    now_mono=time.monotonic()
+    if cached and now_mono-cached[0] < 60:
+        return {key:value.copy() for key,value in cached[1].items()}
     # Restrict card lookup to the current players' historical card versions and
     # fetch only the match columns needed for the career-stat calculation.
     relevant_cards=(await session.scalars(select(Card).where(Card.player_key.in_(keys)))).all()
@@ -244,6 +258,11 @@ async def lineup_player_stats(session, cards):
                     key=roster_names.get(helper)
                     if key:
                         stats[key]['assists']+=1
+    _LINEUP_STATS_CACHE[cache_key]=(now_mono,{key:value.copy() for key,value in stats.items()})
+    if len(_LINEUP_STATS_CACHE)>256:
+        oldest=sorted(_LINEUP_STATS_CACHE.items(),key=lambda item:item[1][0])[:64]
+        for old_key,_ in oldest:
+            _LINEUP_STATS_CACHE.pop(old_key,None)
     return stats
 
 
