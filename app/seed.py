@@ -67,7 +67,7 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             # Last-resort stable match: a league AND club correction must update
             # the existing catalogue card instead of inserting a second edition.
             keyed = [item for item in existing_cards
-                if (item.player_key or '').strip().casefold() == player_key]
+                if (item.player_key or '').strip().casefold() == (card.player_key or '').strip().casefold()]
             if len(keyed) == 1:
                 current = keyed[0]
         if current is None:
@@ -100,7 +100,7 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             # league through an older legacy edition of the same player key.
             if card.league in ('Завершили карьеру', 'Завершил карьеру') and card.player_key:
                 for sibling in existing_cards:
-                    if sibling is not current and (sibling.player_key or '').strip().casefold() == player_key and sibling.league in ('КХЛ', 'НХЛ'):
+                    if sibling is not current and (sibling.player_key or '').strip().casefold() == (card.player_key or '').strip().casefold() and sibling.league in ('КХЛ', 'НХЛ'):
                         sibling.active = False
 
 async def seed_cards(session):
