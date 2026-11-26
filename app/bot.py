@@ -3371,51 +3371,56 @@ async def main():
             await audit(s,m.from_user.id,'season_reset'); await s.commit()
         await m.answer('Рейтинг сезона сброшен; постоянная статистика сохранена.')
 
-    @dp.message(F.document)
+    @dp.message(F.document | F.photo)
     async def upload_csv(m):
         if not admin(m.from_user.id): return
         doc=m.document
+        photo=(m.photo[-1] if m.photo else None)
+        file_id=(doc.file_id if doc else (photo.file_id if photo else None))
+        file_size=(doc.file_size if doc else (photo.file_size if photo else 0))
+        mime=(doc.mime_type or '').lower() if doc else ('image/jpeg' if photo else '')
+        filename=(doc.file_name or 'card-image') if doc else ('telegram-photo.jpg' if photo else 'upload.csv')
         pending=_card_upload_states.get(m.from_user.id)
         if pending and pending.get('stage')=='placeholder_file':
-            filename=doc.file_name or 'team-placeholder'
-            mime=(doc.mime_type or '').lower()
+            filename=filename or 'team-placeholder'
             if not mime.startswith('image/'):
                 await m.answer('Нужен файл изображения (PNG/JPG), отправленный как документ.'); return
-            if (doc.file_size or 0)>15*1024*1024:
+            if (file_size or 0)>15*1024*1024:
                 await m.answer('Файл должен быть меньше 15 МБ.'); return
             async with Session() as s:
                 setting=await s.get(AppSetting,'team_card_placeholder')
                 if setting is None:
                     setting=AppSetting(setting_key='team_card_placeholder',setting_value='')
                     s.add(setting)
-                setting.setting_value='tgfile:'+doc.file_id
+                setting.setting_value='tgfile:'+file_id
                 await audit(s,m.from_user.id,'upload_team_placeholder',0,f'{filename} · Telegram file_id')
                 await s.commit()
             _card_upload_states.pop(m.from_user.id,None)
             await m.answer('✅ Карточка-заглушка состава обновлена. Теперь она будет показываться вместо изображений игроков, для которых ещё не загружена карточка.\\n\\nЧтобы заменить её снова: /uploadcards → 🖼️ Карточка-заглушка.')
             return
         if pending and pending.get('stage')=='file':
-            filename=doc.file_name or 'card-image'
-            mime=(doc.mime_type or '').lower()
+            filename=filename or 'card-image'
             if not mime.startswith('image/'):
                 await m.answer('Нужен файл изображения (PNG/JPG), отправленный как документ.'); return
-            if (doc.file_size or 0)>15*1024*1024:
+            if (file_size or 0)>15*1024*1024:
                 await m.answer('Файл должен быть меньше 15 МБ.'); return
             async with Session() as s:
                 card=await s.get(Card,pending.get('card_id'))
                 if not card:
                     _card_upload_states.pop(m.from_user.id,None)
                     await m.answer('Карточка игрока больше не найдена. Начните заново: /uploadcards'); return
-                card.image_url='tgfile:'+doc.file_id
+                card.image_url='tgfile:'+file_id
                 await audit(s,m.from_user.id,'upload_player_card',card.id,f'{filename} · Telegram file_id')
                 await s.commit()
                 player_name=card.player_name
             _card_upload_states.pop(m.from_user.id,None)
             await m.answer(f'✅ Карточка игрока <b>{html.escape(player_name)}</b> сохранена и привязана.\n\nМожешь загрузить следующую: /uploadcards',parse_mode='HTML')
             return
+        if not doc:
+            await m.answer('Для CSV пришлите файл документом.'); return
         filename=doc.file_name or 'upload.csv'
         if not filename.lower().endswith('.csv'): await m.answer('Пришлите CSV-файл.'); return
-        if (doc.file_size or 0)>5*1024*1024: await m.answer('CSV-файл должен быть меньше 5 МБ.'); return
+        if (file_size or 0)>5*1024*1024: await m.answer('CSV-файл должен быть меньше 5 МБ.'); return
         os.makedirs('uploads',exist_ok=True); path=f'uploads/{doc.file_unique_id}_{filename.replace("/", "_")}'
         await m.bot.download(doc,destination=path)
         async with Session() as s:
