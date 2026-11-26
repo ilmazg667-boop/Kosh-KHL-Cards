@@ -144,9 +144,9 @@ PHOTO_GAME='https://images.pexels.com/photos/8974638/pexels-photo-8974638.jpeg'
 PHOTO_TRAINING='https://images.pexels.com/photos/6847600/pexels-photo-6847600.jpeg'
 
 RARITY_EMOJI = {
-    'Обычный':'⚪', 'Редкий':'🟢', 'Элитный':'🔵', 'Сверхредкий':'🟣',
-    'Эпический':'🟡', 'Мифический':'🟠', 'Легендарный':'🔴',
-    'Хроматический':'🟤', 'Легенда':'⚫', 'Икона':'🌈'
+    'Обычный':'⚪', 'Редкий':'🔵', 'Элитный':'🟢', 'Сверхредкий':'🟣',
+    'Эпический':'🟠', 'Мифический':'🔴', 'Легендарный':'🟡',
+    'Хроматический':'🌈', 'Легенда':'💎', 'Икона':'👑'
 }
 def rarity_label(value):
     return f"{RARITY_EMOJI.get(value, '💎')} {value}"
@@ -2590,7 +2590,7 @@ async def main():
                     s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
                     await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
                 target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
-                card_details='\n'.join([f'📍 Позиция: {card.position}']+([f'🏒 Команда: {card.club}'] if card.league not in ('Завершил карьеру','Завершили карьеру') else [])+[f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
+                card_details='\n'.join([f'📍 Позиция: {card.position}']+([f'🏒 Команда: {card.club}'] if card.league not in ('Завершил карьеру','Завершили карьеру') else [])+[f'🏆 Лига: {card.league}',f'🏷️ Редкость: {rarity_label(card.rarity)}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
@@ -2622,7 +2622,7 @@ async def main():
                     s.add(OwnedCard(user_id=target.id,card_id=card.id,slot=''))
                     await audit(s,c.from_user.id,'givecard',target.id,str(card.id)); await s.commit()
                 target_id=target.id if target else None; player_name=card.player_name; card_id=card.id; ovr=card.ovr
-                card_details='\n'.join([f'📍 Позиция: {card.position}',f'🏒 Команда: {card.club}',f'🏆 Лига: {card.league}',f'💠 Редкость: {card.rarity}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
+                card_details='\n'.join([f'📍 Позиция: {card.position}',f'🏒 Команда: {card.club}',f'🏆 Лига: {card.league}',f'🏷️ Редкость: {rarity_label(card.rarity)}',f'🌍 Страна: {card.country}']+([f'📅 Сезон: {card.season}'] if card.season else []))
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
@@ -3266,7 +3266,7 @@ async def main():
                 title='🌍 Выберите лигу'
             elif stage=='rarity':
                 values=list(RARITIES)
-                title='💎 Выберите редкость'
+                title='🏷️ Выберите редкость'
             elif stage=='club':
                 values=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity')).distinct().order_by(Card.club))).all()
                 title='🏒 Выберите команду'
@@ -3280,9 +3280,9 @@ async def main():
         subset=values[start:start+page_size]
         for item in subset:
             if stage=='player':
-                kb.button(text=f'{item.player_name} · {item.ovr} OVR',callback_data=f'cu:pick:player:{item.id}')
+                kb.button(text=f'{item.player_name} · {item.ovr} OVR · {rarity_label(item.rarity)}',callback_data=f'cu:pick:player:{item.id}')
             else:
-                kb.button(text=str(item),callback_data=f'cu:pick:{stage}:{start+subset.index(item)}')
+                kb.button(text=rarity_label(item) if stage=='rarity' else str(item),callback_data=f'cu:pick:{stage}:{start+subset.index(item)}')
         kb.adjust(1)
         nav=[]
         if page>0: nav.append(InlineKeyboardButton(text='⬅️ Назад',callback_data=f'cu:page:{stage}:{page-1}'))
@@ -3347,7 +3347,7 @@ async def main():
                     await c.answer('Игрок не найден в выбранной категории.',show_alert=True); return
                 state['card_id']=card.id
                 state['stage']='file'
-                label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> файлом (как документ, без сжатия).\n\n{card.league} · {card.club} · {card.rarity} · {card.ovr} OVR'
+                label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> файлом (как документ, без сжатия).\n\n{card.league} · {card.club} · {rarity_label(card.rarity)} · {card.ovr} OVR'
             await c.message.edit_text(label,parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
         _card_upload_states[c.from_user.id]=state
         await c.answer()
