@@ -611,7 +611,7 @@ async def main():
             oc=await s.get(OwnedCard,owned_id)
             if not oc or oc.user_id!=m.from_user.id: await m.answer('Карточка не найдена.'); return
             c=await s.get(Card,oc.card_id)
-            caption=f'🏒 {c.player_name}\n{c.ovr} OVR · {c.position} · {c.rarity}\n{c.country} · '+(f'{c.league}' if c.league in ('Завершил карьеру','Завершили карьеру') else f'{c.club} · {c.league}')+f'\nСезон: {c.season or "—"} · ID: #{oc.id}'
+            caption=f'🏒 {c.player_name}\n{c.ovr} OVR · {c.position} · {rarity_label(c.rarity)}\n{c.country} · '+(f'{c.league}' if c.league in ('Завершил карьеру','Завершили карьеру') else f'{c.club} · {c.league}')+f'\nСезон: {c.season or "—"} · ID: #{oc.id}'
             await m.answer(caption)
 
     async def render_pack_carousel(target, index, uid, edit=False):
@@ -1315,7 +1315,7 @@ async def main():
                     await render_trade_cards(c.message,s,o,c.from_user.id)
                 elif action=='filters':
                     kb=InlineKeyboardBuilder()
-                    for k,label in [('league','🏒 Лиги'),('position','📍 Позиции'),('rarity','💎 Редкости')]: kb.button(text=label,callback_data=f'trade:filter:{oid}:{k}')
+                    for k,label in [('league','🏒 Лиги'),('position','📍 Позиции'),('rarity','🏷️ Редкости')]: kb.button(text=label,callback_data=f'trade:filter:{oid}:{k}')
                     kb.button(text='♻️ Сбросить',callback_data=f'trade:cards:{oid}:0:-:-:-'); kb.button(text='⬅️ К обмену',callback_data=f'trade:open:{oid}'); kb.adjust(1)
                     await c.message.edit_text('🔎 ФИЛЬТР КАРТОЧЕК',reply_markup=kb.as_markup())
                 elif action=='filter':
@@ -1451,7 +1451,7 @@ async def main():
                 detail_text=(
                     f'🔨 АУКЦИОН · {card.player_name}\n\n'
                     f'🏒 КАРТОЧКА\n👤 Игрок: {card.player_name}\n⭐ Рейтинг: {card.ovr} OVR\n'
-                    f'📍 Позиция: {card.position}\n💎 Редкость: {card.rarity}\n🏒 Клуб: {card.club}\n'
+                    f'📍 Позиция: {card.position}\n🏷️ Редкость: {rarity_label(card.rarity)}\n🏒 Клуб: {card.club}\n'
                     f'🌍 Страна: {card.country}\n🏆 Лига: {card.league}'
                     +(f'\n📅 Сезон: {card.season}' if card.season else '')
                     +f'\n\n💰 ТЕКУЩАЯ СТАВКА: {current_bid} 🪙\n📈 Шаг ставки: {a.bid_step} 🪙'
