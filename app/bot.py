@@ -182,7 +182,7 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     stat_lines=[]
     for _,card in rows:
         st=stats.get(card.player_key,{'games':0,'goals':0,'assists':0})
-        stat_lines.append(f"• {html.escape(card.player_name)} — ⚽ {st['goals']} гол. · 🎯 {st['assists']} ассист. · 🏒 {st['games']} матч.")
+        stat_lines.append(f"• {html.escape(card.player_name)} — 🏒 {st['goals']} гол. · 🎯 {st['assists']} ассист. · ⭐ {st['goals']+st['assists']} очк. · 🏒 {st['games']} матч.")
     image_bytes=render_team_art_image(rows,strength,ch,team_name)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
     caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n'+('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.')+'\n\nСостав обновляется автоматически после каждой замены карточки.'
