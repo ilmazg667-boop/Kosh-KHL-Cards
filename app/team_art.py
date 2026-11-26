@@ -100,14 +100,14 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                 except Exception:
                     image_data = None
             if not image_data:
-                # Temporary built-in loading card; replace with the admin-supplied placeholder artwork later.
+                # Temporary loading-card artwork; replace with the user's final placeholder image later.
                 draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66), outline=ORANGE, width=2)
+                draw.ellipse((cx - 31, cy - 50, cx + 31, cy + 12), outline=ORANGE, width=3)
+                draw.arc((cx - 22, cy - 41, cx + 22, cy + 3), 35, 305, fill=CREAM, width=4)
+                draw.text((cx, cy + 36), 'ЗАГРУЗКА', font=_font(15, True), fill=ORANGE, anchor='mm')
                 player_name = str(card.player_name)
-                initials = ''.join(part[0] for part in player_name.split()[:2]).upper() or '★'
-                draw.ellipse((cx - 29, cy - 48, cx + 29, cy + 10), fill=(47, 64, 95), outline=ORANGE, width=3)
-                draw.text((cx, cy - 19), initials[:2], font=_fit(draw, initials[:2], 48, 25, True), fill=CREAM, anchor='mm')
-                draw.text((cx, cy + 38), player_name, font=_fit(draw, player_name, x2 - x1 - 20, 18, True), fill=CREAM, anchor='mm')
-                draw.text((cx, cy + 70), f'{card.ovr} OVR', font=_font(17, True), fill=ORANGE, anchor='mm')
+                draw.text((cx, cy + 61), player_name, font=_fit(draw, player_name, x2 - x1 - 18, 14, True), fill=CREAM, anchor='mm')
+                draw.text((cx, cy + 83), f'{card.ovr} OVR', font=_font(15, True), fill=CREAM, anchor='mm')
         else:
             draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
 
