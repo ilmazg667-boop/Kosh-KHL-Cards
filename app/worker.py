@@ -493,7 +493,9 @@ async def close_old_tournaments(session,bot):
                     f'⏰ Напоминание: турнир «{current.title or "Без названия"}» ещё открыт. '
                     'Завершите его до 20:30 МСК.')
             await audit_worker(session,current.id,'tournament_reminder_20',today_key)
-    if current and (current_time.hour>20 or (current_time.hour==20 and current_time.minute>=30)):
+    # Only auto-cancel tournaments that were already open by 10:00 Moscow time.
+    # A tournament created later gets the full day and is evaluated on the next day.
+    if current and reminder_eligible and (current_time.hour>20 or (current_time.hour==20 and current_time.minute>=30)):
         from .models import AuditLog
         auto_started_today=await session.scalar(select(AuditLog.id).where(
             AuditLog.action.in_(['tournament_auto_started_2030','tournament_started_after_2030']),
