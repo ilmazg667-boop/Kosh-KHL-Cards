@@ -113,43 +113,26 @@ async def prepare_match(match_id,bot=None):
         m.home_goals=hg; m.away_goals=ag; m.minute=0; m.event_index=0; m.status='running'
         m.updated_at=now(); await s.commit()
         logger.info('Match #%s started: mode=%s home=%s away=%s score=%s:%s events=%s', m.id, m.mode, m.home_user_id, m.away_user_id, hs, as_, len(events))
-        def roster_text(label, roster, fallback):
-            if not roster:
-                return f'{label}: {fallback}'
-            return label+'\n'+'\n'.join(f'{c.position} — {c.player_name} · {c.ovr} OVR' for c in roster)
-        lineup_message=(f'🏒 МАТЧ #{m.id} НАЧИНАЕТСЯ!\n\n'
-            +roster_text(f'🔴 {m.home_name} · {m.home_power} OVR',home,'Состав не найден')
-            +'\n\n'
-            +roster_text(f'🔵 {m.away_name} · {m.away_power} OVR',away,'🤖 Состав бота'))
-        # Both human players receive the text and BOTH lineup images.
-        # This avoids a one-sided view: each participant can inspect both teams.
+        # Each team's text and its rink image are sent together as ONE photo message.
         recipients=[m.home_user_id]
         if m.away_user_id and m.away_user_id != m.home_user_id:
             recipients.append(m.away_user_id)
 
-        # Resolve each team's display name from the actual owner's profile.
         home_user=await s.get(User,m.home_user_id)
         home_display=(getattr(home_user,'team_name',None) or m.home_name or 'Команда 1')
         away_user=await s.get(User,m.away_user_id) if m.away_user_id else None
         away_display=(getattr(away_user,'team_name',None) or m.away_name or 'Команда соперника')
 
         lineups=[
-            (home,home_chem,m.home_power,home_display,'🔴 Состав первой команды'),
-            (away,away_chem,m.away_power,away_display,'🔵 Состав второй команды')
+            (home,home_chem,m.home_power,home_display,'🔴 ПЕРВАЯ КОМАНДА'),
+            (away,away_chem,m.away_power,away_display,'🔵 ВТОРАЯ КОМАНДА')
         ]
-
-        for chat_id in recipients:
-            sent=await send(bot,chat_id,lineup_message)
-            logger.info('Match #%s lineup text sent=%s recipient=%s',m.id,sent,chat_id)
 
         if bot:
             from aiogram.types import BufferedInputFile
             from .team_art import render_team_art_image
             for chat_id in recipients:
                 for roster,chem_value,power_value,team_name,label in lineups:
-                    if not roster:
-                        logger.warning('Match #%s has no visual roster for %s',m.id,label)
-                        continue
                     try:
                         visual_rows=[]
                         for card in roster:
@@ -163,19 +146,31 @@ async def prepare_match(match_id,bot=None):
                                     logger.exception('Could not download player card image: card_id=%s',card.id)
                             visual_rows.append((image_bytes,card))
                         artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name)
+                        position_icons={'LW':'⚡','C':'🏒','RW':'⚡','LD':'🛡','RD':'🛡','G':'🥅'}
+                        players_text='\n'.join(
+                            f"{position_icons.get(card.position,'🏒')} <b>{card.position}</b> — {html.escape(card.player_name)} · <b>{card.ovr} OVR</b>"
+                            for card in roster
+                        ) or 'Игроки состава не найдены'
                         caption=(f'{label}\n'
-                                 f'🏒 <b>{html.escape(team_name)}</b> · {power_value} OVR\n'
-                                 f'🤝 Сыгранность: {chem_value}/40\n'
-                                 f'Матч #{m.id} — стартовый состав')
+                                 f'🏒 <b>{html.escape(team_name)}</b>\n'
+                                 f'{players_text}\n\n'
+                                 f'💪 <b>Сила команды: {power_value} OVR</b>\n'
+                                 f'🤝 <b>Сыгранность: {chem_value}/40</b>\n'
+                                 f'🏆 Матч #{m.id}')
                         await bot.send_photo(
                             chat_id,
                             BufferedInputFile(artwork,filename=f'match-{m.id}-{chat_id}-lineup.png'),
                             caption=caption,
                             parse_mode='HTML'
                         )
-                        logger.info('Match #%s lineup photo sent recipient=%s team=%s',m.id,chat_id,team_name)
+                        logger.info('Match #%s combined lineup photo+text sent recipient=%s team=%s',m.id,chat_id,team_name)
                     except Exception:
-                        logger.exception('Could not send match lineup artwork: match=%s recipient=%s team=%s',m.id,chat_id,team_name)
+                        logger.exception('Could not send combined match lineup: match=%s recipient=%s team=%s',m.id,chat_id,team_name)
+        else:
+            for chat_id in recipients:
+                for roster,chem_value,power_value,team_name,label in lineups:
+                    players_text='\n'.join(f'{card.position} — {card.player_name} · {card.ovr} OVR' for card in roster) or 'Игроки состава не найдены'
+                    await send(bot,chat_id,f'{label}\n🏒 {team_name}\n{players_text}\n💪 Сила команды: {power_value} OVR\n🤝 Сыгранность: {chem_value}/40')
 
 
 async def finish_match(match_id,bot):
