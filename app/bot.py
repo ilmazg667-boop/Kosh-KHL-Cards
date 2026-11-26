@@ -272,6 +272,7 @@ async def get_match_for_user(session,uid):
     return await session.scalar(select(Match).where(or_(Match.home_user_id==uid,Match.away_user_id==uid),Match.status!='paired').order_by(Match.id.desc()))
 
 _MENU_PHOTO_MESSAGES = {}
+_card_upload_states = {}
 
 async def main():
     if not BOT_TOKEN: raise RuntimeError('Укажите BOT_TOKEN в файле .env')
@@ -3254,6 +3255,103 @@ async def main():
         if not admin(m.from_user.id): return
         await m.answer('❌ Отмена аукционов отключена. Если аукцион уже запущен, он завершится автоматически по таймеру.')
 
+
+    async def card_upload_show(target, uid, stage, page=0):
+        state=_card_upload_states.get(uid,{})
+        page=max(0,int(page))
+        kb=InlineKeyboardBuilder()
+        async with Session() as s:
+            if stage=='league':
+                values=(await s.scalars(select(Card.league).where(Card.active.is_(True)).distinct().order_by(Card.league))).all()
+                title='🌍 Выберите лигу'
+            elif stage=='rarity':
+                values=list(RARITIES)
+                title='💎 Выберите редкость'
+            elif stage=='club':
+                values=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity')).distinct().order_by(Card.club))).all()
+                title='🏒 Выберите команду'
+            else:
+                values=(await s.scalars(select(Card).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity'),Card.club==state.get('club')).order_by(Card.player_name,Card.id))).all()
+                title='👤 Выберите игрока'
+        state['stage']=stage
+        _card_upload_states[uid]=state
+        page_size=18
+        start=page*page_size
+        subset=values[start:start+page_size]
+        for item in subset:
+            if stage=='player':
+                kb.button(text=f'{item.player_name} · {item.ovr} OVR',callback_data=f'cu:pick:player:{item.id}')
+            else:
+                kb.button(text=str(item),callback_data=f'cu:pick:{stage}:{start+subset.index(item)}')
+        kb.adjust(1)
+        nav=[]
+        if page>0: nav.append(InlineKeyboardButton(text='⬅️ Назад',callback_data=f'cu:page:{stage}:{page-1}'))
+        if start+page_size<len(values): nav.append(InlineKeyboardButton(text='Далее ➡️',callback_data=f'cu:page:{stage}:{page+1}'))
+        if nav: kb.row(*nav)
+        kb.row(InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel'))
+        msg=f'{title}\nСтраница {page+1} · найдено: {len(values)}'
+        if hasattr(target,'message') and target.message:
+            await target.message.edit_text(msg,reply_markup=kb.as_markup())
+        else:
+            await target.answer(msg,reply_markup=kb.as_markup())
+
+    @dp.message(Command('uploadcards'))
+    async def upload_cards_start(m:Message):
+        if not admin(m.from_user.id): return
+        _card_upload_states[m.from_user.id]={}
+        await card_upload_show(m,m.from_user.id,'league')
+
+    @dp.callback_query(F.data=='cu:cancel')
+    async def upload_cards_cancel(c:CallbackQuery):
+        _card_upload_states.pop(c.from_user.id,None)
+        await c.message.edit_text('Загрузка карточки отменена.')
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('cu:page:'))
+    async def upload_cards_page(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('Нет доступа.',show_alert=True); return
+        _,_,stage,page=c.data.split(':',3)
+        await card_upload_show(c,c.from_user.id,stage,int(page))
+        await c.answer()
+
+    @dp.callback_query(F.data.startswith('cu:pick:'))
+    async def upload_cards_pick(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('Нет доступа.',show_alert=True); return
+        _,_,stage,value=c.data.split(':',3)
+        state=_card_upload_states.get(c.from_user.id)
+        if state is None:
+            await c.answer('Начните заново: /uploadcards',show_alert=True); return
+        if stage=='league':
+            async with Session() as s:
+                values=(await s.scalars(select(Card.league).where(Card.active.is_(True)).distinct().order_by(Card.league))).all()
+            if not 0<=int(value)<len(values): await c.answer('Лига не найдена.',show_alert=True); return
+            state['league']=values[int(value)]
+            await card_upload_show(c,c.from_user.id,'rarity')
+        elif stage=='rarity':
+            if value not in RARITIES: await c.answer('Редкость не найдена.',show_alert=True); return
+            state['rarity']=value
+            await card_upload_show(c,c.from_user.id,'club')
+        elif stage=='club':
+            async with Session() as s:
+                values=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity')).distinct().order_by(Card.club))).all()
+            if not 0<=int(value)<len(values): await c.answer('Команда не найдена.',show_alert=True); return
+            state['club']=values[int(value)]
+            await card_upload_show(c,c.from_user.id,'player')
+        elif stage=='player':
+            card_id=int(value)
+            async with Session() as s:
+                card=await s.get(Card,card_id)
+                if not card or not card.active or card.league!=state.get('league') or card.rarity!=state.get('rarity') or card.club!=state.get('club'):
+                    await c.answer('Игрок не найден в выбранной категории.',show_alert=True); return
+                state['card_id']=card.id
+                state['stage']='file'
+                label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> файлом (как документ, без сжатия).\n\n{card.league} · {card.club} · {card.rarity} · {card.ovr} OVR'
+            await c.message.edit_text(label,parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
+        _card_upload_states[c.from_user.id]=state
+        await c.answer()
+
     @dp.message(Command('season_reset'))
     async def season_reset(m):
         if not admin(m.from_user.id): return
@@ -3267,6 +3365,26 @@ async def main():
     async def upload_csv(m):
         if not admin(m.from_user.id): return
         doc=m.document
+        pending=_card_upload_states.get(m.from_user.id)
+        if pending and pending.get('stage')=='file':
+            filename=doc.file_name or 'card-image'
+            mime=(doc.mime_type or '').lower()
+            if not mime.startswith('image/'):
+                await m.answer('Нужен файл изображения (PNG/JPG), отправленный как документ.'); return
+            if (doc.file_size or 0)>15*1024*1024:
+                await m.answer('Файл должен быть меньше 15 МБ.'); return
+            async with Session() as s:
+                card=await s.get(Card,pending.get('card_id'))
+                if not card:
+                    _card_upload_states.pop(m.from_user.id,None)
+                    await m.answer('Карточка игрока больше не найдена. Начните заново: /uploadcards'); return
+                card.image_url='tgfile:'+doc.file_id
+                await audit(s,m.from_user.id,'upload_player_card',card.id,f'{filename} · Telegram file_id')
+                await s.commit()
+                player_name=card.player_name
+            _card_upload_states.pop(m.from_user.id,None)
+            await m.answer(f'✅ Карточка игрока <b>{html.escape(player_name)}</b> сохранена и привязана.\n\nМожешь загрузить следующую: /uploadcards',parse_mode='HTML')
+            return
         filename=doc.file_name or 'upload.csv'
         if not filename.lower().endswith('.csv'): await m.answer('Пришлите CSV-файл.'); return
         if (doc.file_size or 0)>5*1024*1024: await m.answer('CSV-файл должен быть меньше 5 МБ.'); return
