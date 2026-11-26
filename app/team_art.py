@@ -88,14 +88,26 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
         card = by_position.get(pos)
         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
         if card:
-            # Dark inset keeps player information legible while preserving the rink markings.
-            draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66))
-            player_name = str(card.player_name)
-            initials = ''.join(part[0] for part in player_name.split()[:2]).upper() or '★'
-            draw.ellipse((cx - 29, cy - 48, cx + 29, cy + 10), fill=(47, 64, 95), outline=ORANGE, width=3)
-            draw.text((cx, cy - 19), initials[:2], font=_fit(draw, initials[:2], 48, 25, True), fill=CREAM, anchor='mm')
-            draw.text((cx, cy + 38), player_name, font=_fit(draw, player_name, x2 - x1 - 20, 18, True), fill=CREAM, anchor='mm')
-            draw.text((cx, cy + 70), f'{card.ovr} OVR', font=_font(17, True), fill=ORANGE, anchor='mm')
+            image_data = next((data for data, item in rows if item.id == card.id and data), None)
+            if image_data:
+                try:
+                    card_image = Image.open(BytesIO(image_data)).convert('RGB')
+                    card_image.thumbnail((x2 - x1 - 14, y2 - y1 - 14), Image.Resampling.LANCZOS)
+                    px = x1 + ((x2 - x1) - card_image.width) // 2
+                    py = y1 + ((y2 - y1) - card_image.height) // 2
+                    image.paste(card_image, (px, py))
+                    draw.rounded_rectangle((x1 + 4, y1 + 4, x2 - 4, y2 - 4), radius=10, outline=ORANGE, width=2)
+                except Exception:
+                    image_data = None
+            if not image_data:
+                # Temporary built-in loading card; replace with the admin-supplied placeholder artwork later.
+                draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66), outline=ORANGE, width=2)
+                player_name = str(card.player_name)
+                initials = ''.join(part[0] for part in player_name.split()[:2]).upper() or '★'
+                draw.ellipse((cx - 29, cy - 48, cx + 29, cy + 10), fill=(47, 64, 95), outline=ORANGE, width=3)
+                draw.text((cx, cy - 19), initials[:2], font=_fit(draw, initials[:2], 48, 25, True), fill=CREAM, anchor='mm')
+                draw.text((cx, cy + 38), player_name, font=_fit(draw, player_name, x2 - x1 - 20, 18, True), fill=CREAM, anchor='mm')
+                draw.text((cx, cy + 70), f'{card.ovr} OVR', font=_font(17, True), fill=ORANGE, anchor='mm')
         else:
             draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
 
