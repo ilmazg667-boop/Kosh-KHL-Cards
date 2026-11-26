@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, func
 from aiogram import Bot
 from .config import BOT_TOKEN, REDIS_URL, ADMIN_IDS
 from .db import Session, init_db
-from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger, PackConfig
+from .models import Match, User, OwnedCard, Card, ClanMember, Clan, TournamentEntry, ClanTournamentEntry, DailyTournament, WeeklyClanTournament, WeeklyClanTournamentEntry, Auction, EconomyLedger, PackConfig, AppSetting
 from .game import simulate, team_power, chemistry, league_for_rating, PACKS, rarity_pick
 from .services import now, ensure_season, ensure_daily_tournament, progress_after_match, settle_auction, expire_trade_offers
 
@@ -128,6 +128,16 @@ async def prepare_match(match_id,bot=None):
             (away,away_chem,m.away_power,away_display,'🔵 ВТОРАЯ КОМАНДА')
         ]
 
+        placeholder_image_bytes=None
+        placeholder_setting=await s.get(AppSetting,'team_card_placeholder')
+        if bot and placeholder_setting and placeholder_setting.setting_value.startswith('tgfile:'):
+            try:
+                placeholder_file=await bot.get_file(placeholder_setting.setting_value.split(':',1)[1])
+                placeholder_download=await bot.download_file(placeholder_file.file_path)
+                placeholder_image_bytes=placeholder_download.read() if hasattr(placeholder_download,'read') else placeholder_download
+            except Exception:
+                logger.exception('Could not download configured team placeholder image')
+
         if bot:
             from aiogram.types import BufferedInputFile
             from .team_art import render_team_art_image
@@ -145,7 +155,7 @@ async def prepare_match(match_id,bot=None):
                                 except Exception:
                                     logger.exception('Could not download player card image: card_id=%s',card.id)
                             visual_rows.append((image_bytes,card))
-                        artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name)
+                        artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name,placeholder_image_bytes=placeholder_image_bytes)
                         position_icons={'LW':'⚡','C':'🏒','RW':'⚡','LD':'🛡','RD':'🛡','G':'🥅'}
                         players_text='\n'.join(
                             f"{position_icons.get(card.position,'🏒')} <b>{card.position}</b> — {html.escape(card.player_name)} · <b>{card.ovr} OVR</b>"
