@@ -149,7 +149,7 @@ RARITY_EMOJI = {
     'Хроматический':'🌈', 'Легенда':'💎', 'Икона':'👑'
 }
 def rarity_label(value):
-    return f"{RARITY_EMOJI.get(value, '💎')} {value}"
+    return f"{RARITY_EMOJI.get(value, '🏷️')} {value}"
 
 def pack_keyboard():
     kb=InlineKeyboardBuilder()
