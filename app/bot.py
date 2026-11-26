@@ -2516,7 +2516,7 @@ async def main():
                             key=' '.join(str(candidate.player_name or '').split()).casefold()
                             if key not in best or (candidate.ovr,candidate.id)>(best[key].ovr,best[key].id): best[key]=candidate
                         cards=list(best.values())
-                    elif code=='NFA':
+                    if code=='NFA':
                         raw=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league=='НСА').order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
                         best={}
                         for candidate in raw:
