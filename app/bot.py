@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import BOT_TOKEN, ADMIN_IDS, BATTLEPASS_PREMIUM_PRICE
 from .db import Session, init_db, Base
 from .models import (User, Card, OwnedCard, Match, MarketListing, Auction, AuctionBid,
-    TradeOffer, Clan, ClanMember, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
+    TradeOffer, Clan, ClanMember, AppSetting, DailyTournament, TournamentEntry, TournamentPrizeConfig, ClanTournamentEntry, WeeklyClanTournament, WeeklyClanTournamentEntry, BattlePassProgress,
     QuestProgress, Season, AuditLog, EconomyLedger, PromoCode, PromoRedemption, SupportMessage)
 from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating, adjust_pack_odds, rarity_for_ovr
@@ -3275,6 +3275,8 @@ async def main():
                 title='👤 Выберите игрока'
         state['stage']=stage
         _card_upload_states[uid]=state
+        if stage=='league':
+            kb.row(InlineKeyboardButton(text='🖼️ Карточка-заглушка состава',callback_data='cu:placeholder'))
         page_size=18
         start=page*page_size
         subset=values[start:start+page_size]
@@ -3300,6 +3302,14 @@ async def main():
         if not admin(m.from_user.id): return
         _card_upload_states[m.from_user.id]={}
         await card_upload_show(m,m.from_user.id,'league')
+
+    @dp.callback_query(F.data=='cu:placeholder')
+    async def upload_placeholder_start(c:CallbackQuery):
+        if not admin(c.from_user.id):
+            await c.answer('Нет доступа.',show_alert=True); return
+        _card_upload_states[c.from_user.id]={'stage':'placeholder_file'}
+        await c.message.edit_text('🖼️ <b>Загрузка карточки-заглушки</b>\\n\\nОтправьте изображение заглушки документом (без сжатия). Оно будет показываться в составе вместо карточек игроков, для которых ещё не загружено изображение.',parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
+        await c.answer()
 
     @dp.callback_query(F.data=='cu:cancel')
     async def upload_cards_cancel(c:CallbackQuery):
@@ -3366,6 +3376,24 @@ async def main():
         if not admin(m.from_user.id): return
         doc=m.document
         pending=_card_upload_states.get(m.from_user.id)
+        if pending and pending.get('stage')=='placeholder_file':
+            filename=doc.file_name or 'team-placeholder'
+            mime=(doc.mime_type or '').lower()
+            if not mime.startswith('image/'):
+                await m.answer('Нужен файл изображения (PNG/JPG), отправленный как документ.'); return
+            if (doc.file_size or 0)>15*1024*1024:
+                await m.answer('Файл должен быть меньше 15 МБ.'); return
+            async with Session() as s:
+                setting=await s.get(AppSetting,'team_card_placeholder')
+                if setting is None:
+                    setting=AppSetting(setting_key='team_card_placeholder',setting_value='')
+                    s.add(setting)
+                setting.setting_value='tgfile:'+doc.file_id
+                await audit(s,m.from_user.id,'upload_team_placeholder',0,f'{filename} · Telegram file_id')
+                await s.commit()
+            _card_upload_states.pop(m.from_user.id,None)
+            await m.answer('✅ Карточка-заглушка состава обновлена. Теперь она будет показываться вместо изображений игроков, для которых ещё не загружена карточка.\\n\\nЧтобы заменить её снова: /uploadcards → 🖼️ Карточка-заглушка.')
+            return
         if pending and pending.get('stage')=='file':
             filename=doc.file_name or 'card-image'
             mime=(doc.mime_type or '').lower()
