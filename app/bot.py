@@ -217,18 +217,23 @@ async def lineup_player_stats(session, cards):
     stats={key:{'games':0,'goals':0,'assists':0} for key in keys}
     if not keys:
         return stats
-    all_cards=(await session.scalars(select(Card))).all()
-    card_by_id={c.id:c for c in all_cards}
-    matches=(await session.scalars(select(Match).where(Match.status=='completed'))).all()
-    for match in matches:
-        home_roster=[card_by_id[cid] for cid in (match.home_card_ids or []) if cid in card_by_id]
-        away_roster=[card_by_id[cid] for cid in (match.away_card_ids or []) if cid in card_by_id]
+    # Restrict card lookup to the current players' historical card versions and
+    # fetch only the match columns needed for the career-stat calculation.
+    relevant_cards=(await session.scalars(select(Card).where(Card.player_key.in_(keys)))).all()
+    card_by_id={c.id:c for c in relevant_cards}
+    matches=(await session.execute(
+        select(Match.home_card_ids,Match.away_card_ids,Match.home_goals,Match.away_goals)
+        .where(Match.status=='completed')
+    )).all()
+    for home_card_ids,away_card_ids,home_goals,away_goals in matches:
+        home_roster=[card_by_id[cid] for cid in (home_card_ids or []) if cid in card_by_id]
+        away_roster=[card_by_id[cid] for cid in (away_card_ids or []) if cid in card_by_id]
         home_names={c.player_name:c.player_key for c in home_roster if c.player_key in keys}
         away_names={c.player_name:c.player_key for c in away_roster if c.player_key in keys}
         appeared={key for key in home_names.values()} | {key for key in away_names.values()}
         for key in appeared:
             stats[key]['games']+=1
-        for goals, roster_names in ((match.home_goals or [],home_names),(match.away_goals or [],away_names)):
+        for goals, roster_names in ((home_goals or [],home_names),(away_goals or [],away_names)):
             for goal in goals:
                 scorer=str(goal.get('scorer') or '').rsplit(' · ',1)[0]
                 key=roster_names.get(scorer)
@@ -3454,6 +3459,8 @@ async def main():
     @dp.callback_query(F.data.startswith('player:'))
     async def player_menu_callback(c:CallbackQuery):
         action=c.data.split(':',1)[1]
+        # Acknowledge the Telegram callback immediately; section rendering may do DB work.
+        await c.answer()
         handlers={
             'team':team,'play':play,'matches':matches,'support':support_start,'cards':collection,
             'packs':packs,'market':market,'auctions':auctions,'leaderboard':leaderboard,
@@ -3519,9 +3526,8 @@ async def main():
                 await handler(player_message)
             # Do not append the main menu automatically: each section should
             # remain visible until the player explicitly returns.
-            await c.answer()
         except Exception:
-            await c.answer('Не удалось открыть раздел. Попробуйте ещё раз.',show_alert=True)
+            await c.bot.send_message(c.from_user.id,'Не удалось открыть раздел. Попробуйте ещё раз.')
 
     worker_task=None
     if os.getenv('RUN_MATCH_WORKER','1').strip().lower() not in ('0','false','no','off'):
