@@ -119,7 +119,21 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                 draw.text((cx, cy + 61), player_name, font=_fit(draw, player_name, x2 - x1 - 18, 14, True), fill=CREAM, anchor='mm')
                 draw.text((cx, cy + 83), f'{card.ovr} OVR', font=_font(15, True), fill=CREAM, anchor='mm')
         else:
-            draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
+            # Empty lineup slot: show the configured team placeholder when available.
+            placeholder_used = False
+            if placeholder_image_bytes:
+                try:
+                    placeholder = Image.open(BytesIO(placeholder_image_bytes)).convert('RGB')
+                    placeholder.thumbnail((x2 - x1 - 8, y2 - y1 - 8), Image.Resampling.LANCZOS)
+                    px = x1 + ((x2 - x1) - placeholder.width) // 2
+                    py = y1 + ((y2 - y1) - placeholder.height) // 2
+                    image.paste(placeholder, (px, py))
+                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=8, outline=ORANGE, width=2)
+                    placeholder_used = True
+                except Exception:
+                    placeholder_used = False
+            if not placeholder_used:
+                draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
 
     output = BytesIO()
     image.save(output, format='PNG', optimize=True)
