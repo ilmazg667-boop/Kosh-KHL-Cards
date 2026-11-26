@@ -78,6 +78,8 @@ def admin(uid): return uid in ADMIN_IDS
 
 _LINEUP_STATS_CACHE = {}
 _TEAM_PLACEHOLDER_CACHE = {}
+_CARD_PLACEHOLDER_FILE_ID = None
+_CARD_PLACEHOLDER_LOADED = False
 
 TELEGRAM_POST_URL='https://t.me/bullet_kings_forms/40'
 _TELEGRAM_POST_PHOTO_BYTES=None
@@ -175,8 +177,8 @@ async def owned_card_text(session,oc):
     return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
 
 async def answer_card_photo(message, card, caption, reply_markup=None, session=None):
-    """Show the player's card image, or the admin-uploaded placeholder if it is missing."""
-    from aiogram.types import BufferedInputFile
+    """Send Telegram file_ids directly; only read placeholder setting once per process."""
+    global _CARD_PLACEHOLDER_FILE_ID, _CARD_PLACEHOLDER_LOADED
     image_url=str(card.image_url or '').strip()
     if image_url.startswith(('https://','http://')):
         try:
@@ -186,34 +188,24 @@ async def answer_card_photo(message, card, caption, reply_markup=None, session=N
             print(f'Не удалось показать изображение карточки {card.id}: {e}')
     elif image_url.startswith('tgfile:'):
         try:
-            file_id=image_url.split(':',1)[1]
-            telegram_file=await message.bot.get_file(file_id)
-            downloaded=await message.bot.download_file(telegram_file.file_path)
-            data=downloaded.read() if hasattr(downloaded,'read') else downloaded
-            if data:
-                await message.answer_photo(photo=BufferedInputFile(data,filename=f'card-{card.id}.jpg'),caption=caption,reply_markup=reply_markup,parse_mode='HTML')
-                return
+            await message.answer_photo(photo=image_url.split(':',1)[1],caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+            return
         except Exception as e:
-            print(f'Не удалось загрузить Telegram-фото карточки {card.id}: {e}')
-    if session is not None:
+            print(f'Не удалось отправить Telegram-фото карточки {card.id}: {e}')
+    if not _CARD_PLACEHOLDER_LOADED and session is not None:
         try:
             setting=await session.get(AppSetting,'team_card_placeholder')
             value=str(setting.setting_value or '') if setting else ''
-            if value.startswith('tgfile:'):
-                file_id=value.split(':',1)[1]
-                data=_TEAM_PLACEHOLDER_CACHE.get(file_id)
-                if not data:
-                    telegram_file=await message.bot.get_file(file_id)
-                    downloaded=await message.bot.download_file(telegram_file.file_path)
-                    data=downloaded.read() if hasattr(downloaded,'read') else downloaded
-                    if data:
-                        _TEAM_PLACEHOLDER_CACHE.clear()
-                        _TEAM_PLACEHOLDER_CACHE[file_id]=data
-                if data:
-                    await message.answer_photo(photo=BufferedInputFile(data,filename='card-placeholder.jpg'),caption=caption,reply_markup=reply_markup,parse_mode='HTML')
-                    return
+            _CARD_PLACEHOLDER_FILE_ID=value.split(':',1)[1] if value.startswith('tgfile:') else None
+            _CARD_PLACEHOLDER_LOADED=True
         except Exception as e:
-            print(f'Не удалось показать общую заглушку для карточки {card.id}: {e}')
+            print(f'Не удалось прочитать настройку заглушки: {e}')
+    if _CARD_PLACEHOLDER_FILE_ID:
+        try:
+            await message.answer_photo(photo=_CARD_PLACEHOLDER_FILE_ID,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+            return
+        except Exception as e:
+            print(f'Не удалось отправить заглушку карточки: {e}')
     await message.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
 
 async def send_team_art(target, session, uid, bot=None, replace_message=False, team_name='Моя команда'):
@@ -3514,6 +3506,9 @@ async def main():
                 setting.setting_value='tgfile:'+file_id
                 await audit(s,m.from_user.id,'upload_team_placeholder',0,f'{filename} · Telegram file_id')
                 await s.commit()
+            global _CARD_PLACEHOLDER_FILE_ID, _CARD_PLACEHOLDER_LOADED
+            _CARD_PLACEHOLDER_FILE_ID=file_id
+            _CARD_PLACEHOLDER_LOADED=True
             _card_upload_states.pop(m.from_user.id,None)
             await m.answer('✅ Карточка-заглушка состава обновлена. Теперь она будет показываться вместо изображений игроков, для которых ещё не загружена карточка.\\n\\nЧтобы заменить её снова: /uploadcards → 🖼️ Карточка-заглушка.')
             return
