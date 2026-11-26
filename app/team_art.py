@@ -22,7 +22,7 @@ def _fit(draw, text, max_width, start, bold=False):
         size -= 2
     return _font(12, bold)
 
-def render_team_art_image(rows, strength, chemistry, team_name='Моя команда'):
+def render_team_art_image(rows, strength, chemistry, team_name='Моя команда', placeholder_image_bytes=None):
     # Layout follows the user's supplied 1280x800 half-rink reference.
     image = Image.new('RGB', (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
@@ -99,8 +99,18 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                     draw.rounded_rectangle((x1 + 4, y1 + 4, x2 - 4, y2 - 4), radius=10, outline=ORANGE, width=2)
                 except Exception:
                     image_data = None
+            if not image_data and placeholder_image_bytes:
+                try:
+                    placeholder = Image.open(BytesIO(placeholder_image_bytes)).convert('RGB')
+                    placeholder.thumbnail((x2 - x1 - 8, y2 - y1 - 8), Image.Resampling.LANCZOS)
+                    px = x1 + ((x2 - x1) - placeholder.width) // 2
+                    py = y1 + ((y2 - y1) - placeholder.height) // 2
+                    image.paste(placeholder, (px, py))
+                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=8, outline=ORANGE, width=2)
+                    image_data = b'placeholder-used'
+                except Exception:
+                    image_data = None
             if not image_data:
-                # Temporary loading-card artwork; replace with the user's final placeholder image later.
                 draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66), outline=ORANGE, width=2)
                 draw.ellipse((cx - 31, cy - 50, cx + 31, cy + 12), outline=ORANGE, width=3)
                 draw.arc((cx - 22, cy - 41, cx + 22, cy + 3), 35, 305, fill=CREAM, width=4)
