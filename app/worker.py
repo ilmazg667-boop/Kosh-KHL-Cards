@@ -151,7 +151,18 @@ async def prepare_match(match_id,bot=None):
                         logger.warning('Match #%s has no visual roster for %s',m.id,label)
                         continue
                     try:
-                        artwork=render_team_art_image([(None,card) for card in roster],power_value,chem_value,team_name)
+                        visual_rows=[]
+                        for card in roster:
+                            image_bytes=None
+                            if card.image_url and str(card.image_url).startswith('tgfile:') and card.rarity in ('Эпический','Мифический','Легендарный','Хроматический','Легенда','Икона'):
+                                try:
+                                    telegram_file=await bot.get_file(str(card.image_url).split(':',1)[1])
+                                    downloaded=await bot.download_file(telegram_file.file_path)
+                                    image_bytes=downloaded.read() if hasattr(downloaded,'read') else downloaded
+                                except Exception:
+                                    logger.exception('Could not download player card image: card_id=%s',card.id)
+                            visual_rows.append((image_bytes,card))
+                        artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name)
                         caption=(f'{label}\n'
                                  f'🏒 <b>{html.escape(team_name)}</b> · {power_value} OVR\n'
                                  f'🤝 Сыгранность: {chem_value}/40\n'
