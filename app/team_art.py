@@ -76,15 +76,6 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
     by_position = {card.position: card for _, card in rows}
 
     for pos, (x1, y1, x2, y2) in bays.items():
-        # Dashed orange slot border.
-        dash, gap = 8, 5
-        for x in range(x1, x2, dash + gap):
-            draw.line((x, y1, min(x + dash, x2), y1), fill=(255, 158, 82), width=3)
-            draw.line((x, y2, min(x + dash, x2), y2), fill=(255, 158, 82), width=3)
-        for y in range(y1, y2, dash + gap):
-            draw.line((x1, y, x1, min(y + dash, y2)), fill=(255, 158, 82), width=3)
-            draw.line((x2, y, x2, min(y + dash, y2)), fill=(255, 158, 82), width=3)
-
         card = by_position.get(pos)
         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
         if card:
