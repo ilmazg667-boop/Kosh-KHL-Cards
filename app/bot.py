@@ -183,18 +183,31 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     for _,card in rows:
         st=stats.get(card.player_key,{'games':0,'goals':0,'assists':0})
         stat_lines.append(f"• {html.escape(card.player_name)} — 🏒 {st['goals']} гол. · 🎯 {st['assists']} ассист. · ⭐ {st['goals']+st['assists']} очк. · 🏒 {st['games']} матч.")
-    image_bytes=render_team_art_image(rows,strength,ch,team_name)
+    # Use the same admin-configured placeholder for the team screen and match lineups.
+    api_bot = bot or getattr(target, 'bot', None)
+    placeholder_image_bytes = None
+    if api_bot is not None:
+        try:
+            setting = await session.get(AppSetting, 'team_card_placeholder')
+            if setting and str(setting.setting_value or '').startswith('tgfile:'):
+                file_id = setting.setting_value.split(':', 1)[1]
+                telegram_file = await api_bot.get_file(file_id)
+                downloaded = await api_bot.download_file(telegram_file.file_path)
+                placeholder_image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+        except Exception as e:
+            print(f'Не удалось загрузить заглушку состава: {e}')
+    image_bytes=render_team_art_image(rows,strength,ch,team_name,placeholder_image_bytes=placeholder_image_bytes)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
     caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n'+('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.')+'\n\nСостав обновляется автоматически после каждой замены карточки.'
-    if bot is not None:
+    if api_bot is not None:
         if getattr(target, 'photo', None):
             try:
                 from aiogram.types import InputMediaPhoto
                 media=InputMediaPhoto(media=photo,caption=caption,parse_mode='HTML')
-                return await bot.edit_message_media(chat_id=uid,message_id=target.message_id,media=media,reply_markup=team_keyboard())
+                return await api_bot.edit_message_media(chat_id=uid,message_id=target.message_id,media=media,reply_markup=team_keyboard())
             except Exception as e:
                 print(f'Не удалось обновить фото состава на месте, отправляю новое: {e}')
-        return await bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
+        return await api_bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
     return await target.answer_photo(photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
 
 async def lineup_player_stats(session, cards):
