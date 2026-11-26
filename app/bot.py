@@ -2494,7 +2494,7 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         state=admin_steps.get(c.from_user.id)
-        if not state or state.get('kind') not in ('givecard','promo') or (state.get('kind')=='promo' and state.get('step') not in ('cards','league','team','player','exclusive_player','retired_player')):
+        if not state or state.get('kind') not in ('givecard','promo') or (state.get('kind')=='promo' and state.get('step') not in ('cards','league','team','player','exclusive_player','retired_player','nfa_player')):
             await c.answer('Начните выбор карточек заново из админ-меню.',show_alert=True); return
         parts=c.data.split(':')
         action=parts[1] if len(parts)>1 else ''
@@ -2509,7 +2509,7 @@ async def main():
                 async with Session() as s:
                     if code=='EXCLUSIVE':
                         cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.player_name=='Семён Кошелев',Card.ovr.in_([95,99])).order_by(Card.ovr))).all()
-                    else:
+                    elif code=='RETIRED':
                         raw=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league.in_(['Завершили карьеру','Завершил карьеру'])).order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
                         best={}
                         for candidate in raw:
@@ -2580,7 +2580,7 @@ async def main():
                 target=await s.get(User,state.get('uid')) if state.get('kind')=='givecard' else None
                 card=await s.get(Card,cid)
                 if (state.get('kind')=='givecard' and not target) or not card or not card.active or card.source=='demo' or (action=='exclusiveplayer' and (card.player_name!='Семён Кошелев' or card.ovr not in (95,99))) or (action=='retiredplayer' and card.league not in ('Завершили карьеру','Завершил карьеру')) or (action=='nfaplayer' and card.league!='НСА'):
-                    await c.answer('Эксклюзивная карточка больше недоступна.',show_alert=True); return
+                    await c.answer('Карточка больше недоступна или относится к другой категории.',show_alert=True); return
                 if state.get('kind')=='promo':
                     ids=state['data'].setdefault('card_ids',[])
                     if card.id in ids: await c.answer('Эта карточка уже выбрана. Выберите другую.',show_alert=True); return
