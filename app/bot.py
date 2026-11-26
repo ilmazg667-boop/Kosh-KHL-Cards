@@ -174,6 +174,17 @@ async def owned_card_text(session,oc):
     c=await session.get(Card,oc.card_id)
     return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
 
+async def answer_card_photo(message, card, caption, reply_markup=None):
+    """Show the player's actual card image when available, with a text fallback."""
+    image_url=str(card.image_url or '').strip()
+    if image_url.startswith(('https://','http://')):
+        try:
+            await message.answer_photo(photo=image_url,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+            return
+        except Exception as e:
+            print(f'Не удалось показать изображение карточки {card.id}: {e}')
+    await message.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
+
 async def send_team_art(target, session, uid, bot=None, replace_message=False, team_name='Моя команда'):
     from aiogram.types import BufferedInputFile
     from .game import chemistry
@@ -637,7 +648,13 @@ async def main():
                     kb.button(text=f'💰 Продать за {card.ovr*50} 🪙',callback_data=f'cardsellhalf:{oc.id}')
                 kb.button(text='🔨 Передать на аукцион',callback_data=f'auctioncard:{oc.id}')
             kb.button(text='⬅️ К коллекции',callback_data='player:cards'); kb.adjust(1)
-            await c.message.answer(f'🏒 {card.player_name}\n{card.position} · {card.ovr} OVR · {rarity_label(card.rarity)}\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')+('\n🔒 Карточка заблокирована.' if oc.locked else ''),reply_markup=kb.as_markup())
+            caption=(f'🏒 <b>{html.escape(card.player_name)}</b>\n⭐ {card.ovr} OVR · {card.position} · {rarity_label(card.rarity)}'
+                f'\n🌍 {html.escape(card.country or "—")} · 🏆 {html.escape(card.league or "—")}'
+                +(f'\n🏒 Клуб: {html.escape(card.club or "—")}' if card.league not in ('Завершил карьеру','Завершили карьеру') else '')
+                +(f'\n📅 Сезон: {html.escape(card.season)}' if card.season else '')
+                +'\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')
+                +('\n🔒 Карточка заблокирована.' if oc.locked else ''))
+            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup())
         await c.answer()
 
     @dp.message(Command('card'))
@@ -745,7 +762,13 @@ async def main():
             card=await s.get(Card,oc.card_id)
             if not card: await c.answer('Карточка не найдена.',show_alert=True); return
             reveal=pack_reveal_text(card,oc,stage)
-        await c.message.edit_text(reveal,reply_markup=reveal_keyboard(oc_id,stage),parse_mode='HTML')
+        await c.message.edit_text(reveal,reply_markup=None if stage>=6 else reveal_keyboard(oc_id,stage),parse_mode='HTML')
+        if stage>=6:
+            caption=(f'🎉 <b>{html.escape(card.player_name)}</b>\n⭐ {card.ovr} OVR · {card.position} · {rarity_label(card.rarity)}'
+                f'\n🌍 {html.escape(card.country or "—")} · 🏆 {html.escape(card.league or "—")}'
+                +(f'\n🏒 Клуб: {html.escape(card.club or "—")}' if card.league not in ('Завершил карьеру','Завершили карьеру') else '')
+                +'\n🃏 Карточка добавлена в коллекцию!')
+            await answer_card_photo(c.message,card,caption,reply_markup=reveal_keyboard(oc_id,stage))
         await c.answer()
 
     @dp.message(Command('play'))
@@ -1113,7 +1136,7 @@ async def main():
                     seller=await s.get(User,listing.seller_id)
                     if card:
                         lines.append(f'\n{card.player_name} · {card.ovr} OVR · {rarity_label(card.rarity)}\nПродавец: {seller.first_name or seller.id if seller else "игрок"}\nЦена: {listing.price} 🪙')
-                        kb.button(text=f'🛒 Купить · {card.player_name} · {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}'); count+=1
+                        kb.button(text=f'🃏 {card.player_name} · {card.ovr} OVR · {listing.price} 🪙',callback_data=f'marketlot:{listing.id}:{page}'); count+=1
                 if not count: lines.append('\nПока нет активных лотов.')
                 if page>0: kb.button(text='⬅️ Предыдущая',callback_data=f'market:current:{page-1}')
                 if page+1<pages: kb.button(text='Следующая ➡️',callback_data=f'market:current:{page+1}')
@@ -1179,6 +1202,34 @@ async def main():
             await s.commit()
         await c.message.answer(f'💰 Карточка {card.player_name} · {card.ovr} OVR продана за половину рейтинга: {payout} 🪙.')
         await c.answer('Продано!')
+
+    @dp.callback_query(F.data.startswith('marketlot:'))
+    async def market_lot_detail(c:CallbackQuery):
+        try:
+            _,raw_id,raw_page=c.data.split(':',2); lid=int(raw_id); page=max(0,int(raw_page))
+        except ValueError:
+            await c.answer('Лот не найден.',show_alert=True); return
+        async with Session() as s:
+            listing=await s.get(MarketListing,lid)
+            if not listing or listing.status!='active':
+                await c.answer('Лот уже недоступен.',show_alert=True); return
+            oc=await s.get(OwnedCard,listing.owned_card_id)
+            card=await s.get(Card,oc.card_id) if oc else None
+            seller=await s.get(User,listing.seller_id)
+            if not card:
+                await c.answer('Карточка не найдена.',show_alert=True); return
+            caption=(f'🏪 <b>КАРТОЧКА НА РЫНКЕ</b>\n🏒 <b>{html.escape(card.player_name)}</b>'
+                f'\n⭐ {card.ovr} OVR · {card.position} · {rarity_label(card.rarity)}'
+                f'\n🌍 {html.escape(card.country or "—")} · 🏆 {html.escape(card.league or "—")}'
+                +(f'\n🏒 Клуб: {html.escape(card.club or "—")}' if card.league not in ('Завершил карьеру','Завершили карьеру') else '')
+                +f'\n👤 Продавец: {html.escape((seller.first_name or str(seller.id)) if seller else "Игрок")}'
+                +f'\n💰 Цена: <b>{listing.price} 🪙</b>')
+            kb=InlineKeyboardBuilder()
+            kb.button(text=f'🛒 Купить за {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}')
+            kb.button(text='⬅️ Назад к лотам',callback_data=f'market:current:{page}')
+            kb.adjust(1)
+            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup())
+        await c.answer()
 
     @dp.callback_query(F.data.startswith('marketbuy:'))
     async def market_buy_button(c:CallbackQuery):
@@ -1500,7 +1551,7 @@ async def main():
                 kb.button(text='🔄 Обновить время',callback_data=f'auctionmenu:detail:{a.id}')
                 kb.button(text='⬅️ К списку аукционов',callback_data='auctionmenu:current')
                 kb.adjust(1)
-                await c.message.answer(detail_text,reply_markup=kb.as_markup())
+                await answer_card_photo(c.message,card,html.escape(detail_text),reply_markup=kb.as_markup())
             elif action.startswith('current'):
                 parts=action.split(':')
                 refresh='refresh' in parts
