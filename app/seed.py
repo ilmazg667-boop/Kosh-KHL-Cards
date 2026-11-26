@@ -63,6 +63,13 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             # If only the league/category changed, update the existing card in place.
             if current is None:
                 current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
+        if current is None and card.player_key:
+            # Last-resort stable match: a league AND club correction must update
+            # the existing catalogue card instead of inserting a second edition.
+            keyed = [item for item in existing_cards
+                if (item.player_key or '').strip().casefold() == player_key]
+            if len(keyed) == 1:
+                current = keyed[0]
         if current is None:
             if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)) and card.player_name != 'Илья Ковальчук':
                 card.ovr = min(100, card.ovr + 2)
@@ -89,6 +96,12 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.active = card.active
             existing_by_identity[identity] = current
             existing_by_player_edition[_card_seed_identity_without_league(card)] = current
+            # A retired player must not remain selectable in an active KHL/NHL
+            # league through an older legacy edition of the same player key.
+            if card.league in ('Завершили карьеру', 'Завершил карьеру') and card.player_key:
+                for sibling in existing_cards:
+                    if sibling is not current and (sibling.player_key or '').strip().casefold() == player_key and sibling.league in ('КХЛ', 'НХЛ'):
+                        sibling.active = False
 
 async def seed_cards(session):
     """Import the real player catalogue and remove all artificial demo cards."""
