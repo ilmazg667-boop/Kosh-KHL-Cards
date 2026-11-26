@@ -178,9 +178,14 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     cards=[card for _,card in rows]
     strength=team_power(cards)
     ch=await chemistry(session,cards)
+    stats=await lineup_player_stats(session,cards)
+    stat_lines=[]
+    for _,card in rows:
+        st=stats.get(card.player_key,{'games':0,'goals':0,'assists':0})
+        stat_lines.append(f"• {html.escape(card.player_name)} — ⚽ {st['goals']} гол. · 🎯 {st['assists']} ассист. · 🏒 {st['games']} матч.")
     image_bytes=render_team_art_image(rows,strength,ch,team_name)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
-    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\nСостав обновляется автоматически после каждой замены карточки.'
+    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n'+('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.')+'\n\nСостав обновляется автоматически после каждой замены карточки.'
     if bot is not None:
         if getattr(target, 'photo', None):
             try:
