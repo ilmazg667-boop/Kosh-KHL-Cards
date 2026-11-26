@@ -174,8 +174,9 @@ async def owned_card_text(session,oc):
     c=await session.get(Card,oc.card_id)
     return f'#{oc.id} {c.player_name} · {c.position} · {c.ovr} OVR · {rarity_label(c.rarity)}'
 
-async def answer_card_photo(message, card, caption, reply_markup=None):
-    """Show the player's actual card image when available, with a text fallback."""
+async def answer_card_photo(message, card, caption, reply_markup=None, session=None):
+    """Show the player's card image, or the admin-uploaded placeholder if it is missing."""
+    from aiogram.types import BufferedInputFile
     image_url=str(card.image_url or '').strip()
     if image_url.startswith(('https://','http://')):
         try:
@@ -183,6 +184,36 @@ async def answer_card_photo(message, card, caption, reply_markup=None):
             return
         except Exception as e:
             print(f'Не удалось показать изображение карточки {card.id}: {e}')
+    elif image_url.startswith('tgfile:'):
+        try:
+            file_id=image_url.split(':',1)[1]
+            telegram_file=await message.bot.get_file(file_id)
+            downloaded=await message.bot.download_file(telegram_file.file_path)
+            data=downloaded.read() if hasattr(downloaded,'read') else downloaded
+            if data:
+                await message.answer_photo(photo=BufferedInputFile(data,filename=f'card-{card.id}.jpg'),caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+                return
+        except Exception as e:
+            print(f'Не удалось загрузить Telegram-фото карточки {card.id}: {e}')
+    if session is not None:
+        try:
+            setting=await session.get(AppSetting,'team_card_placeholder')
+            value=str(setting.setting_value or '') if setting else ''
+            if value.startswith('tgfile:'):
+                file_id=value.split(':',1)[1]
+                data=_TEAM_PLACEHOLDER_CACHE.get(file_id)
+                if not data:
+                    telegram_file=await message.bot.get_file(file_id)
+                    downloaded=await message.bot.download_file(telegram_file.file_path)
+                    data=downloaded.read() if hasattr(downloaded,'read') else downloaded
+                    if data:
+                        _TEAM_PLACEHOLDER_CACHE.clear()
+                        _TEAM_PLACEHOLDER_CACHE[file_id]=data
+                if data:
+                    await message.answer_photo(photo=BufferedInputFile(data,filename='card-placeholder.jpg'),caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+                    return
+        except Exception as e:
+            print(f'Не удалось показать общую заглушку для карточки {card.id}: {e}')
     await message.answer(caption,reply_markup=reply_markup,parse_mode='HTML')
 
 async def send_team_art(target, session, uid, bot=None, replace_message=False, team_name='Моя команда'):
@@ -654,7 +685,7 @@ async def main():
                 +(f'\n📅 Сезон: {html.escape(card.season)}' if card.season else '')
                 +'\n'+('В составе: '+oc.slot if oc.slot else 'Не в составе')
                 +('\n🔒 Карточка заблокирована.' if oc.locked else ''))
-            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup())
+            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup(),session=s)
         await c.answer()
 
     @dp.message(Command('card'))
@@ -768,7 +799,7 @@ async def main():
                 f'\n🌍 {html.escape(card.country or "—")} · 🏆 {html.escape(card.league or "—")}'
                 +(f'\n🏒 Клуб: {html.escape(card.club or "—")}' if card.league not in ('Завершил карьеру','Завершили карьеру') else '')
                 +'\n🃏 Карточка добавлена в коллекцию!')
-            await answer_card_photo(c.message,card,caption,reply_markup=reveal_keyboard(oc_id,stage))
+            await answer_card_photo(c.message,card,caption,reply_markup=reveal_keyboard(oc_id,stage),session=s)
         await c.answer()
 
     @dp.message(Command('play'))
@@ -1228,7 +1259,7 @@ async def main():
             kb.button(text=f'🛒 Купить за {listing.price} 🪙',callback_data=f'marketbuy:{listing.id}')
             kb.button(text='⬅️ Назад к лотам',callback_data=f'market:current:{page}')
             kb.adjust(1)
-            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup())
+            await answer_card_photo(c.message,card,caption,reply_markup=kb.as_markup(),session=s)
         await c.answer()
 
     @dp.callback_query(F.data.startswith('marketbuy:'))
@@ -1551,7 +1582,7 @@ async def main():
                 kb.button(text='🔄 Обновить время',callback_data=f'auctionmenu:detail:{a.id}')
                 kb.button(text='⬅️ К списку аукционов',callback_data='auctionmenu:current')
                 kb.adjust(1)
-                await answer_card_photo(c.message,card,html.escape(detail_text),reply_markup=kb.as_markup())
+                await answer_card_photo(c.message,card,html.escape(detail_text),reply_markup=kb.as_markup(),session=s)
             elif action.startswith('current'):
                 parts=action.split(':')
                 refresh='refresh' in parts
