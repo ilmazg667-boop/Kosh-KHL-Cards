@@ -2500,26 +2500,33 @@ async def main():
         action=parts[1] if len(parts)>1 else ''
         if action=='cancel':
             admin_steps.pop(c.from_user.id,None); await c.message.answer('Выдача карточки отменена.',reply_markup=admin_keyboard()); await c.answer(); return
-        league_map={'KHL':'КХЛ','NHL':'НХЛ','LEGENDS':'Легенды','EXCLUSIVE':'Эксклюзив','RETIRED':'Завершили карьеру'}
+        league_map={'KHL':'КХЛ','NHL':'НХЛ','LEGENDS':'Легенды','EXCLUSIVE':'Эксклюзив','RETIRED':'Завершили карьеру','NFA':'НСА'}
         if action=='league':
             code=parts[2] if len(parts)>2 else ''
             if code not in league_map: await c.answer('Лига не найдена.',show_alert=True); return
             league=league_map[code]
-            if code in ('EXCLUSIVE','RETIRED'):
+            if code in ('EXCLUSIVE','RETIRED','NFA'): 
                 async with Session() as s:
                     if code=='EXCLUSIVE':
                         cards=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.player_name=='Семён Кошелев',Card.ovr.in_([95,99])).order_by(Card.ovr))).all()
                     else:
-                        raw=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league=='Завершили карьеру').order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
+                        raw=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league.in_(['Завершили карьеру','Завершил карьеру'])).order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
+                        best={}
+                        for candidate in raw:
+                            key=' '.join(str(candidate.player_name or '').split()).casefold()
+                            if key not in best or (candidate.ovr,candidate.id)>(best[key].ovr,best[key].id): best[key]=candidate
+                        cards=list(best.values())
+                    elif code=='NFA':
+                        raw=(await s.scalars(select(Card).where(Card.active.is_(True),Card.source!='demo',Card.league=='НСА').order_by(Card.player_name,Card.ovr.desc(),Card.id.desc()))).all()
                         best={}
                         for candidate in raw:
                             key=' '.join(str(candidate.player_name or '').split()).casefold()
                             if key not in best or (candidate.ovr,candidate.id)>(best[key].ovr,best[key].id): best[key]=candidate
                         cards=list(best.values())
                 if not cards: await c.answer('В этой категории пока нет активных карточек.',show_alert=True); return
-                state.update(step='exclusive_player' if code=='EXCLUSIVE' else 'retired_player',league=league,club='')
+                state.update(step='exclusive_player' if code=='EXCLUSIVE' else ('retired_player' if code=='RETIRED' else 'nfa_player'),league=league,club='')
                 kb=InlineKeyboardBuilder()
-                for card in cards: kb.button(text=f'{card.player_name} · {card.ovr} OVR',callback_data=f'admcard:{"exclusiveplayer" if code=="EXCLUSIVE" else "retiredplayer"}:{card.id}')
+                for card in cards: kb.button(text=f'{card.player_name} · {card.ovr} OVR',callback_data=f'admcard:{"exclusiveplayer" if code=="EXCLUSIVE" else ("retiredplayer" if code=="RETIRED" else "nfaplayer")}:{card.id}')
                 kb.button(text='⬅️ К выбору категории',callback_data='admcard:back:league'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                 await c.message.answer('Выберите карточку из категории «'+league+'»:',reply_markup=kb.as_markup())
                 await c.answer()
@@ -2534,7 +2541,7 @@ async def main():
             await c.message.answer(f'Шаг 3 из 4. Лига: {league}. Выберите команду:',reply_markup=kb.as_markup())
         elif action=='back' and len(parts)>2 and parts[2]=='league':
             state['step']='league'
-            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+            kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='🆓 НСА',callback_data='admcard:league:NFA'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
             await c.message.answer('Выберите лигу карточки:',reply_markup=kb.as_markup())
         elif action=='team':
             code=parts[2] if len(parts)>2 else ''; idx=int(parts[3]) if len(parts)>3 else -1
@@ -2566,13 +2573,13 @@ async def main():
                 kb.button(text=f'{card.player_name} · {card.position} · {card.ovr} OVR',callback_data=f'admcard:player:{card.id}')
             kb.button(text='⬅️ К командам',callback_data=f'admcard:league:{code}'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
             await c.message.answer(f'Шаг 4 из 4. {state["league"]} · {club}. Выберите игрока:',reply_markup=kb.as_markup())
-        elif action in ('exclusiveplayer','retiredplayer'):
+        elif action in ('exclusiveplayer','retiredplayer','nfaplayer'): 
             try: cid=int(parts[2])
             except (ValueError,IndexError): await c.answer('Игрок не найден.',show_alert=True); return
             async with Session() as s:
                 target=await s.get(User,state.get('uid')) if state.get('kind')=='givecard' else None
                 card=await s.get(Card,cid)
-                if (state.get('kind')=='givecard' and not target) or not card or not card.active or card.source=='demo' or (action=='exclusiveplayer' and (card.player_name!='Семён Кошелев' or card.ovr not in (95,99))) or (action=='retiredplayer' and card.league!='Завершили карьеру'):
+                if (state.get('kind')=='givecard' and not target) or not card or not card.active or card.source=='demo' or (action=='exclusiveplayer' and (card.player_name!='Семён Кошелев' or card.ovr not in (95,99))) or (action=='retiredplayer' and card.league not in ('Завершили карьеру','Завершил карьеру')) or (action=='nfaplayer' and card.league!='НСА'):
                     await c.answer('Эксклюзивная карточка больше недоступна.',show_alert=True); return
                 if state.get('kind')=='promo':
                     ids=state['data'].setdefault('card_ids',[])
@@ -2586,17 +2593,17 @@ async def main():
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
-                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='🆓 НСА',callback_data='admcard:league:NFA'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                     await c.message.answer(f'Выбрана карточка {player_name} · {ovr} OVR. Теперь выберите карточку {len(state["data"]["card_ids"])+1} из {state["data"]["cards_count"]}:',reply_markup=kb.as_markup())
                 else:
                     state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
             else:
                 admin_steps.pop(c.from_user.id,None)
                 try:
-                    title='💎 Вам выдана эксклюзивная карточка!' if action=='exclusiveplayer' else '🏒 Вам выдана карточка игрока, завершившего карьеру!'
+                    title='💎 Вам выдана эксклюзивная карточка!' if action=='exclusiveplayer' else ('🏒 Вам выдана карточка игрока, завершившего карьеру!' if action=='retiredplayer' else '🆓 Вам выдана карточка свободного агента!')
                     await c.bot.send_message(target_id,f'{title}\n\n🏒 {player_name} · {ovr} OVR\n{card_details}')
                 except Exception: pass
-                label='Эксклюзивная карточка' if action=='exclusiveplayer' else 'Карточка из лиги «Завершили карьеру»'
+                label='Эксклюзивная карточка' if action=='exclusiveplayer' else ('Карточка из категории «Завершили карьеру»' if action=='retiredplayer' else 'Карточка из лиги «НСА»')
                 await c.message.answer(f'✅ {label}: {player_name} · {ovr} OVR (шаблон #{card_id}) выдана игроку {target_id}.',reply_markup=admin_keyboard())
         elif action=='player':
             try: cid=int(parts[2])
@@ -2618,7 +2625,7 @@ async def main():
             if state.get('kind')=='promo':
                 if len(state['data']['card_ids'])<state['data']['cards_count']:
                     state.update(step='cards',league='',club='')
-                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='🆓 НСА',callback_data='admcard:league:NFA'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                     await c.message.answer(f'Выбрана карточка {player_name} · {ovr} OVR. Теперь выберите карточку {len(state["data"]["card_ids"])+1} из {state["data"]["cards_count"]}:',reply_markup=kb.as_markup())
                 else:
                     state['step']='limit'; await c.message.answer('Все карточки выбраны. Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
@@ -2758,7 +2765,7 @@ async def main():
                     data['card_ids']=[]; data['cards_count']=count
                     if count:
                         state['step']='cards'
-                        kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                        kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='🆓 НСА',callback_data='admcard:league:NFA'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                         await m.answer(f'Выберите карточку 1 из {count}:',reply_markup=kb.as_markup())
                     else:
                         state['step']='limit'; await m.answer('Шаг 7 из 7. Укажите максимальное число активаций. 0 — без ограничений.')
@@ -2789,7 +2796,7 @@ async def main():
                     await m.answer('Шаг 2 из 2. Введите количество монет или алмазов. Например: 500 начислит 500, а -200 спишет 200.')
                 elif kind=='givecard':
                     state['step']='league'
-                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
+                    kb=InlineKeyboardBuilder(); kb.button(text='🏒 КХЛ',callback_data='admcard:league:KHL'); kb.button(text='🇺🇸 НХЛ',callback_data='admcard:league:NHL'); kb.button(text='⭐ Легенды',callback_data='admcard:league:LEGENDS'); kb.button(text='💎 Эксклюзив',callback_data='admcard:league:EXCLUSIVE'); kb.button(text='🏒 Завершили карьеру',callback_data='admcard:league:RETIRED'); kb.button(text='🆓 НСА',callback_data='admcard:league:NFA'); kb.button(text='❌ Отмена',callback_data='admcard:cancel'); kb.adjust(1)
                     await m.answer('Шаг 2 из 4. Выберите лигу карточки:',reply_markup=kb.as_markup())
                 elif kind=='givepremium':
                     async with Session() as s:
