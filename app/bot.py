@@ -3308,7 +3308,7 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         _card_upload_states[c.from_user.id]={'stage':'placeholder_file'}
-        await c.message.edit_text('🖼️ <b>Загрузка карточки-заглушки</b>\\n\\nОтправьте изображение заглушки документом (без сжатия). Оно будет показываться в составе вместо карточек игроков, для которых ещё не загружено изображение.',parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
+        await c.message.edit_text('🖼️ <b>Загрузка карточки-заглушки</b>\n\nОтправьте изображение заглушки документом (без сжатия). Оно будет показываться в составе вместо карточек игроков, для которых ещё не загружено изображение.',parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
         await c.answer()
 
     @dp.callback_query(F.data=='cu:cancel')
