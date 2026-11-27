@@ -1,4 +1,4 @@
-import asyncio, csv, os, random, shlex, html, time
+import asyncio, csv, os, random, shlex, html, time, hashlib
 import aiohttp
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
@@ -222,84 +222,124 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     for _,card in rows:
         st=stats.get(card.player_key,{'games':0,'goals':0,'assists':0})
         stat_lines.append(f"• {html.escape(card.player_name)} — 🏒 {st['goals']} гол. · 🎯 {st['assists']} ассист. · ⭐ {st['goals']+st['assists']} очк. · 🏒 {st['games']} матч.")
-    # Download each equipped card's artwork before rendering the lineup image.
-    # The renderer expects (image_bytes, Card), not (OwnedCard, Card).
+
     api_bot = bot or getattr(target, 'bot', None)
-    render_rows = []
-    http_cards = [card for _, card in rows if str(card.image_url or '').strip().startswith(('https://', 'http://'))]
-    http_images = {}
-    if http_cards:
-        try:
-            timeout = aiohttp.ClientTimeout(total=8, connect=3, sock_read=5)
-            connector = aiohttp.TCPConnector(
-                resolver=PublicResolver(),
-                limit=6,
-                limit_per_host=3,
-                ttl_dns_cache=60,
-            )
-            async with aiohttp.ClientSession(
-                timeout=timeout,
-                connector=connector,
-                trust_env=False,
-            ) as http:
-                semaphore = asyncio.Semaphore(3)
+    placeholder_setting = await session.get(AppSetting, 'team_card_placeholder')
+    placeholder_id = str(placeholder_setting.setting_value or '') if placeholder_setting else ''
+    # Keep Telegram's file_id for the last rendered lineup in the database.
+    # Reopening an unchanged team reuses Telegram's stored photo instead of
+    # downloading six card images and rendering/uploading the same PNG again.
+    fingerprint_source = repr((
+        str(team_name or 'Моя команда'), strength, ch, placeholder_id,
+        tuple((card.id, card.position, card.player_name, card.ovr, str(card.image_url or '')) for _, card in rows),
+    ))
+    fingerprint = hashlib.sha256(fingerprint_source.encode('utf-8')).hexdigest()
+    cache_key = f'team_art_photo:{uid}'
+    cache_setting = await session.get(AppSetting, cache_key)
+    cached_fingerprint, cached_file_id = ('', '')
+    if cache_setting and cache_setting.setting_value:
+        cached_fingerprint, _, cached_file_id = cache_setting.setting_value.partition('|')
+    use_cached_photo = bool(cached_fingerprint == fingerprint and cached_file_id)
+    photo = cached_file_id if use_cached_photo else None
 
-                async def download(card):
-                    async with semaphore:
-                        try:
-                            data = await download_card_image(http, card.image_url)
-                            return card.id, data
-                        except Exception as e:
-                            print(f'Не удалось загрузить фото игрока {card.id}: {e}')
-                            return card.id, None
-
-                downloaded = await asyncio.gather(*(download(card) for card in http_cards))
-                http_images = {card_id: data for card_id, data in downloaded if data}
-        except Exception as e:
-            print(f'Ошибка HTTP-загрузчика фото состава: {e}')
-    for _, card in rows:
-        image_data = http_images.get(card.id)
-        image_url = str(card.image_url or '').strip()
-        if image_data is None and api_bot is not None and image_url.startswith('tgfile:'):
+    if not use_cached_photo:
+        # Download card art only when this user's lineup image has changed.
+        http_cards = [card for _, card in rows if str(card.image_url or '').strip().startswith(('https://', 'http://'))]
+        http_images = {}
+        if http_cards:
             try:
-                telegram_file = await api_bot.get_file(image_url.split(':', 1)[1])
-                downloaded = await api_bot.download_file(telegram_file.file_path)
-                image_data = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+                timeout = aiohttp.ClientTimeout(total=8, connect=3, sock_read=5)
+                connector = aiohttp.TCPConnector(
+                    resolver=PublicResolver(), limit=6, limit_per_host=3, ttl_dns_cache=60,
+                )
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as http:
+                    semaphore = asyncio.Semaphore(3)
+                    async def download(card):
+                        async with semaphore:
+                            try:
+                                data = await download_card_image(http, card.image_url)
+                                return card.id, data
+                            except Exception as e:
+                                print(f'Не удалось загрузить фото игрока {card.id}: {e}')
+                                return card.id, None
+                    downloaded = await asyncio.gather(*(download(card) for card in http_cards))
+                    http_images = {card_id: data for card_id, data in downloaded if data}
             except Exception as e:
-                print(f'Не удалось загрузить Telegram-фото игрока {card.id}: {e}')
-        render_rows.append((image_data, card))
-    # Use the same admin-configured placeholder for the team screen and match lineups.
-    placeholder_image_bytes = None
-    if api_bot is not None:
-        try:
-            setting = await session.get(AppSetting, 'team_card_placeholder')
-            if setting and str(setting.setting_value or '').startswith('tgfile:'):
-                file_id = setting.setting_value.split(':', 1)[1]
-                cached_placeholder=_TEAM_PLACEHOLDER_CACHE.get(file_id)
+                print(f'Ошибка HTTP-загрузчика фото состава: {e}')
+
+        render_rows = []
+        for _, card in rows:
+            image_data = http_images.get(card.id)
+            image_url = str(card.image_url or '').strip()
+            if image_data is None and api_bot is not None and image_url.startswith('tgfile:'):
+                try:
+                    telegram_file = await api_bot.get_file(image_url.split(':', 1)[1])
+                    downloaded = await api_bot.download_file(telegram_file.file_path)
+                    image_data = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+                except Exception as e:
+                    print(f'Не удалось загрузить Telegram-фото игрока {card.id}: {e}')
+            render_rows.append((image_data, card))
+
+        placeholder_image_bytes = None
+        if api_bot is not None and placeholder_id.startswith('tgfile:'):
+            try:
+                file_id = placeholder_id.split(':', 1)[1]
+                cached_placeholder = _TEAM_PLACEHOLDER_CACHE.get(file_id)
                 if cached_placeholder:
-                    placeholder_image_bytes=cached_placeholder
+                    placeholder_image_bytes = cached_placeholder
                 else:
                     telegram_file = await api_bot.get_file(file_id)
                     downloaded = await api_bot.download_file(telegram_file.file_path)
                     placeholder_image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
                     if placeholder_image_bytes:
                         _TEAM_PLACEHOLDER_CACHE.clear()
-                        _TEAM_PLACEHOLDER_CACHE[file_id]=placeholder_image_bytes
-        except Exception as e:
-            print(f'Не удалось загрузить заглушку состава: {e}')
-    image_bytes=render_team_art_image(render_rows,strength,ch,team_name,placeholder_image_bytes=placeholder_image_bytes)
-    photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
-    caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n'+('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.')+'\n\nСостав обновляется автоматически после каждой замены карточки.'
+                        _TEAM_PLACEHOLDER_CACHE[file_id] = placeholder_image_bytes
+            except Exception as e:
+                print(f'Не удалось загрузить заглушку состава: {e}')
+
+        image_bytes = render_team_art_image(
+            render_rows, strength, ch, team_name, placeholder_image_bytes=placeholder_image_bytes
+        )
+        photo = BufferedInputFile(image_bytes, filename='kosh-team.png')
+
+    caption = f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\\n📊 <b>Статистика игроков за все завершённые матчи:</b>\\n' + ('\\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.') + '\\n\\nСостав обновляется автоматически после каждой замены карточки.'
+    sent_message = None
     if api_bot is not None:
         if getattr(target, 'photo', None):
             try:
                 from aiogram.types import InputMediaPhoto
-                media=InputMediaPhoto(media=photo,caption=caption,parse_mode='HTML')
-                return await api_bot.edit_message_media(chat_id=uid,message_id=target.message_id,media=media,reply_markup=team_keyboard())
+                media = InputMediaPhoto(media=photo, caption=caption, parse_mode='HTML')
+                sent_message = await api_bot.edit_message_media(
+                    chat_id=uid, message_id=target.message_id, media=media, reply_markup=team_keyboard()
+                )
             except Exception as e:
                 print(f'Не удалось обновить фото состава на месте, отправляю новое: {e}')
-        return await api_bot.send_photo(uid,photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
-    return await target.answer_photo(photo=photo,caption=caption,reply_markup=team_keyboard(),parse_mode='HTML')
+        if sent_message is None:
+            sent_message = await api_bot.send_photo(
+                uid, photo=photo, caption=caption, reply_markup=team_keyboard(), parse_mode='HTML'
+            )
+    else:
+        sent_message = await target.answer_photo(
+            photo=photo, caption=caption, reply_markup=team_keyboard(), parse_mode='HTML'
+        )
+
+    # Telegram returns a reusable file_id after the first successful upload.
+    # Persist it so the next open/edit can send the already stored image instantly.
+    if not use_cached_photo and sent_message is not None:
+        try:
+            photo_sizes = getattr(sent_message, 'photo', None) or []
+            if photo_sizes:
+                file_id = photo_sizes[-1].file_id
+                setting = await session.get(AppSetting, cache_key)
+                value = f'{fingerprint}|{file_id}'
+                if setting:
+                    setting.setting_value = value
+                else:
+                    session.add(AppSetting(setting_key=cache_key, setting_value=value))
+                await session.commit()
+        except Exception as e:
+            print(f'Не удалось сохранить Telegram file_id состава: {e}')
+    return sent_message
 
 async def lineup_player_stats(session, cards):
     """Career goals, assists and appearances for the players in the current lineup."""
