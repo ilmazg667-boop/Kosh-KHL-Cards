@@ -166,15 +166,15 @@ async def prepare_match(match_id,bot=None):
                             image_bytes=image_cache[file_id]
                         visual_rows.append((image_bytes,card))
                     artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name,placeholder_image_bytes=placeholder_image_bytes)
-                    players_text='\\n'.join(
+                    players_text='\n'.join(
                         f"{position_icons.get(card.position,'🏒')} <b>{card.position}</b> — {html.escape(card.player_name)} · <b>{card.ovr} OVR</b>"
                         for card in roster
                     ) or 'Игроки состава не найдены'
-                    caption=(f'{label}\\n'
-                             f'🏒 <b>{html.escape(team_name)}</b>\\n'
-                             f'{players_text}\\n\\n'
-                             f'💪 <b>Сила команды: {power_value} OVR</b>\\n'
-                             f'🤝 <b>Сыгранность: {chem_value}/40</b>\\n'
+                    caption=(f'{label}\n'
+                             f'🏒 <b>{html.escape(team_name)}</b>\n'
+                             f'{players_text}\n\n'
+                             f'💪 <b>Сила команды: {power_value} OVR</b>\n'
+                             f'🤝 <b>Сыгранность: {chem_value}/40</b>\n'
                              f'🏆 Матч #{m.id}')
                     prepared_lineups.append((artwork,caption,team_name))
                 except Exception:
@@ -197,7 +197,6 @@ async def prepare_match(match_id,bot=None):
                 for roster,chem_value,power_value,team_name,label in lineups:
                     players_text='\n'.join(f'{card.position} — {card.player_name} · {card.ovr} OVR' for card in roster) or 'Игроки состава не найдены'
                     await send(bot,chat_id,f'{label}\n🏒 {team_name}\n{players_text}\n💪 Сила команды: {power_value} OVR\n🤝 Сыгранность: {chem_value}/40')
-
 
 async def finish_match(match_id,bot):
     async with Session() as s:
@@ -397,8 +396,7 @@ async def process_match(match_id,bot):
             home_name=m.home_name or 'Команда 1'
             away_name=m.away_name or 'Команда 2'
             # Calculate the live scoreboard from all events already reached.
-            prior_events=available[:previous_index]
-            live_home=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='home')
+            prior_events=available[:previous_index]            live_home=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='home')
             live_away=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='away')
             messages=[]
             for event in to_send:
@@ -597,8 +595,7 @@ async def close_old_clan_tournaments(session,bot):
                     card=await award_pack_card(session,user.id,'Премиум')
                     if card: message+=f'\n🎁 Пак «Премиум» открыт автоматически: {card.player_name} · {card.ovr} OVR · {card.rarity}.'
                 notifications.append((user.id,message))
-        old.status='completed'; old.rewarded_at=now()
-    await session.commit()
+        old.status='completed'; old.rewarded_at=now()    await session.commit()
     for user_id,message in notifications:
         await send(bot,user_id,message)
 
@@ -797,8 +794,7 @@ async def run_worker():
                         active_tasks.pop(mid,None)
                 if ids:
                     logger.info('Cycle %s: queued=%s running=%s searching=%s active_tasks=%s',cycle,queued,running,searching_count,len(active_tasks))
-                elif cycle==1 or cycle%30==0:
-                    logger.info('Worker alive; searching=%s queued=0 running=0 active_tasks=%s',searching_count,len(active_tasks))
+                elif cycle==1 or cycle%30==0:                    logger.info('Worker alive; searching=%s queued=0 running=0 active_tasks=%s',searching_count,len(active_tasks))
                 await asyncio.sleep(2)
             except asyncio.CancelledError:
                 logger.info('Worker shutdown requested')
