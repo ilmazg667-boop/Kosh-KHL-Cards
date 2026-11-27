@@ -596,7 +596,8 @@ async def close_old_clan_tournaments(session,bot):
                     card=await award_pack_card(session,user.id,'Премиум')
                     if card: message+=f'\n🎁 Пак «Премиум» открыт автоматически: {card.player_name} · {card.ovr} OVR · {card.rarity}.'
                 notifications.append((user.id,message))
-        old.status='completed'; old.rewarded_at=now()    await session.commit()
+        old.status='completed'; old.rewarded_at=now()
+    await session.commit()
     for user_id,message in notifications:
         await send(bot,user_id,message)
 
@@ -795,7 +796,8 @@ async def run_worker():
                         active_tasks.pop(mid,None)
                 if ids:
                     logger.info('Cycle %s: queued=%s running=%s searching=%s active_tasks=%s',cycle,queued,running,searching_count,len(active_tasks))
-                elif cycle==1 or cycle%30==0:                    logger.info('Worker alive; searching=%s queued=0 running=0 active_tasks=%s',searching_count,len(active_tasks))
+                elif cycle==1 or cycle%30==0:
+                    logger.info('Worker alive; searching=%s queued=0 running=0 active_tasks=%s',searching_count,len(active_tasks))
                 await asyncio.sleep(2)
             except asyncio.CancelledError:
                 logger.info('Worker shutdown requested')
