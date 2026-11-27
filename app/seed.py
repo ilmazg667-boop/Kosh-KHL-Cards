@@ -71,9 +71,7 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             if len(keyed) == 1:
                 current = keyed[0]
         if current is None:
-            if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)) and card.player_name != 'Илья Ковальчук':
-                card.ovr = min(100, card.ovr + 2)
-                card.rating_boosted = True
+            card.rating_boosted = False
             session.add(card)
             existing_by_identity[identity] = card
             existing_by_player_edition[_card_seed_identity_without_league(card)] = card
@@ -81,12 +79,8 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.player_name = card.player_name
             current.player_key = card.player_key
             current.position = card.position
-            if card.league in ('КХЛ', 'Завершили карьеру') and not (card.player_name == 'Семён Кошелев' and card.ovr in (95,99)) and card.player_name != 'Илья Ковальчук':
-                current.ovr = min(100, card.ovr + 2)
-                current.rating_boosted = True
-            else:
-                current.ovr = card.ovr
-                current.rating_boosted = False
+            current.ovr = card.ovr
+            current.rating_boosted = False
             current.rarity = card.rarity
             current.country = card.country
             current.club = card.club
