@@ -85,17 +85,18 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
     draw.rounded_rectangle((748, 735, 852, 766), radius=8, outline=WHITE, width=3)
 
     # Three forwards across the top, two defenders in the middle, goalie at the bottom.
-    draw.text((800, 65), 'НАПАДЕНИЕ', font=_font(17, True), fill=MINT, anchor='mm')
-    draw.text((800, 305), 'ЗАЩИТА', font=_font(17, True), fill=MINT, anchor='mm')
-    draw.text((800, 545), 'ВРАТАРЬ', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 76), 'НАПАДЕНИЕ', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 358), 'ЗАЩИТА', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 485), 'ВРАТАРЬ', font=_font(17, True), fill=MINT, anchor='mm')
 
+    # Larger portrait slots: 210x260 for skaters and 210x270 for the goalie.
     bays = {
-        'LW': (385, 92, 555, 302),
-        'C':  (715, 92, 885, 302),
-        'RW': (1045, 92, 1215, 302),
-        'LD': (535, 330, 705, 540),
-        'RD': (895, 330, 1065, 540),
-        'G':  (715, 570, 885, 780),
+        'LW': (370, 92, 580, 352),
+        'C':  (695, 92, 905, 352),
+        'RW': (1030, 92, 1240, 352),
+        'LD': (520, 365, 730, 625),
+        'RD': (870, 365, 1080, 625),
+        'G':  (695, 495, 905, 765),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
