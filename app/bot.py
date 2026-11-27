@@ -588,7 +588,13 @@ async def main():
         async with Session() as s:
             try:
                 u=await active_user(s,c.from_user); card=await equip_card(s,c.from_user.id,oid,pos)
-                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=True,team_name=u.team_name)
+                # Send a fresh lineup photo after equipping; Telegram may keep the
+                # previous media cached when editing the old team message in place.
+                await send_team_art(c.message,s,c.from_user.id,bot=c.bot,replace_message=False,team_name=u.team_name)
+                try:
+                    await c.message.delete()
+                except Exception as e:
+                    print(f'Не удалось удалить старое фото состава: {e}')
             except ValueError as e: await c.answer(str(e),show_alert=True); return
         await c.answer('Состав обновлён.')
 
