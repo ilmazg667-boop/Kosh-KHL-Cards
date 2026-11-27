@@ -6,13 +6,7 @@ POSITIONS = ['LW','C','RW','LD','RD','G']
 RARITIES = ['Обычный','Редкий','Элитный','Сверхредкий','Эпический','Мифический','Легендарный','Хроматический','Легенда','Икона']
 # Non-overlapping OVR bands: rarity is determined by rating, never catalogue order.
 RARITY_RANGES = {'Обычный':(50,73),'Редкий':(74,77),'Элитный':(78,81),'Сверхредкий':(82,85),'Эпический':(86,89),'Мифический':(90,92),'Легендарный':(93,95),'Хроматический':(96,97),'Легенда':(98,99),'Икона':(100,100)}
-# Explicit one-off exception retained from the catalogue; add exceptional editions here.
-RARITY_OVR_OVERRIDES = {'legacy116:054':'Легендарный'}
-
 def rarity_for_ovr(ovr, player_key=''):
-    key = (player_key or '').strip()
-    if key in RARITY_OVR_OVERRIDES:
-        return RARITY_OVR_OVERRIDES[key]
     rating = int(ovr)
     for rarity, (low, high) in RARITY_RANGES.items():
         if low <= rating <= high:
