@@ -189,24 +189,44 @@ async def answer_card_photo(message, card, caption, reply_markup=None, session=N
         except Exception as e:
             print(f'Не удалось показать изображение карточки {card.id}: {e}')
     elif image_url:
-        # Older uploads may contain a bare Telegram file_id without the tgfile: prefix.
+        # Cache the converted Telegram photo file_id in AppSetting. The source
+        # upload is a Telegram document, so its original file_id cannot be used
+        # with sendPhoto; after the first conversion, future opens are instant.
         telegram_file_id = image_url.split(':', 1)[1] if image_url.startswith('tgfile:') else image_url
+        cache_key = 'card_photo_cache:' + hashlib.sha256(telegram_file_id.encode('utf-8')).hexdigest()
+        cached_photo_id = None
+        cache_setting = await session.get(AppSetting, cache_key) if session is not None else None
+        if cache_setting and cache_setting.setting_value:
+            cached_photo_id = cache_setting.setting_value
+        if cached_photo_id:
+            try:
+                await message.answer_photo(photo=cached_photo_id,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+                return
+            except Exception as cache_error:
+                print(f'Кэш фото карточки {card.id} недействителен, пересоздаю: {cache_error}')
+                if session is not None:
+                    await session.delete(cache_setting)
+                    await session.commit()
         try:
             await message.answer_photo(photo=telegram_file_id,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
             return
         except Exception as e:
             print(f'Не удалось отправить Telegram-фото карточки {card.id}: {e}')
-            # Images uploaded as Telegram documents cannot be sent by file_id as photos.
-            # Download the original document and re-upload its bytes as a photo.
+            # First-time conversion of a Telegram document into a reusable photo.
             try:
                 from aiogram.types import BufferedInputFile
                 telegram_file = await message.bot.get_file(telegram_file_id)
                 downloaded = await message.bot.download_file(telegram_file.file_path)
                 image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
-                await message.answer_photo(
+                sent = await message.answer_photo(
                     photo=BufferedInputFile(image_bytes, filename=f'card-{card.id}.jpg'),
                     caption=caption, reply_markup=reply_markup, parse_mode='HTML'
                 )
+                sent_photos = getattr(sent, 'photo', None) or []
+                if sent_photos and session is not None:
+                    setting = AppSetting(setting_key=cache_key, setting_value=sent_photos[-1].file_id)
+                    session.add(setting)
+                    await session.commit()
                 return
             except Exception as download_error:
                 print(f'Не удалось скачать и отправить документ карточки {card.id}: {download_error}')
