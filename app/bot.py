@@ -188,9 +188,11 @@ async def answer_card_photo(message, card, caption, reply_markup=None, session=N
             return
         except Exception as e:
             print(f'Не удалось показать изображение карточки {card.id}: {e}')
-    elif image_url.startswith('tgfile:'):
+    elif image_url:
+        # Older uploads may contain a bare Telegram file_id without the tgfile: prefix.
+        telegram_file_id = image_url.split(':', 1)[1] if image_url.startswith('tgfile:') else image_url
         try:
-            await message.answer_photo(photo=image_url.split(':',1)[1],caption=caption,reply_markup=reply_markup,parse_mode='HTML')
+            await message.answer_photo(photo=telegram_file_id,caption=caption,reply_markup=reply_markup,parse_mode='HTML')
             return
         except Exception as e:
             print(f'Не удалось отправить Telegram-фото карточки {card.id}: {e}')
