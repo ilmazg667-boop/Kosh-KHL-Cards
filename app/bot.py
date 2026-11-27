@@ -3567,7 +3567,7 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         _card_upload_states[c.from_user.id]={'stage':'placeholder_file'}
-        await c.message.edit_text('🖼️ <b>Загрузка карточки-заглушки</b>\n\nОтправьте изображение заглушки документом (без сжатия). Оно будет показываться в составе вместо карточек игроков, для которых ещё не загружено изображение.',parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
+        await c.message.edit_text('🖼️ <b>Загрузка карточки-заглушки</b>\n\nОтправьте изображение заглушки как обычное фото или документ (без сжатия — лучше документом). Оно будет показываться в составе вместо карточек игроков, для которых ещё не загружено изображение.',parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
         await c.answer()
 
     @dp.callback_query(F.data=='cu:cancel')
@@ -3622,7 +3622,7 @@ async def main():
                     await c.answer('Игрок не найден в выбранной категории.',show_alert=True); return
                 state['card_id']=card.id
                 state['stage']='file'
-                label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> файлом (как документ, без сжатия).\n\n{card.league} · {card.club} · {rarity_label(card.rarity)} · {card.ovr} OVR'
+                label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> обычным фото или документом (документ сохраняет исходное качество).\n\n{card.league} · {card.club} · {rarity_label(card.rarity)} · {card.ovr} OVR'
             await c.message.edit_text(label,parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
         _card_upload_states[c.from_user.id]=state
 
@@ -3648,7 +3648,7 @@ async def main():
         if pending and pending.get('stage')=='placeholder_file':
             filename=filename or 'team-placeholder'
             if not mime.startswith('image/'):
-                await m.answer('Нужен файл изображения (PNG/JPG), отправленный как документ.'); return
+                await m.answer('Нужно изображение PNG/JPG: отправьте его обычным фото или документом.'); return
             if (file_size or 0)>15*1024*1024:
                 await m.answer('Файл должен быть меньше 15 МБ.'); return
             async with Session() as s:
