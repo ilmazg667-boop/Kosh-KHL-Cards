@@ -44,7 +44,7 @@ async def init_db():
                         if table == 'matches' and name == 'result_sent':
                             await conn.exec_driver_sql("UPDATE matches SET result_sent=1 WHERE status='completed' AND finished_at < datetime('now','-1 hour')")
             await conn.exec_driver_sql("UPDATE tournament_entries SET games=(SELECT COUNT(*) FROM matches m JOIN daily_tournaments t ON t.id=tournament_entries.tournament_id WHERE m.status='completed' AND m.created_at>=t.created_at AND m.created_at<=COALESCE(t.rewarded_at,CURRENT_TIMESTAMP) AND (m.home_user_id=tournament_entries.user_id OR m.away_user_id=tournament_entries.user_id)) WHERE games=0")
-            await conn.exec_driver_sql("UPDATE cards SET ovr=MIN(ovr+2,100), rating_boosted=1 WHERE league='КХЛ' AND rating_boosted=0 AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
+            await conn.exec_driver_sql("UPDATE cards SET ovr=MAX(50,ovr-2), rating_boosted=0 WHERE rating_boosted=1")
             await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN datetime(created_at,'+2 minutes') ELSE datetime(created_at,'+5 minutes') END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
         else:
             await conn.exec_driver_sql("UPDATE pack_configs SET price=price*3 WHERE (name='Обычный' AND price=2000) OR (name='Премиум' AND price=6000) OR (name='Элитный' AND price=14000) OR (name='Мифический' AND price=32000) OR (name='Легендарный' AND price=120) OR (name='Хроматический' AND price=300)")
@@ -75,5 +75,5 @@ async def init_db():
             ):
                 await conn.exec_driver_sql(statement)
             await conn.exec_driver_sql("UPDATE tournament_entries e SET games=(SELECT COUNT(*) FROM matches m JOIN daily_tournaments t ON t.id=e.tournament_id WHERE m.status='completed' AND m.created_at>=t.created_at AND m.created_at<=COALESCE(t.rewarded_at,NOW()) AND (m.home_user_id=e.user_id OR m.away_user_id=e.user_id)) WHERE e.games=0")
-            await conn.exec_driver_sql("UPDATE cards SET ovr=LEAST(ovr+2,100), rating_boosted=TRUE WHERE league='КХЛ' AND rating_boosted=FALSE AND NOT (player_name='Семён Кошелев' AND ovr IN (95,99))")
+            await conn.exec_driver_sql("UPDATE cards SET ovr=GREATEST(50,ovr-2), rating_boosted=FALSE WHERE rating_boosted=TRUE")
             await conn.exec_driver_sql("UPDATE trade_offers SET expires_at=CASE WHEN status='pending' THEN created_at + INTERVAL '2 minutes' ELSE created_at + INTERVAL '5 minutes' END WHERE status IN ('pending','negotiating') AND expires_at IS NULL")
