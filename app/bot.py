@@ -302,7 +302,7 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
         )
         photo = BufferedInputFile(image_bytes, filename='kosh-team.png')
 
-    caption = f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\\n📊 <b>Статистика игроков за все завершённые матчи:</b>\\n' + ('\\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.') + '\\n\\nСостав обновляется автоматически после каждой замены карточки.'
+    caption = f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n' + ('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.') + '\n\nСостав обновляется автоматически после каждой замены карточки.'
     sent_message = None
     if api_bot is not None:
         if getattr(target, 'photo', None):
@@ -3616,7 +3616,7 @@ async def main():
             _CARD_PLACEHOLDER_FILE_ID=file_id
             _CARD_PLACEHOLDER_LOADED=True
             _card_upload_states.pop(m.from_user.id,None)
-            await m.answer('✅ Карточка-заглушка состава обновлена. Теперь она будет показываться вместо изображений игроков, для которых ещё не загружена карточка.\\n\\nЧтобы заменить её снова: /uploadcards → 🖼️ Карточка-заглушка.')
+            await m.answer('✅ Карточка-заглушка состава обновлена. Теперь она будет показываться вместо изображений игроков, для которых ещё не загружена карточка.\n\nЧтобы заменить её снова: /uploadcards → 🖼️ Карточка-заглушка.')
             return
         if pending and pending.get('stage')=='file':
             filename=filename or 'card-image'
