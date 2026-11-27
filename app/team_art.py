@@ -42,23 +42,24 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
     for cx, cy in ((235, 225), (235, 575), (1045, 225), (1045, 575)):
         draw.ellipse((cx - 100, cy - 100, cx + 100, cy + 100), outline=(198, 54, 57), width=3)
         draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill=(219, 74, 73))
-    draw.arc((1090, 300, 1270, 500), 90, 270, fill=(63, 128, 245), width=4)
-    draw.rounded_rectangle((1190, 355, 1250, 445), radius=10, outline=(224, 230, 245), width=4)
+    # Goal and crease at the left end: goalie stays directly in front of the net.
+    draw.arc((8, 300, 190, 500), 270, 90, fill=(63, 128, 245), width=4)
+    draw.rounded_rectangle((18, 355, 78, 445), radius=10, outline=(224, 230, 245), width=4)
 
-    # Compact team badge in the upper-left corner.
+    # Compact team name and overall rating in the opposite upper corner.
     name = str(team_name or 'Моя команда')
-    draw.rounded_rectangle((22, 18, 360, 112), radius=18, fill=(12, 19, 34), outline=(112, 61, 34), width=2)
-    draw.text((42, 30), name, font=_fit(draw, name, 285, 25, True), fill=CREAM)
-    draw.text((42, 70), f'СИЛА СОСТАВА  {strength} OVR', font=_font(19, True), fill=ORANGE)
+    draw.rounded_rectangle((850, 18, 1258, 108), radius=18, fill=(12, 19, 34), outline=(112, 61, 34), width=2)
+    draw.text((874, 28), name, font=_fit(draw, name, 350, 25, True), fill=CREAM)
+    draw.text((874, 67), f'СИЛА СОСТАВА  {strength} OVR', font=_font(19, True), fill=ORANGE)
 
-    # Six enlarged card bays spread across the full rink.
+    # Bigger cards in a clear hockey formation: center forward, wings, defense, goalie.
     bays = {
-        'LW': (350, 78, 510, 290),
-        'LD': (760, 132, 920, 344),
-        'C':  (560, 294, 720, 506),
-        'G':  (1050, 294, 1210, 506),
-        'RD': (760, 456, 920, 668),
-        'RW': (350, 510, 510, 722),
+        'C':  (970, 270, 1170, 530),
+        'LW': (700, 55, 900, 315),
+        'RW': (700, 485, 900, 745),
+        'LD': (390, 85, 590, 345),
+        'RD': (390, 455, 590, 715),
+        'G':  (85, 270, 285, 530),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
