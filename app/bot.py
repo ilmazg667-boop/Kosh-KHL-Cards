@@ -3450,8 +3450,13 @@ async def main():
             state['league']=values[int(value)]
             await card_upload_show(c,c.from_user.id,'rarity')
         elif stage=='rarity':
-            if value not in RARITIES: await c.answer('Редкость не найдена.',show_alert=True); return
-            state['rarity']=value
+            try:
+                rarity_index=int(value)
+            except (TypeError, ValueError):
+                await c.answer('Редкость не найдена.',show_alert=True); return
+            if not 0<=rarity_index<len(RARITIES):
+                await c.answer('Редкость не найдена.',show_alert=True); return
+            state['rarity']=RARITIES[rarity_index]
             await card_upload_show(c,c.from_user.id,'club')
         elif stage=='club':
             async with Session() as s:
