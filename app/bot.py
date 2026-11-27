@@ -3381,7 +3381,16 @@ async def main():
                 values=(await s.scalars(select(Card.club).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity')).distinct().order_by(Card.club))).all()
                 title='🏒 Выберите команду'
             else:
-                values=(await s.scalars(select(Card).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity'),Card.club==state.get('club')).order_by(Card.player_name,Card.id))).all()
+                rows=(await s.scalars(select(Card).where(Card.active.is_(True),Card.league==state.get('league'),Card.rarity==state.get('rarity'),Card.club==state.get('club')).order_by(Card.player_name,Card.id))).all()
+                values=[]
+                seen_players=set()
+                for card in rows:
+                    player_key=(card.player_key or '').strip().casefold()
+                    identity=('key',player_key) if player_key else ('name',' '.join((card.player_name or '').casefold().split()))
+                    if identity in seen_players:
+                        continue
+                    seen_players.add(identity)
+                    values.append(card)
                 title='👤 Выберите игрока'
         state['stage']=stage
         _card_upload_states[uid]=state
@@ -3527,12 +3536,24 @@ async def main():
                 if not card:
                     _card_upload_states.pop(m.from_user.id,None)
                     await m.answer('Карточка игрока больше не найдена. Начните заново: /uploadcards'); return
-                card.image_url='tgfile:'+file_id
-                await audit(s,m.from_user.id,'upload_player_card',card.id,f'{filename} · Telegram file_id')
+                if card.player_key:
+                    matching=(await s.scalars(select(Card).where(
+                        Card.active.is_(True), Card.player_key==card.player_key,
+                        Card.league==card.league, Card.rarity==card.rarity, Card.club==card.club
+                    ))).all()
+                else:
+                    matching=(await s.scalars(select(Card).where(
+                        Card.active.is_(True), Card.player_name==card.player_name,
+                        Card.league==card.league, Card.rarity==card.rarity, Card.club==card.club
+                    ))).all()
+                for duplicate in matching or [card]:
+                    duplicate.image_url='tgfile:'+file_id
+                await audit(s,m.from_user.id,'upload_player_card',card.id,f'{filename} · Telegram file_id · updated {len(matching or [card])} matching records')
                 await s.commit()
                 player_name=card.player_name
+                updated_count=len(matching or [card])
             _card_upload_states.pop(m.from_user.id,None)
-            await m.answer(f'✅ Карточка игрока <b>{html.escape(player_name)}</b> сохранена и привязана.\n\nМожешь загрузить следующую: /uploadcards',parse_mode='HTML')
+            await m.answer(f'✅ Карточка игрока <b>{html.escape(player_name)}</b> сохранена и привязана.\nОбновлено записей: {updated_count}.\n\nМожешь загрузить следующую: /uploadcards',parse_mode='HTML')
             return
         if not doc:
             await m.answer('Для CSV пришлите файл документом.'); return
