@@ -196,6 +196,20 @@ async def answer_card_photo(message, card, caption, reply_markup=None, session=N
             return
         except Exception as e:
             print(f'Не удалось отправить Telegram-фото карточки {card.id}: {e}')
+            # Images uploaded as Telegram documents cannot be sent by file_id as photos.
+            # Download the original document and re-upload its bytes as a photo.
+            try:
+                from aiogram.types import BufferedInputFile
+                telegram_file = await message.bot.get_file(telegram_file_id)
+                downloaded = await message.bot.download_file(telegram_file.file_path)
+                image_bytes = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+                await message.answer_photo(
+                    photo=BufferedInputFile(image_bytes, filename=f'card-{card.id}.jpg'),
+                    caption=caption, reply_markup=reply_markup, parse_mode='HTML'
+                )
+                return
+            except Exception as download_error:
+                print(f'Не удалось скачать и отправить документ карточки {card.id}: {download_error}')
     if not _CARD_PLACEHOLDER_LOADED and session is not None:
         try:
             setting=await session.get(AppSetting,'team_card_placeholder')
