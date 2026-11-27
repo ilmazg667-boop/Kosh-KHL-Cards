@@ -1,4 +1,5 @@
 import asyncio, csv, os, random, shlex, html, time
+import aiohttp
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -220,8 +221,39 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     for _,card in rows:
         st=stats.get(card.player_key,{'games':0,'goals':0,'assists':0})
         stat_lines.append(f"• {html.escape(card.player_name)} — 🏒 {st['goals']} гол. · 🎯 {st['assists']} ассист. · ⭐ {st['goals']+st['assists']} очк. · 🏒 {st['games']} матч.")
-    # Use the same admin-configured placeholder for the team screen and match lineups.
+    # Download each equipped card's artwork before rendering the lineup image.
+    # The renderer expects (image_bytes, Card), not (OwnedCard, Card).
     api_bot = bot or getattr(target, 'bot', None)
+    render_rows = []
+    http_cards = [card for _, card in rows if str(card.image_url or '').strip().startswith(('https://', 'http://'))]
+    http_images = {}
+    if http_cards:
+        try:
+            timeout = aiohttp.ClientTimeout(total=12, connect=5)
+            async with aiohttp.ClientSession(timeout=timeout) as http:
+                for card in http_cards:
+                    try:
+                        async with http.get(str(card.image_url).strip()) as response:
+                            response.raise_for_status()
+                            data = await response.read()
+                            if data and len(data) <= 8 * 1024 * 1024:
+                                http_images[card.id] = data
+                    except Exception as e:
+                        print(f'Не удалось загрузить фото игрока {card.id}: {e}')
+        except Exception as e:
+            print(f'Ошибка HTTP-загрузчика фото состава: {e}')
+    for _, card in rows:
+        image_data = http_images.get(card.id)
+        image_url = str(card.image_url or '').strip()
+        if image_data is None and api_bot is not None and image_url.startswith('tgfile:'):
+            try:
+                telegram_file = await api_bot.get_file(image_url.split(':', 1)[1])
+                downloaded = await api_bot.download_file(telegram_file.file_path)
+                image_data = downloaded.read() if hasattr(downloaded, 'read') else downloaded
+            except Exception as e:
+                print(f'Не удалось загрузить Telegram-фото игрока {card.id}: {e}')
+        render_rows.append((image_data, card))
+    # Use the same admin-configured placeholder for the team screen and match lineups.
     placeholder_image_bytes = None
     if api_bot is not None:
         try:
@@ -240,7 +272,7 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
                         _TEAM_PLACEHOLDER_CACHE[file_id]=placeholder_image_bytes
         except Exception as e:
             print(f'Не удалось загрузить заглушку состава: {e}')
-    image_bytes=render_team_art_image(rows,strength,ch,team_name,placeholder_image_bytes=placeholder_image_bytes)
+    image_bytes=render_team_art_image(render_rows,strength,ch,team_name,placeholder_image_bytes=placeholder_image_bytes)
     photo=BufferedInputFile(image_bytes,filename='kosh-team.png')
     caption=f'🏒 <b>{html.escape(team_name or "Моя команда")}</b>\n📊 <b>Статистика игроков за все завершённые матчи:</b>\n'+('\n'.join(stat_lines) if stat_lines else 'Пока нет игроков в составе.')+'\n\nСостав обновляется автоматически после каждой замены карточки.'
     if api_bot is not None:
