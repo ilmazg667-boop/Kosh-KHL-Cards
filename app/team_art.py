@@ -65,12 +65,12 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
 
     # Six dashed position bays exactly follow the reference image.
     bays = {
-        'LW': (630, 65, 778, 262),
-        'LD': (910, 119, 1058, 317),
-        'C':  (730, 305, 878, 503),
-        'G':  (1074, 305, 1222, 503),
-        'RD': (910, 491, 1058, 689),
-        'RW': (630, 545, 778, 743),
+        'LW': (624, 58, 784, 270),
+        'LD': (904, 112, 1064, 324),
+        'C':  (724, 298, 884, 510),
+        'G':  (1068, 298, 1228, 510),
+        'RD': (904, 484, 1064, 696),
+        'RW': (624, 538, 784, 750),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
@@ -83,7 +83,7 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
             if image_data:
                 try:
                     card_image = Image.open(BytesIO(image_data)).convert('RGB')
-                    card_image.thumbnail((x2 - x1 - 14, y2 - y1 - 14), Image.Resampling.LANCZOS)
+                    card_image.thumbnail((x2 - x1 - 8, y2 - y1 - 8), Image.Resampling.LANCZOS)
                     px = x1 + ((x2 - x1) - card_image.width) // 2
                     py = y1 + ((y2 - y1) - card_image.height) // 2
                     image.paste(card_image, (px, py))
