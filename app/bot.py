@@ -431,6 +431,17 @@ async def get_match_for_user(session,uid):
 
 _MENU_PHOTO_MESSAGES = {}
 _card_upload_states = {}
+_CARD_UPLOAD_LEAGUES_CACHE = {'at': 0.0, 'values': []}
+
+async def get_card_upload_leagues(session):
+    now = time.monotonic()
+    if now - _CARD_UPLOAD_LEAGUES_CACHE['at'] > 60:
+        values = (await session.scalars(
+            select(Card.league).where(Card.active.is_(True)).distinct().order_by(Card.league)
+        )).all()
+        _CARD_UPLOAD_LEAGUES_CACHE['values'] = list(values)
+        _CARD_UPLOAD_LEAGUES_CACHE['at'] = now
+    return list(_CARD_UPLOAD_LEAGUES_CACHE['values'])
 
 async def main():
     if not BOT_TOKEN: raise RuntimeError('Укажите BOT_TOKEN в файле .env')
@@ -3465,7 +3476,7 @@ async def main():
         kb=InlineKeyboardBuilder()
         async with Session() as s:
             if stage=='league':
-                values=(await s.scalars(select(Card.league).where(Card.active.is_(True)).distinct().order_by(Card.league))).all()
+                values=await get_card_upload_leagues(s)
                 title='🌍 Выберите лигу'
             elif stage=='rarity':
                 values=list(RARITIES)
@@ -3534,8 +3545,8 @@ async def main():
         if not admin(c.from_user.id):
             await c.answer('Нет доступа.',show_alert=True); return
         _,_,stage,page=c.data.split(':',3)
-        await card_upload_show(c,c.from_user.id,stage,int(page))
         await c.answer()
+        await card_upload_show(c,c.from_user.id,stage,int(page))
 
     @dp.callback_query(F.data.startswith('cu:pick:'))
     async def upload_cards_pick(c:CallbackQuery):
@@ -3545,9 +3556,10 @@ async def main():
         state=_card_upload_states.get(c.from_user.id)
         if state is None:
             await c.answer('Начните заново: /uploadcards',show_alert=True); return
+        await c.answer()
         if stage=='league':
             async with Session() as s:
-                values=(await s.scalars(select(Card.league).where(Card.active.is_(True)).distinct().order_by(Card.league))).all()
+                values=await get_card_upload_leagues(s)
             if not 0<=int(value)<len(values): await c.answer('Лига не найдена.',show_alert=True); return
             state['league']=values[int(value)]
             await card_upload_show(c,c.from_user.id,'rarity')
@@ -3577,7 +3589,6 @@ async def main():
                 label=f'📤 Теперь отправьте карточку игрока <b>{html.escape(card.player_name)}</b> файлом (как документ, без сжатия).\n\n{card.league} · {card.club} · {rarity_label(card.rarity)} · {card.ovr} OVR'
             await c.message.edit_text(label,parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✖️ Отмена',callback_data='cu:cancel')]]))
         _card_upload_states[c.from_user.id]=state
-        await c.answer()
 
     @dp.message(Command('season_reset'))
     async def season_reset(m):
