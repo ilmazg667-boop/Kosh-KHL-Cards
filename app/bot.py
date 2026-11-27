@@ -18,6 +18,7 @@ from .seed import seed_cards
 from .game import PACKS, POSITIONS, RARITIES, RARITY_RANGES, PVE_REWARDS, LEAGUES, team_power, league_for_rating, adjust_pack_odds, rarity_for_ovr
 from .worker import run_worker, prepare_match
 from .team_art import render_team_art_image
+from .image_fetch import PublicResolver, download_card_image
 from .services import (get_or_create_user, lineup, claim_daily, open_pack, equip_card,
     start_pve_match, start_pvp_queue, create_market_listing, buy_market_listing,
     create_trade, resolve_trade, set_trade_card, set_trade_currency, confirm_trade, submit_auction_card, place_bid,
@@ -229,17 +230,31 @@ async def send_team_art(target, session, uid, bot=None, replace_message=False, t
     http_images = {}
     if http_cards:
         try:
-            timeout = aiohttp.ClientTimeout(total=12, connect=5)
-            async with aiohttp.ClientSession(timeout=timeout) as http:
-                for card in http_cards:
-                    try:
-                        async with http.get(str(card.image_url).strip()) as response:
-                            response.raise_for_status()
-                            data = await response.read()
-                            if data and len(data) <= 8 * 1024 * 1024:
-                                http_images[card.id] = data
-                    except Exception as e:
-                        print(f'Не удалось загрузить фото игрока {card.id}: {e}')
+            timeout = aiohttp.ClientTimeout(total=8, connect=3, sock_read=5)
+            connector = aiohttp.TCPConnector(
+                resolver=PublicResolver(),
+                limit=6,
+                limit_per_host=3,
+                ttl_dns_cache=60,
+            )
+            async with aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector,
+                trust_env=False,
+            ) as http:
+                semaphore = asyncio.Semaphore(3)
+
+                async def download(card):
+                    async with semaphore:
+                        try:
+                            data = await download_card_image(http, card.image_url)
+                            return card.id, data
+                        except Exception as e:
+                            print(f'Не удалось загрузить фото игрока {card.id}: {e}')
+                            return card.id, None
+
+                downloaded = await asyncio.gather(*(download(card) for card in http_cards))
+                http_images = {card_id: data for card_id, data in downloaded if data}
         except Exception as e:
             print(f'Ошибка HTTP-загрузчика фото состава: {e}')
     for _, card in rows:
