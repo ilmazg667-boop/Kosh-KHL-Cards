@@ -141,35 +141,51 @@ async def prepare_match(match_id,bot=None):
         if bot:
             from aiogram.types import BufferedInputFile
             from .team_art import render_team_art_image
-            for chat_id in recipients:
-                for roster,chem_value,power_value,team_name,label in lineups:
-                    try:
-                        visual_rows=[]
-                        for card in roster:
-                            image_bytes=None
-                            if card.image_url and str(card.image_url).startswith('tgfile:') and card.rarity in ('Эпический','Мифический','Легендарный','Хроматический','Легенда','Икона'):
+
+            # Render each team's artwork once and reuse it for every recipient.
+            # Cache Telegram file downloads within this match to avoid duplicate requests.
+            image_cache={}
+            prepared_lineups=[]
+            position_icons={'LW':'⚡','C':'🏒','RW':'⚡','LD':'🛡','RD':'🛡','G':'🥅'}
+            for roster,chem_value,power_value,team_name,label in lineups:
+                try:
+                    visual_rows=[]
+                    for card in roster:
+                        image_bytes=None
+                        image_url=str(card.image_url or '')
+                        if image_url.startswith('tgfile:') and card.rarity in ('Эпический','Мифический','Легендарный','Хроматический','Легенда','Икона'):
+                            file_id=image_url.split(':',1)[1]
+                            if file_id not in image_cache:
                                 try:
-                                    telegram_file=await bot.get_file(str(card.image_url).split(':',1)[1])
+                                    telegram_file=await bot.get_file(file_id)
                                     downloaded=await bot.download_file(telegram_file.file_path)
-                                    image_bytes=downloaded.read() if hasattr(downloaded,'read') else downloaded
+                                    image_cache[file_id]=downloaded.read() if hasattr(downloaded,'read') else downloaded
                                 except Exception:
+                                    image_cache[file_id]=None
                                     logger.exception('Could not download player card image: card_id=%s',card.id)
-                            visual_rows.append((image_bytes,card))
-                        artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name,placeholder_image_bytes=placeholder_image_bytes)
-                        position_icons={'LW':'⚡','C':'🏒','RW':'⚡','LD':'🛡','RD':'🛡','G':'🥅'}
-                        players_text='\n'.join(
-                            f"{position_icons.get(card.position,'🏒')} <b>{card.position}</b> — {html.escape(card.player_name)} · <b>{card.ovr} OVR</b>"
-                            for card in roster
-                        ) or 'Игроки состава не найдены'
-                        caption=(f'{label}\n'
-                                 f'🏒 <b>{html.escape(team_name)}</b>\n'
-                                 f'{players_text}\n\n'
-                                 f'💪 <b>Сила команды: {power_value} OVR</b>\n'
-                                 f'🤝 <b>Сыгранность: {chem_value}/40</b>\n'
-                                 f'🏆 Матч #{m.id}')
+                            image_bytes=image_cache[file_id]
+                        visual_rows.append((image_bytes,card))
+                    artwork=render_team_art_image(visual_rows,power_value,chem_value,team_name,placeholder_image_bytes=placeholder_image_bytes)
+                    players_text='\\n'.join(
+                        f"{position_icons.get(card.position,'🏒')} <b>{card.position}</b> — {html.escape(card.player_name)} · <b>{card.ovr} OVR</b>"
+                        for card in roster
+                    ) or 'Игроки состава не найдены'
+                    caption=(f'{label}\\n'
+                             f'🏒 <b>{html.escape(team_name)}</b>\\n'
+                             f'{players_text}\\n\\n'
+                             f'💪 <b>Сила команды: {power_value} OVR</b>\\n'
+                             f'🤝 <b>Сыгранность: {chem_value}/40</b>\\n'
+                             f'🏆 Матч #{m.id}')
+                    prepared_lineups.append((artwork,caption,team_name))
+                except Exception:
+                    logger.exception('Could not prepare combined lineup: match=%s team=%s',m.id,team_name)
+
+            for chat_id in recipients:
+                for artwork,caption,team_name in prepared_lineups:
+                    try:
                         await bot.send_photo(
                             chat_id,
-                            BufferedInputFile(artwork,filename=f'match-{m.id}-{chat_id}-lineup.png'),
+                            BufferedInputFile(artwork,filename=f'match-{m.id}-lineup.png'),
                             caption=caption,
                             parse_mode='HTML'
                         )
