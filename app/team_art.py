@@ -2,13 +2,13 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 1280, 800
-BG = (14, 20, 38)
-PANEL = (22, 30, 55)
-PANEL_LIGHT = (31, 43, 73)
-ACCENT = (112, 93, 255)
-MINT = (86, 230, 202)
-WHITE = (239, 244, 255)
-MUTED = (155, 171, 198)
+BG = (12, 31, 39)
+PANEL = (17, 45, 53)
+PANEL_LIGHT = (24, 59, 67)
+ACCENT = (245, 169, 72)
+MINT = (255, 207, 128)
+WHITE = (235, 246, 242)
+MUTED = (148, 183, 183)
 
 
 def _font(size, bold=False):
@@ -64,39 +64,38 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
     draw.rounded_rectangle((66, 644, 66 + int(194 * progress), 654), radius=5, fill=MINT)
 
     # Rink area, visually separated from the team information.
-    draw.rounded_rectangle((320, 24, 1256, 776), radius=42, fill=(18, 27, 49), outline=(79, 91, 145), width=3)
-    draw.rounded_rectangle((332, 36, 1244, 764), radius=34, outline=(48, 66, 103), width=2)
+    draw.rounded_rectangle((320, 24, 1256, 776), radius=42, fill=(15, 39, 47), outline=(66, 111, 115), width=3)
+    draw.rounded_rectangle((332, 36, 1244, 764), radius=34, outline=(43, 78, 84), width=2)
     # Subtle ice texture.
     for x in range(350, 1240, 38):
-        draw.line((x, 40, x, 760), fill=(23, 35, 61), width=1)
+        draw.line((x, 40, x, 760), fill=(20, 48, 56), width=1)
 
     # Hockey markings inside the rink.
-    draw.line((800, 38, 800, 762), fill=(103, 76, 158), width=4)
-    draw.line((500, 38, 500, 762), fill=(54, 105, 145), width=3)
-    draw.line((1100, 38, 1100, 762), fill=(54, 105, 145), width=3)
-    draw.ellipse((680, 285, 920, 525), outline=(103, 76, 158), width=3)
+    draw.line((800, 38, 800, 762), fill=(70, 105, 110), width=4)
+    draw.line((500, 38, 500, 762), fill=(43, 83, 91), width=3)
+    draw.line((1100, 38, 1100, 762), fill=(43, 83, 91), width=3)
+    draw.ellipse((680, 285, 920, 525), outline=(70, 105, 110), width=3)
     draw.ellipse((788, 393, 812, 417), fill=ACCENT)
     for cx, cy in ((430, 210), (430, 590), (1140, 210), (1140, 590)):
-        draw.ellipse((cx - 58, cy - 58, cx + 58, cy + 58), outline=(70, 91, 133), width=2)
+        draw.ellipse((cx - 58, cy - 58, cx + 58, cy + 58), outline=(45, 82, 89), width=2)
         draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=MINT)
 
-    # Goal at the back of the formation.
-    draw.arc((322, 300, 430, 500), 270, 90, fill=MINT, width=4)
-    draw.rounded_rectangle((330, 355, 372, 445), radius=8, outline=WHITE, width=3)
+    # Goal crease behind the goalie at the bottom of the rink.
+    draw.arc((680, 650, 920, 850), 180, 360, fill=MINT, width=4)
+    draw.rounded_rectangle((748, 735, 852, 766), radius=8, outline=WHITE, width=3)
 
-    # Position labels and enlarged card bays.
-    draw.text((1005, 65), 'ЦЕНТР', font=_font(17, True), fill=MINT, anchor='mm')
-    draw.text((885, 65), 'КРАЙНИЕ', font=_font(17, True), fill=MUTED, anchor='mm')
-    draw.text((665, 65), 'ЗАЩИТА', font=_font(17, True), fill=MUTED, anchor='mm')
-    draw.text((425, 250), 'ВРАТАРЬ', font=_font(16, True), fill=MINT, anchor='mm')
+    # Three forwards across the top, two defenders in the middle, goalie at the bottom.
+    draw.text((800, 65), 'НАПАДЕНИЕ', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 305), 'ЗАЩИТА', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 545), 'ВРАТАРЬ', font=_font(17, True), fill=MINT, anchor='mm')
 
     bays = {
-        'C':  (1005, 270, 1205, 530),
-        'LW': (785, 85, 985, 345),
-        'RW': (785, 455, 985, 715),
-        'LD': (565, 85, 765, 345),
-        'RD': (565, 455, 765, 715),
-        'G':  (385, 270, 585, 530),
+        'LW': (385, 92, 555, 302),
+        'C':  (715, 92, 885, 302),
+        'RW': (1045, 92, 1215, 302),
+        'LD': (535, 330, 705, 540),
+        'RD': (895, 330, 1065, 540),
+        'G':  (715, 570, 885, 780),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
