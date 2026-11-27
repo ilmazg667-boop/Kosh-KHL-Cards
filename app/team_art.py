@@ -23,54 +23,42 @@ def _fit(draw, text, max_width, start, bold=False):
     return _font(12, bold)
 
 def render_team_art_image(rows, strength, chemistry, team_name='Моя команда', placeholder_image_bytes=None):
-    # Layout follows the user's supplied 1280x800 half-rink reference.
-    image = Image.new('RGB', (WIDTH, HEIGHT), BG)
+    # Full-frame hockey rink: no side panel, only a compact team badge in the corner.
+    image = Image.new('RGB', (WIDTH, HEIGHT), (24, 34, 57))
     draw = ImageDraw.Draw(image)
 
-    # Dark arena background and left information panel.
-    draw.rounded_rectangle((40, 40, 360, 760), radius=24, fill=(14, 10, 15), outline=(112, 61, 34), width=2)
+    # Ice surface fills the complete image.
+    draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), fill=(24, 34, 57))
+    for x in range(0, WIDTH, 40):
+        draw.line((x, 0, x, HEIGHT), fill=(29, 41, 64), width=1)
+    draw.rounded_rectangle((8, 8, WIDTH - 9, HEIGHT - 9), radius=44, outline=ORANGE, width=4)
+
+    # Full-rink hockey markings.
+    draw.line((420, 10, 420, HEIGHT - 10), fill=(48, 103, 214), width=9)
+    draw.line((860, 10, 860, HEIGHT - 10), fill=(48, 103, 214), width=9)
+    draw.line((640, 10, 640, HEIGHT - 10), fill=(196, 51, 56), width=4)
+    draw.ellipse((500, 260, 780, 540), outline=(198, 54, 57), width=4)
+    draw.ellipse((625, 385, 655, 415), fill=(219, 74, 73))
+    for cx, cy in ((235, 225), (235, 575), (1045, 225), (1045, 575)):
+        draw.ellipse((cx - 100, cy - 100, cx + 100, cy + 100), outline=(198, 54, 57), width=3)
+        draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill=(219, 74, 73))
+    draw.arc((1090, 300, 1270, 500), 90, 270, fill=(63, 128, 245), width=4)
+    draw.rounded_rectangle((1190, 355, 1250, 445), radius=10, outline=(224, 230, 245), width=4)
+
+    # Compact team badge in the upper-left corner.
     name = str(team_name or 'Моя команда')
-    draw.text((64, 70), 'KOSH KHL CARDS', font=_font(22, True), fill=ORANGE)
-    draw.multiline_text((64, 132), name, font=_fit(draw, name, 270, 30, True), fill=CREAM, spacing=7)
-    draw.line((64, 235, 330, 235), fill=(100, 61, 44), width=2)
-    draw.text((64, 275), 'СИЛА СОСТАВА', font=_font(17, True), fill=(194, 145, 119))
-    draw.text((64, 310), f'{strength} OVR', font=_font(42, True), fill=CREAM)
-    draw.text((64, 395), 'СЫГРАННОСТЬ', font=_font(17, True), fill=(194, 145, 119))
-    draw.text((64, 430), f'{chemistry}/40', font=_font(36, True), fill=CREAM)
-    draw.rounded_rectangle((64, 490, 330, 506), radius=8, fill=(69, 48, 42))
-    filled = max(0, min(40, int(chemistry)))
-    if filled:
-        draw.rounded_rectangle((64, 490, 64 + int(266 * filled / 40), 506), radius=8, fill=ORANGE)
-    draw.line((64, 550, 330, 550), fill=(100, 61, 44), width=2)
-    draw.text((64, 585), 'СХЕМА', font=_font(16, True), fill=(194, 145, 119))
-    draw.text((64, 620), '1–2–2 + ВРАТАРЬ', font=_font(18, True), fill=CREAM)
-    draw.multiline_text((64, 690), 'Состав меняется\nпосле каждой замены', font=_font(14), fill=(177, 135, 116), spacing=5)
+    draw.rounded_rectangle((22, 18, 360, 112), radius=18, fill=(12, 19, 34), outline=(112, 61, 34), width=2)
+    draw.text((42, 30), name, font=_fit(draw, name, 285, 25, True), fill=CREAM)
+    draw.text((42, 70), f'СИЛА СОСТАВА  {strength} OVR', font=_font(19, True), fill=ORANGE)
 
-    # User's dark-blue half rink, with orange perimeter and original markings.
-    rink = (400, 40, 1240, 760)
-    draw.rounded_rectangle(rink, radius=36, fill=(24, 34, 57), outline=ORANGE, width=4)
-    left, top, right, bottom = rink
-    # Subtle vertical ice texture.
-    for x in range(left + 12, right - 8, 40):
-        draw.line((x, top + 5, x, bottom - 5), fill=(31, 43, 67), width=1)
-    draw.line((608, top + 3, 608, bottom - 3), fill=(48, 103, 214), width=13)
-    draw.arc((285, 278, 530, 530), 270, 90, fill=(58, 111, 231), width=4)
-    draw.line((1152, 78, 1152, 722), fill=(196, 51, 56), width=3)
-    draw.ellipse((858, 92, 1110, 344), outline=(198, 54, 57), width=4)
-    draw.ellipse((858, 464, 1110, 716), outline=(198, 54, 57), width=4)
-    for cx, cy in ((984, 218), (984, 590)):
-        draw.ellipse((cx - 10, cy - 10, cx + 10, cy + 10), fill=(219, 74, 73))
-    draw.ellipse((1060, 315, 1230, 493), outline=(63, 128, 245), width=3)
-    draw.rounded_rectangle((1150, 367, 1212, 441), radius=10, outline=(224, 230, 245), width=4)
-
-    # Six dashed position bays exactly follow the reference image.
+    # Six enlarged card bays spread across the full rink.
     bays = {
-        'LW': (624, 58, 784, 270),
-        'LD': (904, 112, 1064, 324),
-        'C':  (724, 298, 884, 510),
-        'G':  (1068, 298, 1228, 510),
-        'RD': (904, 484, 1064, 696),
-        'RW': (624, 538, 784, 750),
+        'LW': (350, 78, 510, 290),
+        'LD': (760, 132, 920, 344),
+        'C':  (560, 294, 720, 506),
+        'G':  (1050, 294, 1210, 506),
+        'RD': (760, 456, 920, 668),
+        'RW': (350, 510, 510, 722),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
