@@ -396,7 +396,8 @@ async def process_match(match_id,bot):
             home_name=m.home_name or 'Команда 1'
             away_name=m.away_name or 'Команда 2'
             # Calculate the live scoreboard from all events already reached.
-            prior_events=available[:previous_index]            live_home=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='home')
+            prior_events=available[:previous_index]
+            live_home=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='home')
             live_away=sum(1 for e in prior_events if e.get('type')=='goal' and e.get('side')=='away')
             messages=[]
             for event in to_send:
