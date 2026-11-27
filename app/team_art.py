@@ -1,7 +1,7 @@
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
-WIDTH, HEIGHT = 1280, 800
+WIDTH, HEIGHT = 1280, 1000
 BG = (12, 31, 39)
 PANEL = (17, 45, 53)
 PANEL_LIGHT = (24, 59, 67)
@@ -35,7 +35,7 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
 
     # Left information panel replaces the coach card.
     draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), fill=BG)
-    draw.rounded_rectangle((24, 24, 302, 776), radius=28, fill=PANEL, outline=(58, 72, 111), width=2)
+    draw.rounded_rectangle((24, 24, 302, 976), radius=28, fill=PANEL, outline=(58, 72, 111), width=2)
     draw.rounded_rectangle((46, 48, 56, 100), radius=5, fill=MINT)
     draw.text((72, 48), 'СОСТАВ', font=_font(34, True), fill=WHITE)
     draw.text((72, 91), 'КОМАНДА', font=_font(16, True), fill=MUTED)
@@ -64,39 +64,39 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
     draw.rounded_rectangle((66, 644, 66 + int(194 * progress), 654), radius=5, fill=MINT)
 
     # Rink area, visually separated from the team information.
-    draw.rounded_rectangle((320, 24, 1256, 776), radius=42, fill=(15, 39, 47), outline=(66, 111, 115), width=3)
-    draw.rounded_rectangle((332, 36, 1244, 764), radius=34, outline=(43, 78, 84), width=2)
+    draw.rounded_rectangle((320, 24, 1256, 976), radius=42, fill=(15, 39, 47), outline=(66, 111, 115), width=3)
+    draw.rounded_rectangle((332, 36, 1244, 964), radius=34, outline=(43, 78, 84), width=2)
     # Subtle ice texture.
     for x in range(350, 1240, 38):
-        draw.line((x, 40, x, 760), fill=(20, 48, 56), width=1)
+        draw.line((x, 40, x, 960), fill=(20, 48, 56), width=1)
 
     # Hockey markings inside the rink.
-    draw.line((800, 38, 800, 762), fill=(70, 105, 110), width=4)
-    draw.line((500, 38, 500, 762), fill=(43, 83, 91), width=3)
-    draw.line((1100, 38, 1100, 762), fill=(43, 83, 91), width=3)
-    draw.ellipse((680, 285, 920, 525), outline=(70, 105, 110), width=3)
-    draw.ellipse((788, 393, 812, 417), fill=ACCENT)
-    for cx, cy in ((430, 210), (430, 590), (1140, 210), (1140, 590)):
+    draw.line((800, 38, 800, 962), fill=(70, 105, 110), width=4)
+    draw.line((500, 38, 500, 962), fill=(43, 83, 91), width=3)
+    draw.line((1100, 38, 1100, 962), fill=(43, 83, 91), width=3)
+    draw.ellipse((680, 385, 920, 625), outline=(70, 105, 110), width=3)
+    draw.ellipse((788, 493, 812, 517), fill=ACCENT)
+    for cx, cy in ((430, 250), (430, 750), (1140, 250), (1140, 750)):
         draw.ellipse((cx - 58, cy - 58, cx + 58, cy + 58), outline=(45, 82, 89), width=2)
         draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=MINT)
 
     # Goal crease behind the goalie at the bottom of the rink.
-    draw.arc((680, 650, 920, 850), 180, 360, fill=MINT, width=4)
-    draw.rounded_rectangle((748, 735, 852, 766), radius=8, outline=WHITE, width=3)
+    draw.arc((680, 840, 920, 1040), 180, 360, fill=MINT, width=4)
+    draw.rounded_rectangle((748, 925, 852, 956), radius=8, outline=WHITE, width=3)
 
     # Three forwards across the top, two defenders in the middle, goalie at the bottom.
     draw.text((800, 76), 'НАПАДЕНИЕ', font=_font(17, True), fill=MINT, anchor='mm')
-    draw.text((800, 358), 'ЗАЩИТА', font=_font(17, True), fill=MINT, anchor='mm')
-    draw.text((800, 485), 'ВРАТАРЬ', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 378), 'ЗАЩИТА', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((800, 678), 'ВРАТАРЬ', font=_font(17, True), fill=MINT, anchor='mm')
 
-    # Larger portrait slots: 210x260 for skaters and 210x270 for the goalie.
+    # Spacious, non-overlapping portrait slots: 210x260 for skaters and 210x270 for goalie.
     bays = {
-        'LW': (370, 92, 580, 352),
-        'C':  (695, 92, 905, 352),
-        'RW': (1030, 92, 1240, 352),
-        'LD': (520, 365, 730, 625),
-        'RD': (870, 365, 1080, 625),
-        'G':  (695, 495, 905, 765),
+        'LW': (370, 100, 580, 360),
+        'C':  (695, 100, 905, 360),
+        'RW': (1030, 100, 1240, 360),
+        'LD': (520, 400, 730, 660),
+        'RD': (870, 400, 1080, 660),
+        'G':  (695, 700, 905, 970),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
