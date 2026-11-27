@@ -2,9 +2,14 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 1280, 800
-BG = (13, 9, 14)
-ORANGE = (255, 133, 37)
-CREAM = (255, 243, 230)
+BG = (14, 20, 38)
+PANEL = (22, 30, 55)
+PANEL_LIGHT = (31, 43, 73)
+ACCENT = (112, 93, 255)
+MINT = (86, 230, 202)
+WHITE = (239, 244, 255)
+MUTED = (155, 171, 198)
+
 
 def _font(size, bold=False):
     path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
@@ -12,6 +17,7 @@ def _font(size, bold=False):
         return ImageFont.truetype(path, size)
     except OSError:
         return ImageFont.load_default()
+
 
 def _fit(draw, text, max_width, start, bold=False):
     size = start
@@ -22,44 +28,75 @@ def _fit(draw, text, max_width, start, bold=False):
         size -= 2
     return _font(12, bold)
 
+
 def render_team_art_image(rows, strength, chemistry, team_name='Моя команда', placeholder_image_bytes=None):
-    # Full-frame hockey rink: no side panel, only a compact team badge in the corner.
-    image = Image.new('RGB', (WIDTH, HEIGHT), (24, 34, 57))
+    image = Image.new('RGB', (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
 
-    # Ice surface fills the complete image.
-    draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), fill=(24, 34, 57))
-    for x in range(0, WIDTH, 40):
-        draw.line((x, 0, x, HEIGHT), fill=(29, 41, 64), width=1)
-    draw.rounded_rectangle((8, 8, WIDTH - 9, HEIGHT - 9), radius=44, outline=ORANGE, width=4)
+    # Left information panel replaces the coach card.
+    draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), fill=BG)
+    draw.rounded_rectangle((24, 24, 302, 776), radius=28, fill=PANEL, outline=(58, 72, 111), width=2)
+    draw.rounded_rectangle((46, 48, 56, 100), radius=5, fill=MINT)
+    draw.text((72, 48), 'СОСТАВ', font=_font(34, True), fill=WHITE)
+    draw.text((72, 91), 'КОМАНДА', font=_font(16, True), fill=MUTED)
 
-    # Full-rink hockey markings.
-    draw.line((420, 10, 420, HEIGHT - 10), fill=(48, 103, 214), width=9)
-    draw.line((860, 10, 860, HEIGHT - 10), fill=(48, 103, 214), width=9)
-    draw.line((640, 10, 640, HEIGHT - 10), fill=(196, 51, 56), width=4)
-    draw.ellipse((500, 260, 780, 540), outline=(198, 54, 57), width=4)
-    draw.ellipse((625, 385, 655, 415), fill=(219, 74, 73))
-    for cx, cy in ((235, 225), (235, 575), (1045, 225), (1045, 575)):
-        draw.ellipse((cx - 100, cy - 100, cx + 100, cy + 100), outline=(198, 54, 57), width=3)
-        draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill=(219, 74, 73))
-    # Goal and crease at the left end: goalie stays directly in front of the net.
-    draw.arc((8, 300, 190, 500), 270, 90, fill=(63, 128, 245), width=4)
-    draw.rounded_rectangle((18, 355, 78, 445), radius=10, outline=(224, 230, 245), width=4)
-
-    # Compact team name and overall rating in the opposite upper corner.
+    # Team details in a clean information card.
+    draw.rounded_rectangle((44, 155, 282, 710), radius=22, fill=PANEL_LIGHT, outline=(68, 84, 132), width=2)
+    draw.text((66, 181), 'НАЗВАНИЕ', font=_font(14, True), fill=MUTED)
     name = str(team_name or 'Моя команда')
-    draw.rounded_rectangle((850, 18, 1258, 108), radius=18, fill=(12, 19, 34), outline=(112, 61, 34), width=2)
-    draw.text((874, 28), name, font=_fit(draw, name, 350, 25, True), fill=CREAM)
-    draw.text((874, 67), f'СИЛА СОСТАВА  {strength} OVR', font=_font(19, True), fill=ORANGE)
+    draw.multiline_text((66, 207), name, font=_fit(draw, name, 190, 25, True), fill=WHITE, spacing=4)
+    draw.line((66, 270, 260, 270), fill=(71, 87, 130), width=2)
 
-    # Bigger cards in a clear hockey formation: center forward, wings, defense, goalie.
+    draw.text((66, 296), 'СИЛА СОСТАВА', font=_font(14, True), fill=MUTED)
+    draw.text((62, 322), str(strength), font=_font(66, True), fill=MINT)
+    draw.text((190, 365), 'OVR', font=_font(17, True), fill=MINT)
+    draw.line((66, 414, 260, 414), fill=(71, 87, 130), width=2)
+
+    draw.text((66, 440), 'СЫГРАННОСТЬ', font=_font(14, True), fill=MUTED)
+    chemistry_text = str(chemistry)
+    draw.text((66, 466), chemistry_text, font=_fit(draw, chemistry_text, 190, 34, True), fill=WHITE)
+    draw.line((66, 526, 260, 526), fill=(71, 87, 130), width=2)
+
+    draw.text((66, 552), 'ИГРОКОВ В СОСТАВЕ', font=_font(13, True), fill=MUTED)
+    draw.text((66, 580), f'{len(rows)} / 6', font=_font(38, True), fill=WHITE)
+    draw.rounded_rectangle((66, 644, 260, 654), radius=5, fill=(48, 61, 91))
+    progress = max(0, min(1, len(rows) / 6))
+    draw.rounded_rectangle((66, 644, 66 + int(194 * progress), 654), radius=5, fill=MINT)
+
+    # Rink area, visually separated from the team information.
+    draw.rounded_rectangle((320, 24, 1256, 776), radius=42, fill=(18, 27, 49), outline=(79, 91, 145), width=3)
+    draw.rounded_rectangle((332, 36, 1244, 764), radius=34, outline=(48, 66, 103), width=2)
+    # Subtle ice texture.
+    for x in range(350, 1240, 38):
+        draw.line((x, 40, x, 760), fill=(23, 35, 61), width=1)
+
+    # Hockey markings inside the rink.
+    draw.line((800, 38, 800, 762), fill=(103, 76, 158), width=4)
+    draw.line((500, 38, 500, 762), fill=(54, 105, 145), width=3)
+    draw.line((1100, 38, 1100, 762), fill=(54, 105, 145), width=3)
+    draw.ellipse((680, 285, 920, 525), outline=(103, 76, 158), width=3)
+    draw.ellipse((788, 393, 812, 417), fill=ACCENT)
+    for cx, cy in ((430, 210), (430, 590), (1140, 210), (1140, 590)):
+        draw.ellipse((cx - 58, cy - 58, cx + 58, cy + 58), outline=(70, 91, 133), width=2)
+        draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=MINT)
+
+    # Goal at the back of the formation.
+    draw.arc((322, 300, 430, 500), 270, 90, fill=MINT, width=4)
+    draw.rounded_rectangle((330, 355, 372, 445), radius=8, outline=WHITE, width=3)
+
+    # Position labels and enlarged card bays.
+    draw.text((1005, 65), 'ЦЕНТР', font=_font(17, True), fill=MINT, anchor='mm')
+    draw.text((885, 65), 'КРАЙНИЕ', font=_font(17, True), fill=MUTED, anchor='mm')
+    draw.text((665, 65), 'ЗАЩИТА', font=_font(17, True), fill=MUTED, anchor='mm')
+    draw.text((425, 250), 'ВРАТАРЬ', font=_font(16, True), fill=MINT, anchor='mm')
+
     bays = {
-        'C':  (970, 270, 1170, 530),
-        'LW': (700, 55, 900, 315),
-        'RW': (700, 485, 900, 745),
-        'LD': (390, 85, 590, 345),
-        'RD': (390, 455, 590, 715),
-        'G':  (85, 270, 285, 530),
+        'C':  (1005, 270, 1205, 530),
+        'LW': (785, 85, 985, 345),
+        'RW': (785, 455, 985, 715),
+        'LD': (565, 85, 765, 345),
+        'RD': (565, 455, 765, 715),
+        'G':  (385, 270, 585, 530),
     }
     bay_labels = {'LW': 'LW', 'LD': 'LD', 'C': 'C', 'G': 'G', 'RD': 'RD', 'RW': 'RW'}
     by_position = {card.position: card for _, card in rows}
@@ -76,7 +113,7 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                     px = x1 + ((x2 - x1) - card_image.width) // 2
                     py = y1 + ((y2 - y1) - card_image.height) // 2
                     image.paste(card_image, (px, py))
-                    draw.rounded_rectangle((x1 + 4, y1 + 4, x2 - 4, y2 - 4), radius=10, outline=ORANGE, width=2)
+                    draw.rounded_rectangle((x1 + 4, y1 + 4, x2 - 4, y2 - 4), radius=12, outline=ACCENT, width=3)
                 except Exception:
                     image_data = None
             if not image_data and placeholder_image_bytes:
@@ -86,20 +123,19 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                     px = x1 + ((x2 - x1) - placeholder.width) // 2
                     py = y1 + ((y2 - y1) - placeholder.height) // 2
                     image.paste(placeholder, (px, py))
-                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=8, outline=ORANGE, width=2)
+                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=10, outline=ACCENT, width=3)
                     image_data = b'placeholder-used'
                 except Exception:
                     image_data = None
             if not image_data:
-                draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=12, fill=(31, 43, 66), outline=ORANGE, width=2)
-                draw.ellipse((cx - 31, cy - 50, cx + 31, cy + 12), outline=ORANGE, width=3)
-                draw.arc((cx - 22, cy - 41, cx + 22, cy + 3), 35, 305, fill=CREAM, width=4)
-                draw.text((cx, cy + 36), 'ЗАГРУЗКА', font=_font(15, True), fill=ORANGE, anchor='mm')
+                draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=14, fill=PANEL_LIGHT, outline=ACCENT, width=2)
+                draw.ellipse((cx - 31, cy - 50, cx + 31, cy + 12), outline=MINT, width=3)
+                draw.arc((cx - 22, cy - 41, cx + 22, cy + 3), 35, 305, fill=WHITE, width=4)
+                draw.text((cx, cy + 36), 'НЕТ ФОТО', font=_font(15, True), fill=MINT, anchor='mm')
                 player_name = str(card.player_name)
-                draw.text((cx, cy + 61), player_name, font=_fit(draw, player_name, x2 - x1 - 18, 14, True), fill=CREAM, anchor='mm')
-                draw.text((cx, cy + 83), f'{card.ovr} OVR', font=_font(15, True), fill=CREAM, anchor='mm')
+                draw.text((cx, cy + 61), player_name, font=_fit(draw, player_name, x2 - x1 - 18, 14, True), fill=WHITE, anchor='mm')
+                draw.text((cx, cy + 83), f'{card.ovr} OVR', font=_font(15, True), fill=WHITE, anchor='mm')
         else:
-            # Empty lineup slot: show the configured team placeholder when available.
             placeholder_used = False
             if placeholder_image_bytes:
                 try:
@@ -108,12 +144,13 @@ def render_team_art_image(rows, strength, chemistry, team_name='Моя кома�
                     px = x1 + ((x2 - x1) - placeholder.width) // 2
                     py = y1 + ((y2 - y1) - placeholder.height) // 2
                     image.paste(placeholder, (px, py))
-                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=8, outline=ORANGE, width=2)
+                    draw.rounded_rectangle((x1 + 3, y1 + 3, x2 - 3, y2 - 3), radius=10, outline=ACCENT, width=3)
                     placeholder_used = True
                 except Exception:
                     placeholder_used = False
             if not placeholder_used:
-                draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=(173, 148, 137), anchor='mm')
+                draw.rounded_rectangle((x1 + 7, y1 + 7, x2 - 7, y2 - 7), radius=14, fill=(25, 37, 64), outline=(74, 88, 132), width=2)
+                draw.text((cx, cy), bay_labels[pos], font=_font(34, True), fill=MUTED, anchor='mm')
 
     output = BytesIO()
     image.save(output, format='PNG', optimize=True)
