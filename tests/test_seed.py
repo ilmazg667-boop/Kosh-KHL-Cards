@@ -83,3 +83,16 @@ class SeedSyncTests(unittest.TestCase):
 
         self.assertEqual(session.added, [])
         self.assertEqual(old.image_url, 'tgfile:uploaded-photo')
+
+
+    def test_club_and_league_correction_updates_unchanged_edition(self):
+        old = make_card(season='2026/2027', club='Барыс')
+        new = make_card(season='2026/2027', club='Трактор')
+        new.league = 'НХЛ'
+        session = FakeSession()
+
+        _sync_seed_cards([new], [old], session)
+
+        self.assertEqual(session.added, [])
+        self.assertEqual(old.club, 'Трактор')
+        self.assertEqual(old.league, 'НХЛ')

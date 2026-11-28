@@ -63,10 +63,16 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             if current is None:
                 current = existing_by_player_edition.get(_card_seed_identity_without_league(card))
         if current is None and card.player_key:
-            # Last-resort stable match: a league AND club correction must update
-            # the existing catalogue card instead of inserting a second edition.
-            keyed = [item for item in existing_cards
-                if (item.player_key or '').strip().casefold() == (card.player_key or '').strip().casefold()]
+            # A club + league correction may reuse the sole matching edition,
+            # but a changed rating, position, season or rarity is a new edition.
+            keyed = [
+                item for item in existing_cards
+                if (item.player_key or '').strip().casefold() == (card.player_key or '').strip().casefold()
+                and int(item.ovr) == int(card.ovr)
+                and (item.position or '').strip().upper() == (card.position or '').strip().upper()
+                and (item.season or '').strip() == (card.season or '').strip()
+                and (item.rarity or '').strip().casefold() == (card.rarity or '').strip().casefold()
+            ]
             if len(keyed) == 1:
                 current = keyed[0]
         if current is None:
