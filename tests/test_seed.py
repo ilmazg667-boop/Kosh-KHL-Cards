@@ -4,11 +4,11 @@ from app.models import Card
 from app.seed import _sync_seed_cards
 
 
-def make_card(*, season, club, name='Игрок', player_key='khl:42', ovr=80, active=True):
+def make_card(*, season, club, name='Игрок', player_key='khl:42', ovr=80, active=True, image_url=''):
     return Card(
         player_name=name, player_key=player_key, position='RW', ovr=ovr,
         rarity='Редкий', country='Россия', club=club, league='КХЛ',
-        season=season, image_url='', source='legacy116', active=active,
+        season=season, image_url=image_url, source='legacy116', active=active,
     )
 
 
@@ -62,3 +62,24 @@ class SeedSyncTests(unittest.TestCase):
 
         self.assertEqual(session.added, [new])
         self.assertEqual(old.ovr, 80)
+
+
+    def test_image_url_change_updates_same_edition_without_duplicate(self):
+        old = make_card(season='2026/2027', club='Барыс')
+        new = make_card(season='2026/2027', club='Барыс', image_url='https://cdn.example/card.jpg')
+        session = FakeSession()
+
+        _sync_seed_cards([new], [old], session)
+
+        self.assertEqual(session.added, [])
+        self.assertEqual(old.image_url, new.image_url)
+
+    def test_seed_preserves_telegram_upload_even_when_csv_has_an_image_url(self):
+        old = make_card(season='2026/2027', club='Барыс', image_url='tgfile:uploaded-photo')
+        new = make_card(season='2026/2027', club='Барыс', image_url='https://cdn.example/card.jpg')
+        session = FakeSession()
+
+        _sync_seed_cards([new], [old], session)
+
+        self.assertEqual(session.added, [])
+        self.assertEqual(old.image_url, 'tgfile:uploaded-photo')

@@ -91,3 +91,49 @@ class CardImportTests(unittest.IsolatedAsyncioTestCase):
             session = FakeSession([])
             self.assertEqual(await import_cards(session, path), 2
 )
+
+
+    async def test_changed_image_url_updates_existing_edition_without_duplicate(self):
+        existing_row = card_row()
+        incoming = card_row()
+        incoming["image_url"] = "https://cdn.example/card.jpg"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.csv"
+            write_csv(path, [incoming])
+            existing = make_card(existing_row)
+            session = FakeSession([existing])
+
+            self.assertEqual(await import_cards(session, path), 1)
+            self.assertEqual(session.added, [])
+            self.assertEqual(existing.image_url, incoming["image_url"])
+            self.assertEqual(session.commits, 1)
+
+    async def test_import_preserves_manual_telegram_image(self):
+        existing_row = card_row()
+        existing_row["image_url"] = "tgfile:uploaded-photo"
+        incoming = card_row()
+        incoming["image_url"] = "https://cdn.example/card.jpg"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.csv"
+            write_csv(path, [incoming])
+            existing = make_card(existing_row)
+            session = FakeSession([existing])
+
+            self.assertEqual(await import_cards(session, path), 0)
+            self.assertEqual(session.added, [])
+            self.assertEqual(existing.image_url, "tgfile:uploaded-photo")
+            self.assertEqual(session.commits, 0)
+
+    async def test_duplicate_rows_with_different_images_add_one_card(self):
+        first = card_row()
+        second = card_row()
+        second["image_url"] = "https://cdn.example/card.jpg"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.csv"
+            write_csv(path, [first, second])
+            session = FakeSession([])
+
+            self.assertEqual(await import_cards(session, path), 1)
+            self.assertEqual(len(session.added), 1)
+            self.assertEqual(session.added[0].image_url, second["image_url"])
+            self.assertEqual(session.commits, 1)

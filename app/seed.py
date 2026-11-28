@@ -33,7 +33,6 @@ def _card_seed_identity(card):
         (card.league or '').strip().casefold(),
         (card.position or '').strip().upper(),
         (card.rarity or '').strip().casefold(),
-        (card.image_url or '').strip(),
         int(card.ovr),
     )
     player_key = (card.player_key or '').strip().casefold()
@@ -86,7 +85,12 @@ def _sync_seed_cards(legacy_cards, existing_cards, session):
             current.club = card.club
             current.league = card.league
             current.season = card.season
-            current.image_url = card.image_url
+            incoming_image_url = (card.image_url or '').strip()
+            current_image_url = (current.image_url or '').strip()
+            # Preserve photos uploaded directly in Telegram; a blank seed
+            # field must never erase them during the next startup sync.
+            if incoming_image_url and not current_image_url.startswith('tgfile:'):
+                current.image_url = incoming_image_url
             current.active = card.active
             existing_by_identity[identity] = current
             existing_by_player_edition[_card_seed_identity_without_league(card)] = current

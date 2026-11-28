@@ -95,7 +95,7 @@ player_name,player_key,position,ovr,rarity,country,club,league,season,image_url,
 
 - `player_key` is a stable identifier for one real person across team versions. Use the same key for that player after a transfer.
 - `position` must be one of `LW,C,RW,LD,RD,G`.
-- `ovr` must be 50–100; rarity must be one of the eight Russian rarity names shown in the game.
+- `ovr` must be 50–100; the game derives one of ten Russian rarity tiers from the OVR ranges in `app/game.py` (the CSV `rarity` column remains for template compatibility).
 - `club`, `league`, `season` describe this particular historical card version.
 - `image_url` must be a direct, publicly accessible image URL. Leave blank if you have no usable image.
 - `source` can identify the official/licensed source. Optional `active` is `true` by default; set it to `false` for historical versions that must remain collectible but should no longer drop from packs or AI rosters.

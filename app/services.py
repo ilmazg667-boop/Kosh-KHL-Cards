@@ -649,7 +649,6 @@ def _card_import_identities(card):
         (card.position or '').strip().upper(),
         (card.rarity or '').strip().casefold(),
         int(card.ovr),
-        (card.image_url or '').strip(),
     )
     name_identity = ('name', (card.player_name or '').strip().casefold(), *edition)
     player_key = (card.player_key or '').strip().casefold()
@@ -660,37 +659,46 @@ def _card_import_identities(card):
 async def import_cards(session,path):
     cards=read_csv_cards(path)
     existing=(await session.scalars(select(Card))).all()
-    known_names=set()
-    known_player_keys=set()
-    known_unkeyed_names=set()
+    known_names={}
+    known_player_keys={}
+    known_unkeyed_names={}
     for card in existing:
         name_identity, player_identity = _card_import_identities(card)
-        known_names.add(name_identity)
+        known_names[name_identity]=card
         if player_identity:
-            known_player_keys.add(player_identity)
+            known_player_keys[player_identity]=card
         else:
-            known_unkeyed_names.add(name_identity)
+            known_unkeyed_names[name_identity]=card
 
     added=[]
+    added_ids=set()
+    updated=0
     for card in cards:
         name_identity, player_identity = _card_import_identities(card)
-        duplicate=(
-            player_identity in known_player_keys or name_identity in known_unkeyed_names
-            if player_identity else name_identity in known_names
+        existing_card=(
+            known_player_keys.get(player_identity) or known_unkeyed_names.get(name_identity)
+            if player_identity else known_names.get(name_identity)
         )
-        if duplicate:
+        if existing_card:
+            incoming_image=(card.image_url or '').strip()
+            if incoming_image and not (existing_card.image_url or '').strip():
+                existing_card.image_url=incoming_image
+                if id(existing_card) not in added_ids:
+                    updated+=1
             continue
         added.append(card)
-        known_names.add(name_identity)
+        added_ids.add(id(card))
+        known_names[name_identity]=card
         if player_identity:
-            known_player_keys.add(player_identity)
+            known_player_keys[player_identity]=card
         else:
-            known_unkeyed_names.add(name_identity)
+            known_unkeyed_names[name_identity]=card
 
     if added:
         session.add_all(added)
+    if added or updated:
         await session.commit()
-    return len(added)
+    return len(added)+updated
 
 async def import_chemistry(session,path):
     import csv
